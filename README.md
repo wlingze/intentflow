@@ -23,29 +23,57 @@ intentflow 把这两件事分层，**并给每条结论标可信度**。
 
 **实验性。** 只支持 Go，只有一轮 demo 验证过。
 
-已完成：三层 diff 骨架、SSA 意图链抽取、双输出（JSON + HTML）。
-未完成：LLM 叙述层、web 端交互、大项目验证、规则精度。
+已完成：三层 diff、SSA 意图链抽取、review.json、独立前端工作台
+（分支图、代码 diff、SyntaxFlow 分诊、Review 评论、提交给 Agent）。
+未完成：LLM 叙述层、大项目验证、规则精度。
 
 ## 快速开始
 
 ```bash
+# 前端只需要构建一次
+cd frontend && pnpm install && pnpm build && cd ..
+
 go build -o bin/intentflow ./cmd/intentflow
 
-./bin/intentflow diff \
+# 分析后直接打开工作台（默认 127.0.0.1:8123）
+./bin/intentflow serve \
   --before examples/demo-go/before \
   --after  examples/demo-go/after \
   --out    examples/demo-go/out
+
+# 只要结构化结果、不启动服务
+./bin/intentflow diff --before ... --after ... --out ...
 ```
 
-输出：
+serve 输出：
 
 ```
 examples/demo-go/out/
-├── review.json   给 agent 读的结构化结果
-└── index.html    给人 review 的三层视图
+├── review.json         三层 diff 与关注点
+└── review.md           在工作台里提交后写入
+```
+
+前端开发时另开一个终端：
+
+```bash
+cd frontend && pnpm dev
+# http://127.0.0.1:5173   /api 代理到 8123
 ```
 
 加 `-v` 看进度，加 `--dump-facts` 额外导出两侧全量事实，`--no-ssa` 跳过 IR 层。
+`--addr` 改监听地址，`--dist` 改前端产物目录。
+
+### 对比 demo
+
+同一组 before/after 代码，同时生成 intentflow、PR Lens、Archify 的产物：
+
+```bash
+./examples/demo-go/generate.sh
+# 产物在 examples/demo-go/out/，用上面的 serve 打开
+```
+
+第一次运行前需要先构建外部工具：PR Lens 执行 `pnpm install && pnpm build`，
+Archify 无需构建。路径可用 `PR_LENS_DIR` / `ARCHIFY_DIR` 覆盖。
 
 ## demo 的输出
 
@@ -81,10 +109,13 @@ REMOVED  handleSearch → findUser → SQL 执行
 ## 目录
 
 ```
-cmd/intentflow/       CLI 入口
+cmd/intentflow/       CLI 入口（diff / serve）
 internal/model/       三层数据模型 + 可信度 + 身份键
 internal/scan/        go/ast 解析（L3/L2）、SSA 抽取（L1）、信号派生
-internal/emit/        review.json、index.html、facts.json
+internal/emit/        review.json、facts.json
+internal/payload/     源码包：before/after 文本与文件状态
+internal/serve/       HTTP 工作台：/api/payload、/api/review、静态资源
+frontend/             React + TypeScript + Vite 工作台
 examples/demo-go/     before/after 演示
 docs/                 探索文档
 ```
@@ -98,6 +129,8 @@ docs/                 探索文档
 | [docs/02-layers.md](docs/02-layers.md) | 三层模型、身份键设计、抽取流程 |
 | [docs/03-findings.md](docs/03-findings.md) | SyntaxFlow 实测行为与 Go 前端缺口 |
 | [docs/log.md](docs/log.md) | 实验日志 |
+| [docs/04-compare.md](docs/04-compare.md) | 同一 demo 的四工具对比：intentflow / PR Lens / Archify / graphify |
+| [docs/05-frontend.md](docs/05-frontend.md) | review 工作台：布局、数据契约、交互 |
 
 ## 依赖
 

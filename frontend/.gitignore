@@ -1,0 +1,5 @@
+node_modules/
+dist/
+public/mock/payload.json
+*.local
+.DS_Store

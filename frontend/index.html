@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-pref="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>intentflow · 语义 review</title>
+    <script>
+      (function () {
+        var key = 'intentflow-ui-theme';
+        var prefs = ['system', 'light', 'dark'];
+        var pref = localStorage.getItem(key) || 'system';
+        if (prefs.indexOf(pref) < 0) pref = 'system';
+        var mq = window.matchMedia('(prefers-color-scheme: light)');
+        var theme = pref === 'system' ? (mq.matches ? 'light' : 'dark') : pref;
+        document.documentElement.dataset.pref = pref;
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

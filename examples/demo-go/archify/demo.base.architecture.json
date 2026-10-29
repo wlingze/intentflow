@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "intentflow demo — before",
+    "subtitle": "parameterized SQL query",
+    "output": "demo.base.html",
+    "visual_preset": "signal-flow"
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "HTTP client",
+      "sublabel": "GET /search",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "handle-search",
+      "type": "backend",
+      "label": "handleSearch",
+      "sublabel": "net/http handler",
+      "pos": [
+        260,
+        260
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "find-user",
+      "type": "backend",
+      "label": "findUser",
+      "sublabel": "query by name",
+      "pos": [
+        500,
+        260
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "users-db",
+      "type": "database",
+      "label": "users DB",
+      "sublabel": "database/sql",
+      "pos": [
+        740,
+        260
+      ],
+      "size": [
+        140,
+        64
+      ]
+    }
+  ],
+  "boundaries": [],
+  "connections": [
+    {
+      "id": "get-search",
+      "from": "browser",
+      "to": "handle-search",
+      "label": "name",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lookup-user",
+      "from": "handle-search",
+      "to": "find-user"
+    },
+    {
+      "id": "sql-param",
+      "from": "find-user",
+      "to": "users-db",
+      "label": "QueryRow(?, name)",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ]
+}

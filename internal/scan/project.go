@@ -103,18 +103,20 @@ func ProjectFacts(root string) (model.FactSet, error) {
 			if fn.Body == nil {
 				continue
 			}
-			for _, callee := range callsIn(fn.Body) {
+			for _, call := range callsIn(fn.Body) {
 				// 只记录跨函数调用边，自调用不产生结构信息。
-				if callee == name {
+				if call.name == name {
 					continue
 				}
 				set.Add(model.Fact{
-					Identity:   model.Identity("call", name, callee),
-					Layer:      model.LayerLogic,
-					Kind:       "call",
-					Title:      name + " → " + callee,
-					File:       rel,
-					Line:       fset.Position(fn.Pos()).Line,
+					Identity: model.Identity("call", name, call.name),
+					Layer:    model.LayerLogic,
+					Kind:     "call",
+					Title:    name + " → " + call.name,
+					File:     rel,
+					// 行号指向第一处调用点，而不是函数声明。
+					// 图上的「查看代码」要能直接落到调用那一行。
+					Line:       fset.Position(call.pos).Line,
 					Function:   name,
 					Confidence: model.Extracted,
 				})
@@ -125,27 +127,38 @@ func ProjectFacts(root string) (model.FactSet, error) {
 	return set, nil
 }
 
-// callsIn 收集函数体内的被调方名字，去重后排序。
+// callSite 是一处跨函数调用的名字与位置。
+type callSite struct {
+	name string
+	pos  token.Pos
+}
+
+// callsIn 收集函数体内的被调方，去重后按名字排序。
+// 同名调用保留第一处，身份键仍然只用函数名，位置仅用于跳转。
 //
 // 名字用「最后一段选择器」表示，例如 svc.FindUser 记为 FindUser，
 // 避免 import 别名造成同一调用在不同文件里身份不稳定。
-func callsIn(body *ast.BlockStmt) []string {
-	seen := map[string]struct{}{}
+func callsIn(body *ast.BlockStmt) []callSite {
+	seen := map[string]token.Pos{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		if name := calleeName(call.Fun); name != "" {
-			seen[name] = struct{}{}
+		name := calleeName(call.Fun)
+		if name == "" {
+			return true
+		}
+		if _, dup := seen[name]; !dup {
+			seen[name] = call.Pos()
 		}
 		return true
 	})
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
+	out := make([]callSite, 0, len(seen))
+	for name, pos := range seen {
+		out = append(out, callSite{name: name, pos: pos})
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
 }
 

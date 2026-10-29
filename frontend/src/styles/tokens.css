@@ -1,0 +1,79 @@
+:root {
+  --bg: #080b10;
+  --bg-soft: #0b1017;
+  --panel: #0f141c;
+  --panel-2: #0b1017;
+  --panel-3: #131a24;
+  --line: #1c2532;
+  --line-strong: #2a3646;
+  --ink: #e8eef7;
+  --dim: #8a99ad;
+  --faint: #5a687b;
+
+  --green: #3ddc97;
+  --green-soft: rgba(61, 220, 151, 0.12);
+  --green-line: rgba(61, 220, 151, 0.38);
+  --red: #ff6b81;
+  --red-soft: rgba(255, 107, 129, 0.12);
+  --red-line: rgba(255, 107, 129, 0.38);
+  --amber: #f5c451;
+  --amber-soft: rgba(245, 196, 81, 0.12);
+  --amber-line: rgba(245, 196, 81, 0.36);
+  --blue: #6cb6ff;
+  --blue-soft: rgba(108, 182, 255, 0.12);
+  --purple: #b899ff;
+  --purple-soft: rgba(184, 153, 255, 0.12);
+  --accent: #5eead4;
+  --accent-soft: rgba(94, 234, 212, 0.12);
+
+  --grid: rgba(255, 255, 255, 0.022);
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --top-h: 52px;
+  --left-w: 258px;
+  --right-w: 360px;
+  --composer-h: 106px;
+  --radius: 11px;
+  --radius-sm: 7px;
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #f4f2ec;
+  --bg-soft: #efece4;
+  --panel: #fffefb;
+  --panel-2: #f7f4ed;
+  --panel-3: #efece3;
+  --line: #ded9cd;
+  --line-strong: #c8c1b2;
+  --ink: #1a1f26;
+  --dim: #5f6672;
+  --faint: #8a9099;
+
+  --green: #0b7a53;
+  --green-soft: #e2f4ec;
+  --green-line: rgba(11, 122, 83, 0.34);
+  --red: #bb2d43;
+  --red-soft: #fbe8eb;
+  --red-line: rgba(187, 45, 67, 0.34);
+  --amber: #8a6100;
+  --amber-soft: #fbf1d8;
+  --amber-line: rgba(138, 97, 0, 0.3);
+  --blue: #1266ad;
+  --blue-soft: #e4f0fa;
+  --purple: #6d4fc4;
+  --purple-soft: #eee8fb;
+  --accent: #0f766e;
+  --accent-soft: #dff2ef;
+
+  --grid: rgba(20, 30, 40, 0.035);
+  --shadow: 0 24px 60px rgba(30, 30, 24, 0.16);
+  --shadow-soft: 0 8px 24px rgba(30, 30, 24, 0.08);
+
+  color-scheme: light;
+}

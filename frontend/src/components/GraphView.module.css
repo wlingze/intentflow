@@ -1,0 +1,453 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.titleGroup {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.titleRow h1 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+}
+
+.sub {
+  color: var(--faint);
+  font: 10px/1 var(--mono);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.legend {
+  display: flex;
+  gap: 10px;
+  margin-right: 6px;
+  color: var(--faint);
+  font: 9.5px/1 var(--mono);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend i {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--faint);
+}
+
+.legAdd {
+  border-color: var(--green) !important;
+}
+
+.legDel {
+  border-color: var(--red) !important;
+  border-top-style: dashed !important;
+}
+
+.legMod {
+  border-color: var(--amber) !important;
+}
+
+.legSame {
+  border-color: var(--faint) !important;
+}
+
+.canvasWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px 4px;
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: auto;
+}
+
+.lane {
+  fill: var(--panel-2);
+  fill-opacity: 0.55;
+  stroke: var(--line);
+  stroke-dasharray: 3 5;
+}
+
+.laneLabel {
+  fill: var(--faint);
+  font: 10px var(--mono);
+  letter-spacing: 0.06em;
+  user-select: none;
+}
+
+.edge {
+  cursor: pointer;
+  outline: none;
+}
+
+.edgeHit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+}
+
+.edgeLine {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.5;
+  transition: stroke-width 0.12s;
+}
+
+.edge:hover .edgeLine,
+.edge:focus-visible .edgeLine {
+  stroke-width: 2.8;
+}
+
+.edge_removed .edgeLine {
+  stroke: var(--red);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}
+
+.edge_added .edgeLine {
+  stroke: var(--green);
+  stroke-width: 2.2;
+}
+
+.edge_modified .edgeLine {
+  stroke: var(--amber);
+  stroke-width: 2;
+}
+
+.edge_unchanged .edgeLine {
+  stroke: var(--faint);
+  stroke-opacity: 0.8;
+}
+
+.edgeLabel {
+  fill: var(--faint);
+  font: 10px var(--mono);
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+
+.edge_added .edgeLabel {
+  fill: var(--green);
+}
+
+.edge_removed .edgeLabel {
+  fill: var(--red);
+}
+
+.edge_modified .edgeLabel {
+  fill: var(--amber);
+}
+
+.pulse {
+  fill: var(--green);
+  opacity: 0.95;
+}
+
+.node {
+  cursor: pointer;
+  outline: none;
+}
+
+.card {
+  fill: var(--panel);
+  stroke: var(--line-strong);
+  stroke-width: 1.2;
+  transition: filter 0.12s;
+}
+
+.node:hover .card,
+.node:focus-visible .card {
+  filter: brightness(1.12);
+}
+
+.node_added .card {
+  stroke: var(--green);
+  stroke-width: 1.6;
+}
+
+.node_removed .card {
+  stroke: var(--red);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+}
+
+.node_modified .card {
+  stroke: var(--amber);
+  stroke-width: 1.6;
+}
+
+.node_unchanged .card {
+  stroke: var(--line-strong);
+}
+
+.glyphBox {
+  fill: var(--panel-2);
+  stroke: var(--line);
+}
+
+.glyph {
+  fill: var(--dim);
+  font: 10px var(--mono);
+}
+
+.nodeTitle {
+  fill: var(--ink);
+  font: 600 12.5px var(--sans);
+}
+
+.nodeSub {
+  fill: var(--faint);
+  font: 10px var(--mono);
+}
+
+.nodeMark {
+  font: 700 12px var(--mono);
+}
+
+.node_added .nodeMark {
+  fill: var(--green);
+}
+
+.node_removed .nodeMark {
+  fill: var(--red);
+}
+
+.node_modified .nodeMark {
+  fill: var(--amber);
+}
+
+.node_added .glyphBox {
+  stroke: var(--green-line);
+}
+
+.node_added .glyph {
+  fill: var(--green);
+}
+
+.node_removed .glyphBox {
+  stroke: var(--red-line);
+}
+
+.node_removed .glyph {
+  fill: var(--red);
+}
+
+.node_modified .glyphBox {
+  stroke: var(--amber-line);
+}
+
+.node_modified .glyph {
+  fill: var(--amber);
+}
+
+.inspector {
+  flex: none;
+  min-height: 96px;
+  max-height: 176px;
+  overflow: auto;
+  padding: 11px 18px 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  padding: 6px 0;
+}
+
+.inspectorHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inspectorKind {
+  color: var(--faint);
+  font: 9px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.inspectorHead b {
+  font-size: 12.5px;
+}
+
+.deltaBadge {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--dim);
+  font: 9px/1.4 var(--mono);
+}
+
+.badge_added {
+  color: var(--green);
+  border-color: var(--green-line);
+  background: var(--green-soft);
+}
+
+.badge_removed {
+  color: var(--red);
+  border-color: var(--red-line);
+  background: var(--red-soft);
+}
+
+.badge_modified {
+  color: var(--amber);
+  border-color: var(--amber-line);
+  background: var(--amber-soft);
+}
+
+.loc {
+  margin-left: auto;
+  color: var(--faint);
+  font: 9.5px/1.4 var(--mono);
+}
+
+.inspectorSub {
+  margin-top: 3px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.snippet {
+  margin: 7px 0 0;
+  max-height: 62px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  color: var(--dim);
+  font: 10px/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.inspectorActions {
+  display: flex;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.notes {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 5px 18px 6px;
+}
+
+.notesToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font: 9.5px/1.4 var(--mono);
+}
+
+.notesToggle:hover {
+  color: var(--dim);
+}
+
+.notesToggle span {
+  margin-left: auto;
+}
+
+.notes ul {
+  margin: 4px 0 6px;
+  padding: 0 0 0 16px;
+  color: var(--dim);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  height: 100%;
+  color: var(--faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .legend {
+    display: none;
+  }
+}
+
+@media (max-width: 940px) {
+  .head {
+    padding: 10px 14px;
+  }
+
+  .canvasWrap {
+    padding: 8px 12px 0;
+  }
+
+  .inspector {
+    padding: 10px 14px;
+  }
+}

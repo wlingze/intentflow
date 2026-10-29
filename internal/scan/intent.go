@@ -133,9 +133,9 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 			}
 			sort.Strings(path[1:])
 
-			title := fmt.Sprintf("%s 中的数据流入%s", caller, sink.Label)
+			title := fmt.Sprintf("%s：数据流入 %s", caller, sink.Label)
 			if len(path) > 1 {
-				title = fmt.Sprintf("%s → %s 的数据流入%s", path[len(path)-1], caller, sink.Label)
+				title = fmt.Sprintf("%s → %s：数据流入 %s", path[len(path)-1], caller, sink.Label)
 			}
 
 			set.Add(model.Fact{

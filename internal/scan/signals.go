@@ -10,36 +10,36 @@ import (
 
 // externalSources 是「来自程序外部、可被攻击者或用户控制」的来源类别。
 var externalSources = map[string]struct{}{
-	"http_input":  {},
-	"env":         {},
-	"cli_args":    {},
+	"http_input":     {},
+	"env":            {},
+	"cli_args":       {},
 	"function_param": {},
 }
 
 // riskyImports 是出现即值得 review 的包。
 var riskyImports = map[string]string{
-	"os/exec":    "启用进程执行能力",
-	"database/sql": "直接引入数据库访问",
-	"unsafe":     "绕过类型安全",
-	"crypto/md5": "使用弱哈希算法",
-	"crypto/des": "使用弱加密算法",
+	"os/exec":       "启用进程执行能力",
+	"database/sql":  "直接引入数据库访问",
+	"unsafe":        "绕过类型安全",
+	"crypto/md5":    "使用弱哈希算法",
+	"crypto/des":    "使用弱加密算法",
 	"text/template": "未转义模板，注意注入",
-	"io/ioutil":  "已废弃包",
+	"io/ioutil":     "已废弃包",
 }
 
 // riskyCallees 是出现即值得 review 的被调函数。
 var riskyCallees = map[string]string{
-	"Command":     "构造外部命令",
+	"Command":        "构造外部命令",
 	"CommandContext": "构造外部命令",
-	"Query":       "执行 SQL",
-	"QueryRow":    "执行 SQL",
-	"Exec":        "执行 SQL",
-	"Raw":         "执行原始 SQL",
-	"ReadFile":    "读取文件",
-	"WriteFile":   "写入文件",
-	"OpenFile":    "打开文件",
-	"Unmarshal":   "反序列化外部数据",
-	"Parse":       "解析外部数据",
+	"Query":          "执行 SQL",
+	"QueryRow":       "执行 SQL",
+	"Exec":           "执行 SQL",
+	"Raw":            "执行原始 SQL",
+	"ReadFile":       "读取文件",
+	"WriteFile":      "写入文件",
+	"OpenFile":       "打开文件",
+	"Unmarshal":      "反序列化外部数据",
+	"Parse":          "解析外部数据",
 }
 
 // Signals 从三层 diff 派生 review 关注点。
@@ -65,14 +65,14 @@ func Signals(r *model.Review) []model.Signal {
 		detail := fmt.Sprintf("来源 %s 经 %s 到达副作用点。位置 %s:%d。",
 			f.Source, f.Shape, shortFile(f.File), f.Line)
 		if f.Shape == "format" || f.Shape == "concat" {
-			detail += " 数据参与了字符串构造，确认已参数化或校验。"
+			detail += "数据参与了字符串构造，确认已参数化或校验。"
 		}
 		out = append(out, model.Signal{
-			ID:       model.Identity("sig", f.Identity, "intent-added"),
-			Severity: sev,
-			Title:    title,
-			Detail:   detail,
-			Evidence: []string{f.Identity},
+			ID:         model.Identity("sig", f.Identity, "intent-added"),
+			Severity:   sev,
+			Title:      title,
+			Detail:     detail,
+			Evidence:   []string{f.Identity},
 			Confidence: model.Derived,
 		})
 	}

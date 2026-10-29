@@ -96,3 +96,57 @@ graphify 已经验证了这条路 —— 它每条边标 `EXTRACTED / INFERRED /
 2. 拿 yaklang 自己的一个子包跑一遍，看噪声和性能
 3. 接 LLM 叙述层，做 A/B：结构化 diff vs 原始 diff 喂给同一模型，比输出质量
 4. 考虑接 `git diff` 直接驱动，而不是手工准备两个目录
+
+## 2026-10-29 · 第二轮：图形化与三工具对比
+
+### Web 端
+
+原来的页面只有文字列表。这一轮改成「先图后表」：
+
+- 意图流图：来源 → 函数链 → 副作用，横向分层；新增绿色实线，移除红色虚线，形态变化标在边上。
+- 主题：`system / light / dark` 三态，跟随系统 + localStorage 记忆；首屏脚本先定主题，避免闪烁。
+- 交互：悬停边看快照，点击节点/边固定到 inspector；点击下方事实会高亮对应链路。
+- 图是浏览器里用内联 JSON 排的，页面仍是单文件、无外部依赖。
+
+### 同一 demo 的三份产物
+
+- intentflow：意图层 ±2/1。`format` 与 `direct` 作为两条边同时出现，是这次改动的核心。
+- PR Lens：3 lanes / 7 nodes / 7 edges / 1 flow，渲染 4 个 light/dark SVG。
+- Archify：base/head 两份 architecture JSON，`compare` 输出 `+3 ~1 -0` 组件、`+4 -1` 连接，28/28 checks。
+
+### 结论
+
+三者不冲突：intentflow 产出事实，PR Lens / Archify 负责让人看见。
+下一步值得做的是把意图链自动投影成 graph document，而不是继续手写文档。
+
+详细对比见 [04-compare.md](04-compare.md)。
+
+## 2026-10-29 · 第三轮：独立前端工作台
+
+### 为什么不再用单文件 HTML
+
+上一轮的页面把排版、主题和交互都写在 Go 模板里。
+改一次样式就要重编 265 MB 的二进制，也无法做 diff 和评论。
+
+### 现在的结构
+
+- Go 只做分析。`serve` 命令跑完 diff 后监听 HTTP。
+- `GET /api/payload` 返回 review 与两侧源码。
+- `POST /api/review` 把工作台里整理好的意见写成 `review.md`。
+- `frontend/` 是 React + TypeScript + Vite。Go 用 `http.FileServer` 托管 `frontend/dist`，不嵌入。
+
+### 工作台里能做什么
+
+- 中间的图从 `handleSearch` 分出两条：`findUser` 的 SQL 从 `direct` 变成 `format`，`loadTemplate` 是新增的 env → 文件读写。
+- 左侧是文件树和项目层事实。点击跳到代码。
+- 右侧 SyntaxFlow 结果逐条处理：认为没事，或认为有问题并进入 Review。
+- 代码面板默认统一 diff。选中一段代码后，引用进入底部输入框。
+- 右上角提交：写入 `review.md`，同时复制给 Agent 的 prompt。
+
+### 验证
+
+demo 结果与上一轮一致：意图层 ±2/1，逻辑层 ±6/2，项目层 ±3/0，关注点 5。
+浏览器里验证了：图的分叉、代码跳转到 `main.go:14`、选中引用、评论、提交、搜索、深色主题。
+`review.md` 与 `review-state.json` 已写入 `examples/demo-go/out/`。
+
+设计见 [05-frontend.md](05-frontend.md)。
