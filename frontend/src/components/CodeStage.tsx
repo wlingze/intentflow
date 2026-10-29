@@ -1,11 +1,8 @@
-import { useMemo, useState } from 'react';
 import { baseName, cx, shortPath } from '../lib/format';
-import { layoutBehavior } from '../lib/behavior';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { Quote } from '../types';
 import { DiffView } from './DiffView';
-import { MiniMap } from './MiniMap';
 import { SearchView } from './SearchView';
 import { IconBranch, IconClose, IconDiff, IconSearch } from './Icons';
 import styles from './CodeStage.module.css';
@@ -20,19 +17,13 @@ const STATUS_LABEL: Record<string, string> = {
 export function CodeStage() {
   const state = useApp();
   const dispatch = useAppDispatch();
-  const { files, stats, review } = useReviewData();
-  const [miniOpen, setMiniOpen] = useState(true);
+  const { files, stats } = useReviewData();
 
   const active = files.find((file) => file.path === state.code.active) ?? null;
   const activeStats = active ? stats.get(active.path) : undefined;
   const openFiles = state.code.files
     .map((path) => files.find((file) => file.path === path))
     .filter((file): file is NonNullable<typeof file> => Boolean(file));
-
-  const graph = useMemo(
-    () => (review ? layoutBehavior(review.behavior) : null),
-    [review],
-  );
 
   const addQuote = (quote: Quote) => {
     dispatch({ type: 'composer/quote', quote });
@@ -137,11 +128,6 @@ export function CodeStage() {
         {state.code.mode === 'search' && (
           <span className={styles.searchHint}>搜索范围：{files.length} 个文件的 before / after</span>
         )}
-        {!miniOpen && graph && graph.nodes.length > 0 && (
-          <button type="button" className="btn btnGhost btnSmall" onClick={() => setMiniOpen(true)}>
-            显示缩略图
-          </button>
-        )}
       </div>
 
       <div className={styles.body}>
@@ -157,27 +143,6 @@ export function CodeStage() {
           />
         ) : (
           <div className={styles.empty}>没有打开的文件。从左侧目录树选择一个文件。</div>
-        )}
-
-        {miniOpen && graph && graph.nodes.length > 0 && (
-          <MiniMap
-            graph={graph}
-            activeNodeId={state.selected?.kind === 'node' ? state.selected.id : undefined}
-            onClose={() => setMiniOpen(false)}
-            onSelect={(node) => {
-              if (!node.file) {
-                dispatch({ type: 'toast/show', message: '这个行为节点没有代码位置', kind: 'info' });
-                return;
-              }
-              dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
-              dispatch({
-                type: 'code/target',
-                file: node.file,
-                line: node.line,
-                side: node.delta === 'removed' ? 'before' : 'after',
-              });
-            }}
-          />
         )}
       </div>
     </section>

@@ -89,18 +89,19 @@
   min-height: 0;
   overflow: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 18px 18px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0 18px;
   background-image: radial-gradient(var(--grid) 1px, transparent 1px);
   background-size: 18px 18px;
 }
 
 .canvas {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
-  margin: auto;
+  margin: 0;
+  flex: none;
 }
 
 .stageLabel {
@@ -468,4 +469,34 @@
 
 @media (max-width: 1100px) {
   .ledger { grid-template-columns: minmax(0, 1fr); max-height: 190px; overflow: auto; }
+}
+
+.rowLine {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  opacity: 0.7;
+}
+
+.rowIndex {
+  fill: var(--faint);
+  font: 8.5px var(--mono);
+  letter-spacing: 0.06em;
+}
+
+.rowTitle {
+  fill: var(--dim);
+  font: 10px var(--mono);
+  font-weight: 500;
+}
+
+.row_added { fill: var(--green); }
+.row_modified { fill: var(--amber); }
+.row_removed { fill: var(--red); }
+.row_unchanged { fill: var(--dim); }
+
+.rowMeta {
+  fill: var(--faint);
+  font: 8.5px var(--mono);
+  letter-spacing: 0.04em;
 }

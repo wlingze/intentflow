@@ -3,8 +3,8 @@ import { cx, shortPath, timeLabel } from '../lib/format';
 import { uid } from '../lib/id';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { signalScope, useReviewData } from '../state/selectors';
-import type { Comment, Fact, Signal } from '../types';
-import { IconAlert, IconCheck, IconComment, IconPencil, IconTrash } from './Icons';
+import type { AISummary, Comment, Fact, Signal } from '../types';
+import { IconAlert, IconBot, IconCheck, IconComment, IconPencil, IconTrash } from './Icons';
 import styles from './ReviewPanel.module.css';
 
 type SeverityFilter = 'all' | 'high' | 'warn' | 'info';
@@ -209,10 +209,72 @@ function ReviewCard({
   );
 }
 
+function AIPanel({ ai }: { ai?: AISummary }) {
+  if (!ai || ai.status !== 'ok') {
+    return (
+      <div className={styles.aiEmpty}>
+        <IconBot width={20} height={20} />
+        <h3>{ai?.status === 'error' ? 'LLM 分析失败' : '未启用 LLM 叙述层'}</h3>
+        <p>{ai?.summary || '配置 INTENTFLOW_LLM_BASE_URL 与 INTENTFLOW_LLM_API_KEY 后，会在事实层之上生成中文结论。'}</p>
+        <code>INTENTFLOW_LLM_BASE_URL=… INTENTFLOW_LLM_MODEL=…</code>
+        <span>节点、边、行号仍然只来自 SSA + SyntaxFlow，LLM 不生成事实。</span>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.aiBody}>
+      <article className={styles.aiCard}>
+        <div className={styles.aiHead}>
+          <span className={styles.aiBadge}><IconBot width={12} height={12} /> LLM 结论</span>
+          <span className={styles.aiModel}>{ai.model || 'model'}</span>
+        </div>
+        <p className={styles.aiSummary}>{ai.summary}</p>
+      </article>
+
+      {ai.focus.length > 0 && (
+        <article className={styles.aiCard}>
+          <h3 className={styles.aiTitle}>优先复核</h3>
+          <ol className={styles.focusList}>
+            {ai.focus.map((item, index) => (
+              <li key={`${index}-${item}`}>{item}</li>
+            ))}
+          </ol>
+        </article>
+      )}
+
+      {ai.risks.length > 0 && (
+        <article className={styles.aiCard}>
+          <h3 className={styles.aiTitle}>风险判断</h3>
+          {ai.risks.map((risk, index) => (
+            <div key={`${index}-${risk.title}`} className={styles.risk}>
+              <div className={styles.riskTitle}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                {risk.title}
+              </div>
+              <p>{risk.detail}</p>
+              {risk.evidence.length > 0 && (
+                <div className={styles.riskEvidence}>
+                  {risk.evidence.map((item) => (
+                    <code key={item}>{item}</code>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </article>
+      )}
+
+      <div className={styles.aiNote}>
+        叙述由 LLM 生成；事实来自 SSA + SyntaxFlow。证据可以先在 SyntaxFlow 里核对。
+      </div>
+    </div>
+  );
+}
+
 export function ReviewPanel() {
   const state = useApp();
   const dispatch = useAppDispatch();
-  const { signals, facts } = useReviewData();
+  const { review, signals, facts } = useReviewData();
   const [filter, setFilter] = useState<SeverityFilter>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -246,6 +308,16 @@ export function ReviewPanel() {
         <button
           type="button"
           role="tab"
+          aria-selected={state.rightTab === 'ai'}
+          className={cx(styles.tab, state.rightTab === 'ai' && styles.tabActive)}
+          onClick={() => dispatch({ type: 'tab/set', tab: 'ai' })}
+        >
+          AI
+          <span>{review?.ai?.status === 'ok' ? '✓' : '—'}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={state.rightTab === 'signals'}
           className={cx(styles.tab, state.rightTab === 'signals' && styles.tabActive)}
           onClick={() => dispatch({ type: 'tab/set', tab: 'signals' })}
@@ -265,7 +337,9 @@ export function ReviewPanel() {
         </button>
       </div>
 
-      {state.rightTab === 'signals' ? (
+      {state.rightTab === 'ai' ? (
+        <AIPanel ai={review?.ai} />
+      ) : state.rightTab === 'signals' ? (
         <>
           <div className={styles.filters} role="group" aria-label="按严重度过滤">
             {(['all', 'high', 'warn', 'info'] as const).map((value) => (

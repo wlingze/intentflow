@@ -20,6 +20,8 @@ export type BehaviorScenario = Schemas['BehaviorScenario'];
 export type BehaviorLane = Schemas['BehaviorLane'];
 export type BehaviorStats = Schemas['BehaviorStats'];
 export type BehaviorGraph = Schemas['BehaviorGraph'];
+export type AISummary = Schemas['AiSummary'];
+export type AIRisk = Schemas['AiRisk'];
 export type Review = Schemas['Review'];
 export type CodeFile = Schemas['CodeFile'];
 export type CodeBundle = Schemas['CodeBundle'];
@@ -48,6 +50,8 @@ export interface LaidOutNode extends BehaviorNode {
   y: number;
   width: number;
   height: number;
+  rowKey: string;
+  scenarioId: string;
 }
 
 export interface LaidOutEdge extends BehaviorEdge {
@@ -55,14 +59,31 @@ export interface LaidOutEdge extends BehaviorEdge {
   labelX: number;
   labelY: number;
   pathId: string;
+  rowKey: string;
+}
+
+export interface BehaviorRow {
+  id: string;
+  index: number;
+  title: string;
+  delta: DeltaKind;
+  source: string;
+  shape: string;
+  category: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  nodes: LaidOutNode[];
+  edges: LaidOutEdge[];
 }
 
 export interface BehaviorLayout {
+  rows: BehaviorRow[];
   nodes: LaidOutNode[];
   edges: LaidOutEdge[];
   width: number;
   height: number;
-  stageCount: number;
   nodeWidth: number;
   nodeHeight: number;
 }

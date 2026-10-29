@@ -20,7 +20,7 @@ import type {
   CodeMode,
 } from '../types';
 
-export type RightTab = 'signals' | 'review';
+export type RightTab = 'ai' | 'signals' | 'review';
 
 export interface CodeState {
   files: string[];
@@ -105,7 +105,7 @@ const initialState: AppState = {
   loading: true,
   error: null,
   view: 'graph',
-  rightTab: 'signals',
+  rightTab: 'ai',
   selected: null,
   peek: { open: false },
   comments: [],
@@ -150,6 +150,7 @@ function reducer(state: AppState, action: Action): AppState {
         comments: action.persisted?.comments ?? [],
         dismissed: action.persisted?.dismissed ?? [],
         kept: action.persisted?.kept ?? [],
+        rightTab: action.payload.review.ai?.status === 'ok' ? 'ai' : 'signals',
         code: {
           ...state.code,
           active,

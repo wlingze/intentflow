@@ -1,19 +1,16 @@
 package scan
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/yaklang/yaklang/common/yak/ssa_compile"
 	"github.com/yaklang/yaklang/common/yak/ssaapi"
-	"github.com/yaklang/yaklang/common/yak/ssaapi/ssaconfig"
 
 	"github.com/yaklang/intentflow/internal/model"
 )
 
-// IntentFacts 用 SSA + SyntaxFlow 抽取 L1 意图事实。
+// intentFacts 用 SSA + SyntaxFlow 抽取 L1 意图事实。
 //
 // 每个 Sink 跑一条 SyntaxFlow 规则，对每个匹配到的调用做：
 //  1. 记录调用所在函数与位置；
@@ -24,30 +21,13 @@ import (
 //
 // 返回的事实 Confidence 为 DERIVED：存在性来自 IR，
 // 但「来源分类」「到达形态」「跨函数路径」经过了一层规则映射。
-func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, []string, error) {
+func intentFacts(prog *ssaapi.Program, programName string) (model.FactSet, []string, error) {
 	set := model.NewFactSet()
 	var notes []string
-
-	cfg, err := ssaconfig.NewCLIScanConfig(
-		ssaconfig.WithCodeSourceKind(ssaconfig.CodeSourceLocal),
-		ssaconfig.WithCodeSourceLocalFile(root),
-		ssaconfig.WithProjectRawLanguage("golang"),
-		ssaconfig.WithSetProgramName(programName),
-		ssaconfig.WithCompileMemoryCompile(true),
-		ssaconfig.WithSyntaxFlowMemory(true),
-	)
-	if err != nil {
-		return set, notes, fmt.Errorf("构建编译配置失败: %w", err)
+	if prog == nil {
+		return set, notes, fmt.Errorf("SSA 程序为空")
 	}
 
-	prog, err := ssa_compile.CompileWithConfig(ctx, cfg)
-	if err != nil {
-		return set, notes, fmt.Errorf("SSA 编译失败: %w", err)
-	}
-
-	// Go 前端对标准库的签名覆盖不完整（fmt.Sprintf / os.Getenv 等当前是
-	// Undefined）。这不影响调用边与参数回溯，但会削弱类型级分析。
-	// 把这类错误收敛成一条可读的 note，不逐条刷屏。
 	if errs := prog.GetErrors(); len(errs) > 0 {
 		notes = append(notes, fmt.Sprintf("SSA 编译产生 %d 条诊断（多为 Go 标准库签名缺失，不影响调用链回溯）", len(errs)))
 	}
@@ -133,10 +113,9 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 			}
 			sort.Strings(path[1:])
 
+			// 标题只写真实调用者。path 是追源时碰到的函数集合，不是调用链；
+			// 用它拼前缀会造出「writeRuntimeLinkArgsFile → FileReadFile」这种假链。
 			title := fmt.Sprintf("%s：数据流入 %s", caller, sink.Label)
-			if len(path) > 1 {
-				title = fmt.Sprintf("%s → %s：数据流入 %s", path[len(path)-1], caller, sink.Label)
-			}
 
 			set.Add(model.Fact{
 				// 身份由「函数 + 副作用类别 + 来源类别 + 到达形态」决定。
@@ -332,26 +311,4 @@ func position(v *ssaapi.Value, programName string) string {
 		f = f[i+1:]
 	}
 	return fmt.Sprintf("%s:%d", f, l)
-}
-
-func compact(s string, n int) string {
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\t", " ")
-	if len(s) > n {
-		return s[:n] + "…"
-	}
-	return s
-}
-
-func uniqueSorted(in []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	sort.Strings(out)
-	return out
 }

@@ -1,0 +1,898 @@
+package compiler
+
+import (
+	"fmt"
+	"unsafe"
+
+	"github.com/yaklang/go-llvm"
+	"github.com/yaklang/yaklang/common/yak/ssa"
+	"github.com/yaklang/yaklang/common/yak/ssa2llvm/runtime/abi"
+)
+
+// compileJump creates an unconditional branch to the target block.
+func (c *Compiler) compileJump(inst *ssa.Jump) error {
+	if info := c.switchHandlerForJump(inst); info != nil {
+		return c.compileSwitchHandlerJump(inst, info)
+	}
+	targetBlock, ok := c.ssaBlockEntry(inst.To)
+	if !ok {
+		return fmt.Errorf("compileJump: target block %d not found", inst.To)
+	}
+	// A jump into a loop exit (break) bypasses the latch, so loop-carried
+	// phi values computed in the current iteration (e.g. t24 from
+	// `t += 1; if i == 10 { break }`) are never flushed by the normal
+	// latch-side writeback and the exit reads a stale value. Flush the
+	// condition block's phi slots with their latch-edge values here.
+	if fn := inst.GetFunc(); fn != nil {
+		c.emitLoopExitPhiWriteback(fn, inst.To)
+	}
+	c.Builder.CreateBr(targetBlock)
+	return nil
+}
+
+// emitLoopExitPhiWriteback flushes loop-carried phi values when a jump
+// targets a loop exit block directly (break). For every loop whose exit is
+// the jump target, the condition block's phis receive their latch-edge value
+// (the current iteration's computed value) so reads after the loop observe
+// the final iteration's state.
+func (c *Compiler) emitLoopExitPhiWriteback(fn *ssa.Function, exitBlockID int64) {
+	if fn == nil || exitBlockID <= 0 || c.function == nil {
+		return
+	}
+	// Resolving the latch value may lazily materialize a definition in its
+	// source block. Keep the break's insertion point intact; otherwise the
+	// branch for the break is emitted into that source block instead of the
+	// block containing the Jump.
+	savedBB := c.currentInsertBlock()
+	savedActive := c.function.activeBlockID
+	defer func() {
+		c.function.activeBlockID = savedActive
+		if !savedBB.IsNil() {
+			c.restoreInsertPoint(savedBB)
+		}
+	}()
+	for _, blockID := range fn.Blocks {
+		blockVal, ok := fn.GetValueById(blockID)
+		if !ok {
+			continue
+		}
+		block, ok := ssa.ToBasicBlock(blockVal)
+		if !ok || block == nil {
+			continue
+		}
+		for _, instID := range block.Insts {
+			instVal, ok := fn.GetInstructionById(instID)
+			if !ok {
+				continue
+			}
+			loop, ok := instVal.(*ssa.Loop)
+			if !ok || loop == nil || loop.Exit != exitBlockID {
+				continue
+			}
+			condBlock := loop.GetBlock()
+			if condBlock == nil {
+				continue
+			}
+			for _, phiID := range condBlock.Phis {
+				phiVal, ok := fn.GetValueById(phiID)
+				if !ok {
+					continue
+				}
+				phi, ok := phiVal.(*ssa.Phi)
+				if !ok || phi == nil || len(phi.Edge) == 0 {
+					continue
+				}
+				// The latch-edge value is the last edge (entry values come
+				// first; rotateSelfLast keeps edge order aligned with the CFG
+				// predecessors). Skip when it is not resolvable here.
+				latchValueID := phi.Edge[len(phi.Edge)-1]
+				if latchValueID <= 0 {
+					continue
+				}
+				val, err := c.getValue(loop, latchValueID)
+				if err != nil || val.IsNil() {
+					continue
+				}
+				c.storeSSAValue(phiID, val)
+			}
+		}
+	}
+}
+
+func (c *Compiler) switchHandlerForJump(inst *ssa.Jump) *switchHandlerInfo {
+	if c == nil || c.function == nil || inst == nil || inst.GetBlock() == nil || c.function.switchHandlers == nil {
+		return nil
+	}
+	info := c.function.switchHandlers[inst.GetBlock().GetId()]
+	if info == nil || len(info.labelIDs) == 0 || info.trueBlockID <= 0 || info.falseBlockID <= 0 {
+		return nil
+	}
+	return info
+}
+
+func (c *Compiler) compileSwitchHandlerJump(inst *ssa.Jump, info *switchHandlerInfo) error {
+	trueBlock, ok := c.ssaBlockEntry(info.trueBlockID)
+	if !ok || trueBlock.IsNil() {
+		return fmt.Errorf("compileSwitchHandlerJump: true block %d not found", info.trueBlockID)
+	}
+	falseBlock, ok := c.ssaBlockEntry(info.falseBlockID)
+	if !ok || falseBlock.IsNil() {
+		return fmt.Errorf("compileSwitchHandlerJump: false block %d not found", info.falseBlockID)
+	}
+	match, err := c.emitSwitchLabelMatch(inst, info.condID, info.labelIDs)
+	if err != nil {
+		return err
+	}
+	c.Builder.CreateCondBr(match, trueBlock, falseBlock)
+	return nil
+}
+
+func (c *Compiler) emitSwitchLabelMatch(contextInst ssa.Instruction, condID int64, labelIDs []int64) (llvm.Value, error) {
+	if len(labelIDs) == 0 {
+		return llvm.ConstInt(c.LLVMCtx.Int1Type(), 0, false), nil
+	}
+	// `switch { case expr: }` has no switch value. Each case expression is
+	// already the condition, so branch on its truth instead of comparing it
+	// to a missing cond (that comparison was skipped and every value took
+	// the first case).
+	if condID <= 0 {
+		return c.emitSwitchLabelTruthy(contextInst, labelIDs)
+	}
+	var combined llvm.Value
+	for _, labelID := range labelIDs {
+		if labelID <= 0 {
+			continue
+		}
+		match, err := c.emitSwitchLabelEqual(contextInst, condID, labelID)
+		if err != nil {
+			return llvm.Value{}, err
+		}
+		if combined.IsNil() {
+			combined = match
+			continue
+		}
+		combined = c.Builder.CreateOr(combined, match, "switch_case_any")
+	}
+	if combined.IsNil() {
+		return llvm.ConstInt(c.LLVMCtx.Int1Type(), 0, false), nil
+	}
+	return combined, nil
+}
+
+func (c *Compiler) emitSwitchLabelTruthy(contextInst ssa.Instruction, labelIDs []int64) (llvm.Value, error) {
+	var combined llvm.Value
+	for _, labelID := range labelIDs {
+		if labelID <= 0 {
+			continue
+		}
+		val, err := c.getValue(contextInst, labelID)
+		if err != nil {
+			return llvm.Value{}, err
+		}
+		bit := c.coerceToI1(c.coerceToInt64(val), "switch_cond")
+		if combined.IsNil() {
+			combined = bit
+			continue
+		}
+		combined = c.Builder.CreateOr(combined, bit, "switch_cond_any")
+	}
+	if combined.IsNil() {
+		return llvm.ConstInt(c.LLVMCtx.Int1Type(), 0, false), nil
+	}
+	return combined, nil
+}
+
+func (c *Compiler) emitSwitchLabelEqual(contextInst ssa.Instruction, condID, labelID int64) (llvm.Value, error) {
+	lhs, lhsRoot, err := c.resolveContextCallArg(contextInst, condID, true)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	rhs, rhsRoot, err := c.resolveContextCallArg(contextInst, labelID, true)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	spec := contextCallSpec{
+		inst:      nilResultInstruction{Instruction: contextInst},
+		kind:      abi.KindDispatch,
+		target:    llvm.ConstInt(c.LLVMCtx.Int64Type(), uint64(abi.IDRuntimeEq), false),
+		args:      []contextCallArg{{value: lhs, root: lhsRoot}, {value: rhs, root: rhsRoot}, {value: llvm.ConstInt(c.LLVMCtx.Int64Type(), 0, false)}},
+		async:     false,
+		ctxName:   "yak_switch_eq_ctx",
+		errPrefix: "emitSwitchLabelEqual",
+	}
+	result, err := c.emitContextCall(spec)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	return c.coerceToI1(result, "switch_case_match"), nil
+}
+
+type nilResultInstruction struct {
+	ssa.Instruction
+}
+
+func (n nilResultInstruction) GetId() int64 {
+	return 0
+}
+
+// compileIf creates a conditional branch.
+// It handles conversion of the condition value to i1 if necessary.
+func (c *Compiler) compileIf(inst *ssa.If) error {
+	condVal, err := c.getValue(inst, inst.Cond)
+	if err != nil {
+		return err
+	}
+
+	condVal = c.coerceToI1(condVal, "if_cond")
+
+	trueBlock, ok := c.ssaBlockEntry(inst.True)
+	if !ok {
+		return fmt.Errorf("compileIf: true block %d not found", inst.True)
+	}
+
+	falseBlock, ok := c.ssaBlockEntry(inst.False)
+	if !ok {
+		return fmt.Errorf("compileIf: false block %d not found", inst.False)
+	}
+
+	c.Builder.CreateCondBr(condVal, trueBlock, falseBlock)
+	return nil
+}
+
+// compileLoop creates a conditional branch for loop headers.
+// It branches to Body when the condition is true, otherwise to Exit.
+func (c *Compiler) compileLoop(inst *ssa.Loop) error {
+	condVal, err := c.getValue(inst, inst.Cond)
+	if err != nil {
+		return err
+	}
+
+	condVal = c.coerceToI1(condVal, "loop_cond")
+
+	bodyBlock, ok := c.ssaBlockEntry(inst.Body)
+	if !ok {
+		return fmt.Errorf("compileLoop: body block %d not found", inst.Body)
+	}
+	exitBlock, ok := c.ssaBlockEntry(inst.Exit)
+	if !ok {
+		return fmt.Errorf("compileLoop: exit block %d not found", inst.Exit)
+	}
+
+	c.Builder.CreateCondBr(condVal, bodyBlock, exitBlock)
+	return nil
+}
+
+func (c *Compiler) compileSwitch(inst *ssa.Switch) error {
+	if inst == nil {
+		return fmt.Errorf("compileSwitch: nil switch")
+	}
+	defaultBlock := llvm.BasicBlock{}
+	if inst.DefaultBlock != nil {
+		defaultBlock, _ = c.ssaBlockEntry(inst.DefaultBlock.GetId())
+	}
+	if defaultBlock.IsNil() {
+		return fmt.Errorf("compileSwitch: default block not found")
+	}
+	for _, label := range inst.Label {
+		if label.Dest > 0 {
+			caseBlock, ok := c.ssaBlockEntry(label.Dest)
+			if !ok || caseBlock.IsNil() {
+				return fmt.Errorf("compileSwitch: case block %d not found", label.Dest)
+			}
+			c.Builder.CreateBr(caseBlock)
+			return nil
+		}
+	}
+	c.Builder.CreateBr(defaultBlock)
+	return nil
+}
+
+// compilePhi reserves an entry alloca slot for the phi. Incoming edge values are
+// stored by resolvePhi; uses load from the slot (mem2reg-friendly).
+func (c *Compiler) compilePhi(inst *ssa.Phi) error {
+	if inst == nil {
+		return fmt.Errorf("compilePhi: nil phi")
+	}
+	c.ensureValueSlot(inst.GetId())
+	if inst.IsMember() && inst.GetObject() != nil && inst.GetKey() != nil {
+		c.queuePendingMemberSet(inst, inst.GetId(), inst.GetObject(), inst.GetKey(), true)
+	}
+	return nil
+}
+
+// phiMemberIsLoopCarriedMapRead reports whether a phi is a loop-carried
+// member read (e.g. the front end's m[i] merge) rather than a genuine member
+// write. Such phis must not emit set_field against the freshly created map.
+func (c *Compiler) phiMemberIsLoopCarriedMapRead(phi *ssa.Phi) bool {
+	if phi == nil || !phi.IsMember() || phi.GetObject() == nil {
+		return false
+	}
+	obj := phi.GetObject()
+	if mk, ok := obj.(*ssa.Make); ok && mk != nil && phi.GetBlock() != nil && mk.GetBlock() != nil {
+		return mk.GetBlock().GetId() != phi.GetBlock().GetId()
+	}
+	return false
+}
+
+func (c *Compiler) ensurePhiNode(phi *ssa.Phi) error {
+	if phi == nil {
+		return fmt.Errorf("ensurePhiNode: nil phi")
+	}
+	c.ensureValueSlot(phi.GetId())
+	return nil
+}
+
+func (c *Compiler) llvmValueTypeForSSA(t ssa.Type) llvm.Type {
+	// SSA2LLVM currently uses a single `i64` value representation for all YakSSA values.
+	// Heap/stack addresses are carried as uintptr/i64 and cast to pointers only when
+	// calling runtime/extern helpers.
+	return c.LLVMCtx.Int64Type()
+}
+
+func (c *Compiler) inferPhiType(inst *ssa.Phi) llvm.Type {
+	return c.llvmValueTypeForSSA(inst.GetType())
+}
+
+func (c *Compiler) ssaValueIsFunction(val ssa.Value) bool {
+	if val == nil {
+		return false
+	}
+	if t := val.GetType(); t != nil && t.GetTypeKind() == ssa.FunctionTypeKind {
+		return true
+	}
+	if _, ok := ssa.ToFunction(val); ok {
+		return true
+	}
+	return false
+}
+
+// ssaValueIsBytes reports a bytes/byte value. Those words are C strings, the
+// same representation as a string literal, but they are not pointer types.
+func (c *Compiler) ssaValueIsBytes(val ssa.Value) bool {
+	if val == nil {
+		return false
+	}
+	if t := val.GetType(); t != nil {
+		switch t.GetTypeKind() {
+		case ssa.BytesTypeKind, ssa.ByteTypeKind:
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Compiler) ssaValueIsPointer(val ssa.Value, fn *ssa.Function) bool {
+	if val == nil {
+		return false
+	}
+
+	if t := val.GetType(); t != nil {
+		switch t.GetTypeKind() {
+		case ssa.ObjectTypeKind, ssa.SliceTypeKind, ssa.MapTypeKind, ssa.PointerKind, ssa.StringTypeKind, ssa.FunctionTypeKind:
+			return true
+		case ssa.StructTypeKind:
+			return true
+		}
+	}
+
+	switch v := val.(type) {
+	case *ssa.ConstInst:
+		return v.IsString()
+	case *ssa.Make:
+		return true
+	case *ssa.Call:
+		return c.callReturnsPointer(v, fn)
+	}
+
+	return false
+}
+
+func (c *Compiler) callReturnsPointer(call *ssa.Call, fn *ssa.Function) bool {
+	if call == nil {
+		return false
+	}
+
+	calleeName := c.resolveCalleeName(fn, call.Method)
+
+	if binding, ok := c.getExternBinding(calleeName); ok {
+		switch binding.Return {
+		case ExternTypePtr:
+			return true
+		default:
+			return false
+		}
+	}
+
+	switch calleeName {
+	case "malloc":
+		return true
+	default:
+		return false
+	}
+}
+
+// phiEdgeStoreBlock returns the block that should store one incoming phi
+// edge. When a loop-carried phi is placed after the loop body, the front end
+// can attach the initial edge to a body predecessor. Storing that edge there
+// resets the value on every iteration, so it belongs in the loop preheader.
+func phiEdgeStoreBlock(fn *ssa.Function, predID, edgeValID int64) int64 {
+	if preheaderID, ok := loopPreheaderForPhiInitial(fn, predID, edgeValID); ok {
+		return preheaderID
+	}
+	return predID
+}
+
+func loopPreheaderForPhiInitial(fn *ssa.Function, predID, edgeValID int64) (int64, bool) {
+	if fn == nil || predID <= 0 || edgeValID <= 0 {
+		return 0, false
+	}
+	edgeObj, ok := fn.GetValueById(edgeValID)
+	if !ok || edgeObj == nil {
+		return 0, false
+	}
+	// Only a constant is safe to replay from the preheader. Moving a
+	// closure or call there stores the result before its defining
+	// instruction and fails LLVM dominance.
+	if _, isConst := edgeObj.(*ssa.ConstInst); !isConst {
+		return 0, false
+	}
+	edgeInst, ok := edgeObj.(ssa.Instruction)
+	if !ok || edgeInst == nil || edgeInst.GetBlock() == nil {
+		return 0, false
+	}
+	defID := edgeInst.GetBlock().GetId()
+	if defID <= 0 {
+		return 0, false
+	}
+	for _, blockID := range fn.Blocks {
+		blockVal, ok := fn.GetValueById(blockID)
+		if !ok {
+			continue
+		}
+		block, ok := ssa.ToBasicBlock(blockVal)
+		if !ok || block == nil {
+			continue
+		}
+		for _, instID := range block.Insts {
+			loopVal, ok := fn.GetInstructionById(instID)
+			loop, isLoop := loopVal.(*ssa.Loop)
+			if !ok || !isLoop || loop == nil || loop.GetBlock() == nil {
+				continue
+			}
+			headerID := loop.GetBlock().GetId()
+			if headerID <= 0 || defID == headerID {
+				continue
+			}
+			if !blockReachableInLoop(fn, loop.Body, predID, loop.Exit) {
+				continue
+			}
+			if blockReachableInLoop(fn, loop.Body, defID, loop.Exit) {
+				continue
+			}
+			headerVal, ok := fn.GetValueById(headerID)
+			headerBlock, ok := ssa.ToBasicBlock(headerVal)
+			if !ok || headerBlock == nil {
+				return headerID, true
+			}
+			for _, preheaderID := range headerBlock.Preds {
+				if !blockReachableInLoop(fn, loop.Body, preheaderID, loop.Exit) {
+					return preheaderID, true
+				}
+			}
+			return headerID, true
+		}
+	}
+	return 0, false
+}
+
+// missingPhiEdgeCarries reports that a phi edge points at a value the front
+// end deleted while flattening a loop. The predecessor is inside the loop and
+// another edge is the initializer from outside it, so the deleted edge is the
+// unchanged loop value, not a zero.
+func missingPhiEdgeCarries(fn *ssa.Function, phi *ssa.Phi, predID int64) bool {
+	if fn == nil || phi == nil || predID <= 0 {
+		return false
+	}
+	for _, blockID := range fn.Blocks {
+		blockVal, ok := fn.GetValueById(blockID)
+		if !ok {
+			continue
+		}
+		block, ok := ssa.ToBasicBlock(blockVal)
+		if !ok || block == nil {
+			continue
+		}
+		for _, instID := range block.Insts {
+			loopVal, ok := fn.GetInstructionById(instID)
+			loop, isLoop := loopVal.(*ssa.Loop)
+			if !ok || !isLoop || loop == nil {
+				continue
+			}
+			if !blockReachableInLoop(fn, loop.Body, predID, loop.Exit) {
+				continue
+			}
+			for _, edgeID := range phi.Edge {
+				edgeObj, ok := fn.GetValueById(edgeID)
+				if !ok || edgeObj == nil {
+					continue
+				}
+				edgeInst, ok := edgeObj.(ssa.Instruction)
+				if !ok || edgeInst == nil || edgeInst.GetBlock() == nil {
+					continue
+				}
+				if !blockReachableInLoop(fn, loop.Body, edgeInst.GetBlock().GetId(), loop.Exit) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func blockReachableInLoop(fn *ssa.Function, startID, targetID, exitID int64) bool {
+	if fn == nil || startID <= 0 || targetID <= 0 {
+		return false
+	}
+	seen := map[int64]struct{}{}
+	var visit func(int64) bool
+	visit = func(id int64) bool {
+		if id == targetID {
+			return true
+		}
+		if id <= 0 || id == exitID {
+			return false
+		}
+		if _, ok := seen[id]; ok {
+			return false
+		}
+		seen[id] = struct{}{}
+		value, ok := fn.GetValueById(id)
+		if !ok {
+			return false
+		}
+		block, ok := ssa.ToBasicBlock(value)
+		if !ok || block == nil {
+			return false
+		}
+		for _, nextID := range block.Succs {
+			if visit(nextID) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(startID)
+}
+
+// resolvePhi stores incoming edge values into each predecessor's outgoing slot store.
+func (c *Compiler) resolvePhi(inst *ssa.Phi) error {
+	if inst == nil {
+		return fmt.Errorf("resolvePhi: nil phi")
+	}
+	phiID := inst.GetId()
+	c.ensureValueSlot(phiID)
+
+	block := inst.GetBlock()
+	if block == nil {
+		return fmt.Errorf("resolvePhi: phi %d has no block", phiID)
+	}
+	blockID := block.GetId()
+
+	fn := inst.GetFunc()
+	if fn == nil {
+		return fmt.Errorf("resolvePhi: function for phi %d is nil", phiID)
+	}
+
+	blockVal, ok := fn.GetValueById(blockID)
+	if !ok {
+		return fmt.Errorf("resolvePhi: block %d not found in function", blockID)
+	}
+
+	bbSsa, ok := blockVal.(*ssa.BasicBlock)
+	if !ok {
+		return fmt.Errorf("resolvePhi: value %d is not *ssa.BasicBlock", blockID)
+	}
+	edges := inst.Edge
+	preds := bbSsa.Preds
+	if len(preds) == 0 {
+		preds = predecessorBlockIDs(fn, blockID)
+	}
+
+	edgeByPred := make(map[int64]int64, len(preds))
+	for i, predBlockID := range preds {
+		if i < len(edges) {
+			edgeByPred[predBlockID] = edges[i]
+		}
+	}
+
+	phiBB, ok := c.Blocks[blockID]
+	if !ok || phiBB.IsNil() {
+		return fmt.Errorf("resolvePhi: llvm block %d not found", blockID)
+	}
+
+	zero := llvm.ConstInt(c.inferPhiType(inst), 0, false)
+
+	prevActive := int64(0)
+	if c.function != nil {
+		prevActive = c.function.activeBlockID
+	}
+	defer func() {
+		if c.function != nil {
+			c.function.activeBlockID = prevActive
+		}
+	}()
+
+	resolveEdge := func(predBlockID int64, edgeValID int64) llvm.Value {
+		if edgeValID <= 0 {
+			return zero
+		}
+		edgeObj, ok := fn.GetValueById(edgeValID)
+		if !ok || edgeObj == nil {
+			if missingPhiEdgeCarries(fn, inst, predBlockID) {
+				return c.loadSSAValue(inst.GetId())
+			}
+			return zero
+		}
+		if undef, ok := edgeObj.(*ssa.Undefined); ok && undef != nil {
+			switch undef.Kind {
+			case ssa.UndefinedValueInValid, ssa.UndefinedMemberInValid:
+				return zero
+			}
+		}
+		resolved, err := c.resolvePhiIncomingValue(inst, fn, predBlockID, edgeValID)
+		if err != nil || resolved.IsNil() {
+			return zero
+		}
+		return resolved
+	}
+
+	emitPredStore := func(predBlockID int64, edgeValID int64) {
+		predBB, ok := c.Blocks[predBlockID]
+		if !ok || predBB.IsNil() {
+			return
+		}
+		c.setInsertPointBeforeTerminator(predBB)
+		if c.function != nil {
+			c.function.activeBlockID = predBlockID
+		}
+		resolved := resolveEdge(predBlockID, edgeValID)
+		c.setInsertPointBeforeTerminator(predBB)
+		if c.function != nil {
+			c.function.activeBlockID = predBlockID
+		}
+		c.storeSSAValue(phiID, resolved)
+	}
+
+	emitMemberSet := func() error {
+		c.setInsertPointBeforeTerminator(phiBB)
+		if c.function != nil {
+			c.function.activeBlockID = blockID
+		}
+		if c.phiMemberIsLoopCarriedMapRead(inst) && c.hasAssignedMemberCallVariable(inst) {
+			// The front end represents a loop-body member write (m[i] = i)
+			// as a loop-carried member phi: the write is merged into the
+			// condition block. Emit it here, in the phi's own block, where
+			// both the key (the loop phi) and the value (this phi) hold the
+			// current iteration's words.
+			if err := c.maybeEmitMemberSet(inst, inst, phiID); err != nil {
+				return err
+			}
+			obj := inst.GetObject()
+			key := inst.GetKey()
+			if obj == nil || key == nil {
+				return nil
+			}
+			if !c.hasValueSlot(obj.GetId()) {
+				if _, err := c.getValue(inst, obj.GetId()); err != nil {
+					return err
+				}
+			}
+			objVal := c.loadSSAValue(obj.GetId())
+			phiVal := c.loadSSAValue(phiID)
+			c.emitRuntimeSetFieldByKey(inst, objVal, key, c.resolveMemberKeyString(key), phiVal, inst, phiID)
+			return nil
+		}
+		if err := c.maybeEmitMemberSet(inst, inst, phiID); err != nil {
+			return err
+		}
+		if inst.IsMember() && inst.GetObject() != nil {
+			if objInst, ok := inst.GetObject().(ssa.Instruction); ok && objInst != nil {
+				return c.withInstructionInsertPoint(objInst, func() error {
+					return c.flushPendingMemberSets(objInst, inst.GetObject(), inst.GetKey())
+				})
+			}
+		}
+		return nil
+	}
+
+	// Prefer SSA predecessor order (aligned with phi edges) over LLVM CFG discovery.
+	if len(preds) > 0 {
+		for i, predBlockID := range preds {
+			edgeValID := edgeByPred[predBlockID]
+			if edgeValID == 0 && i < len(edges) {
+				edgeValID = edges[i]
+			}
+			emitPredStore(phiEdgeStoreBlock(fn, predBlockID, edgeValID), edgeValID)
+		}
+		// try/catch phis carry one edge per scope branch, but the catch body is
+		// not a CFG predecessor of the done block. The extra edges are the
+		// catch assignments; store them at the end of the catch so the done
+		// block observes that version.
+		if len(edges) > len(preds) && c.function != nil && c.function.catchTargetByBlock != nil {
+			for _, edgeValID := range edges[len(preds):] {
+				if edgeValID <= 0 {
+					continue
+				}
+				edgeObj, ok := fn.GetValueById(edgeValID)
+				if !ok || edgeObj == nil {
+					continue
+				}
+				if edgeObj.IsLazy() {
+					if self := edgeObj.Self(); self != nil {
+						if unwrapped, ok := self.(ssa.Value); ok && unwrapped != nil {
+							edgeObj = unwrapped
+						}
+					}
+				}
+				edgeInst, ok := edgeObj.(ssa.Instruction)
+				if !ok || edgeInst == nil || edgeInst.GetBlock() == nil {
+					continue
+				}
+				defBlockID := edgeInst.GetBlock().GetId()
+				if defBlockID <= 0 || c.function.catchTargetByBlock[defBlockID] != blockID {
+					continue
+				}
+				emitPredStore(defBlockID, edgeValID)
+			}
+		}
+		if err := c.publishPhiClosureCapture(fn, inst); err != nil {
+			return err
+		}
+		return emitMemberSet()
+	}
+
+	llvmPreds := c.gatherLLVMPredecessors(phiBB)
+	for _, predBB := range llvmPreds {
+		predID := c.blockIDForLLVM(predBB)
+		emitPredStore(predID, edgeByPred[predID])
+	}
+	if err := c.publishPhiClosureCapture(fn, inst); err != nil {
+		return err
+	}
+
+	return emitMemberSet()
+}
+
+func (c *Compiler) resolvePhiIncomingValue(contextInst *ssa.Phi, fn *ssa.Function, predID int64, edgeValID int64) (llvm.Value, error) {
+	zero := llvm.ConstInt(c.LLVMCtx.Int64Type(), 0, false)
+	if fn == nil || edgeValID <= 0 {
+		return zero, nil
+	}
+	edgeObj, ok := fn.GetValueById(edgeValID)
+	if !ok || edgeObj == nil {
+		return zero, nil
+	}
+	// An undefined member placeholder (e.g. the front end's m[i] read merge
+	// in a loop) is normally resolved at its real use site, not as a phi
+	// edge. But a genuine member read (e.g. the && chain's m["a"] operand)
+	// must be resolved dynamically here; only fall back to zero when the
+	// object/key chain is unavailable.
+	if undef, ok := edgeObj.(*ssa.Undefined); ok && undef != nil && undef.IsMember() {
+		if c.shouldReadMemberValueDynamically(undef, edgeValID) {
+			if err := c.compileDynamicMemberValue(contextInst, undef); err == nil {
+				if val, ok := c.getCachedValue(contextInst, edgeValID); ok && !val.IsNil() {
+					return val, nil
+				}
+			}
+		}
+		return zero, nil
+	}
+	if sideEffect, ok := edgeObj.(*ssa.SideEffect); ok && sideEffect != nil && sideEffect.GetBlock() != nil &&
+		sideEffect.GetBlock().GetId() == predID {
+		if err := c.compileSideEffectValue(sideEffect); err != nil {
+			return llvm.Value{}, err
+		}
+		if resolved, ok := c.getCachedValue(sideEffect, edgeValID); ok && !resolved.IsNil() {
+			return resolved, nil
+		}
+		return zero, nil
+	}
+	resolved, err := c.getValue(contextInst, edgeValID)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	if c.isSSAValueStored(edgeValID) {
+		if predBB, ok := c.Blocks[predID]; ok && !predBB.IsNil() {
+			c.setInsertPointBeforeTerminator(predBB)
+			if c.function != nil {
+				c.function.activeBlockID = predID
+			}
+			return c.loadSSAValue(edgeValID), nil
+		}
+	}
+	return resolved, nil
+}
+
+func predecessorBlockIDs(fn *ssa.Function, blockID int64) []int64 {
+	if fn == nil || blockID <= 0 {
+		return nil
+	}
+	var preds []int64
+	for _, fromID := range collectFunctionBlockIDs(fn) {
+		fromVal, ok := fn.GetValueById(fromID)
+		if !ok {
+			continue
+		}
+		fromBB, ok := ssa.ToBasicBlock(fromVal)
+		if !ok || fromBB == nil {
+			continue
+		}
+		for _, succID := range fromBB.Succs {
+			if succID == blockID {
+				preds = append(preds, fromID)
+				break
+			}
+		}
+	}
+	return preds
+}
+
+func (c *Compiler) gatherLLVMPredecessors(target llvm.BasicBlock) []llvm.BasicBlock {
+	if target.IsNil() {
+		return nil
+	}
+	targetID := c.blockIDForLLVM(target)
+	if targetID <= 0 {
+		return nil
+	}
+
+	var preds []llvm.BasicBlock
+	for fromID, fromBB := range c.Blocks {
+		if fromID == targetID {
+			continue
+		}
+		if c.terminatorJumpsTo(fromBB, target) {
+			preds = append(preds, fromBB)
+		}
+	}
+	return preds
+}
+
+func (c *Compiler) blockIDForLLVM(target llvm.BasicBlock) int64 {
+	for id, bb := range c.Blocks {
+		if bb.C == target.C {
+			return id
+		}
+	}
+	return 0
+}
+
+func (c *Compiler) terminatorJumpsTo(from, target llvm.BasicBlock) bool {
+	term := c.lastInstruction(from)
+	if term.IsNil() || target.IsNil() {
+		return false
+	}
+	targetPtr := unsafe.Pointer(target.C)
+	matches := func(op llvm.Value) bool {
+		if op.IsNil() {
+			return false
+		}
+		return unsafe.Pointer(op.C) == targetPtr
+	}
+	switch term.NumOperands() {
+	case 1:
+		return matches(term.Operand(0))
+	case 3:
+		return matches(term.Operand(1)) || matches(term.Operand(2))
+	default:
+		return false
+	}
+}
+
+func (c *Compiler) lastInstruction(bb llvm.BasicBlock) llvm.Value {
+	var last llvm.Value
+	for inst := bb.FirstInstruction(); !inst.IsNil(); inst = inst.NextInstruction() {
+		last = inst
+	}
+	return last
+}

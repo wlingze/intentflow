@@ -6,30 +6,40 @@
 ```
 git diff（或两个目录）
         │
-        ├── L3 项目结构层 ── go/ast ────── import、函数定义
-        ├── L2 逻辑结构层 ── go/ast ────── 函数调用边
-        └── L1 意图层     ── SSA + SF ──── 数据从入口到副作用
+        ├── L3 项目结构层 ── SSA ──────── 文件、函数定义
+        ├── L2 逻辑结构层 ── SSA ──────── 函数调用边、分支
+        └── L1 意图层     ── SSA + SF ─── 数据从入口到副作用
                                    │
                                    ▼
                         review.json（agent）+ 行为工作台（人）
                         schema/openapi.yaml 生成两侧类型
 ```
 
-## 为什么 L3/L2 不用 SSA
+## 为什么不用 go/ast
 
-`import "os/exec"` 是语法事实，`findUser` 调了 `Query` 也是语法事实。go/ast 一百行就能拿到，确定、快速、零依赖。
+早期版本用 go/ast 算 L3/L2，理由是「快」。代价是两套坐标系：
 
-用 SSA 去算这些，等于用显微镜看路牌 —— 慢、复杂，且引入前端 bug 的风险。
+- AST 的行号、函数名、调用点与 SSA 的 `Call` 指令可能对不上。
+- 同一个 `if` 在 AST 里是 `IfStmt`，在 SSA 里是 `*ssa.If`；两套判定逻辑会给出不同分支。
+- 改一处调用关系，需要同时修两个分析器。
 
-SSA 只在 L1 有不可替代性：**只有 IR 能看到 `r.URL.Query().Get("name")` 的值怎么流到 `db.Query(...)` 的参数里。**
+现在只编译一次 SSA，三层事实都从同一份 IR 读出：
+
+- `Program.FileList` → 文件
+- `Program.EachFunction` → 函数、参数、入口
+- `*ssa.Call` → 调用边、调用点
+- `*ssa.If` / `*ssa.Switch` → 分支、条件、guard
+- SyntaxFlow → sink、source、shape
+
+SSA 的代价是编译慢、标准库签名缺失会产生诊断。这是可接受的：一次 1 分钟换来一套可复现的行号与调用关系。
 
 ## 可信度分级
 
 | 标注 | 含义 | 本项目里谁产出 |
 |---|---|---|
-| `EXTRACTED` | 语法/IR 里直接存在 | L3 全部、L2 全部 |
+| `EXTRACTED` | IR 里直接存在 | L3 全部、L2 全部 |
 | `DERIVED` | 由 IR 事实经一层规则推出 | L1 全部（来源分类、到达形态、跨函数路径是规则映射的） |
-| `INFERRED` | LLM 从语义推断 | 预留；当前图与事实都不用 LLM |
+| `INFERRED` | LLM 从语义推断 | 预留；AI 摘要不进入事实层 |
 | `ASSERTED` | 来自 PR 描述 / commit message | 尚未接入 |
 | `UNKNOWN` | 无依据 | — |
 

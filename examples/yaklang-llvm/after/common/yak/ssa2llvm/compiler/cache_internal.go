@@ -1,0 +1,149 @@
+package compiler
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"sort"
+	"strings"
+	"sync"
+)
+
+const cachedCompileVersion = "ssa2llvm-cache-v4"
+
+var toolVersionMemo sync.Map // map[string]string
+
+func cachedWorkKeyFromConfig(cfg *CompileConfig) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("compute work key failed: nil config")
+	}
+
+	var code []byte
+	if strings.TrimSpace(cfg.SourceCode) != "" {
+		code = []byte(cfg.SourceCode)
+	} else {
+		srcPath := strings.TrimSpace(cfg.SourceFile)
+		if srcPath == "" {
+			return "", fmt.Errorf("compute work key failed: empty source file")
+		}
+		b, err := os.ReadFile(srcPath)
+		if err != nil {
+			return "", fmt.Errorf("compute work key failed: read source file: %w", err)
+		}
+		code = b
+	}
+
+	obf := append([]string{}, cfg.Obfuscators...)
+	sort.Strings(obf)
+
+	h := sha256.New()
+	write := func(s string) {
+		_, _ = io.WriteString(h, s)
+		_, _ = io.WriteString(h, "\n")
+	}
+
+	write(cachedCompileVersion)
+	write("compiler=" + buildInfoKey())
+	write("goos=" + runtime.GOOS)
+	write("goarch=" + runtime.GOARCH)
+	write("go=" + runtime.Version())
+	write("lang=" + strings.TrimSpace(cfg.Language))
+	write("entry=" + strings.TrimSpace(cfg.EntryFunctionName))
+	write("pluginType=" + strings.TrimSpace(cfg.PluginType))
+	write(fmt.Sprintf("emitLLVM=%t", cfg.EmitLLVM))
+	write(fmt.Sprintf("emitAsm=%t", cfg.EmitAsm))
+	write(fmt.Sprintf("compileOnly=%t", cfg.CompileOnly))
+	write(fmt.Sprintf("printIR=%t", cfg.PrintIR))
+	write(fmt.Sprintf("printEntryResult=%t", cfg.PrintEntryResult))
+	write(fmt.Sprintf("skipRuntimeLink=%t", cfg.SkipRuntimeLink))
+	write(fmt.Sprintf("stdlibCompile=%t", cfg.StdlibCompile))
+	write(fmt.Sprintf("stdlibCompileSet=%t", cfg.StdlibCompileSet))
+	write("profile=" + strings.TrimSpace(cfg.ProfileName))
+	if cfg.resolvedProfile != nil {
+		if data, err := json.Marshal(cfg.resolvedProfile); err != nil {
+			write("profileConfig=error:" + err.Error())
+		} else {
+			write("profileConfig=" + string(data))
+		}
+	}
+	if len(cfg.RuntimeSymManifest) > 0 {
+		keys := make([]string, 0, len(cfg.RuntimeSymManifest))
+		for k := range cfg.RuntimeSymManifest {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			write("rtSym:" + k + "=" + cfg.RuntimeSymManifest[k])
+		}
+	} else {
+		write("rtSym=<off>")
+	}
+	write("llvmPlugin=" + strings.TrimSpace(cfg.LLVMPluginPath))
+	write("llvmPluginKind=" + strings.TrimSpace(cfg.LLVMPluginKind))
+	write("llvmPasses=" + strings.Join(cfg.LLVMPasses, ","))
+	write("llvmPack=" + strings.TrimSpace(cfg.LLVMPack))
+	write("llvmOpt=" + strings.TrimSpace(cfg.LLVMOptBinary))
+	cacheToolKeyPart(cfg, write)
+	write("obf=" + strings.Join(obf, ","))
+	if len(cfg.ExtraLinkArgs) > 0 {
+		write("extraLinkArgs=" + strings.Join(cfg.ExtraLinkArgs, "\x00"))
+	}
+	_, _ = h.Write(code)
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func buildInfoKey() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok || bi == nil {
+		return "<no-build-info>"
+	}
+	rev := ""
+	modified := ""
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	// Keep stable and short; include revision when available to bust caches on upgrades.
+	if strings.TrimSpace(rev) == "" {
+		return bi.GoVersion + " " + bi.Main.Version
+	}
+	return bi.GoVersion + " " + rev + " modified=" + modified
+}
+
+func cachedWorkDirFromKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) > 32 {
+		key = key[:32]
+	}
+	if key == "" {
+		key = "unknown"
+	}
+	return filepath.Join(os.TempDir(), "yakssa-compile-"+key)
+}
+
+func cachedArtifactPath(workDir string, cfg *CompileConfig) string {
+	switch {
+	case cfg != nil && cfg.EmitLLVM:
+		return filepath.Join(workDir, "cache.ll")
+	case cfg != nil && cfg.EmitAsm:
+		return filepath.Join(workDir, "cache.s")
+	case cfg != nil && cfg.CompileOnly:
+		return filepath.Join(workDir, "cache.o")
+	default:
+		if runtime.GOOS == "windows" {
+			return filepath.Join(workDir, "cache.exe")
+		}
+		return filepath.Join(workDir, "cache.bin")
+	}
+}

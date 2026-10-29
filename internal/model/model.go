@@ -18,9 +18,9 @@ import (
 type Confidence = contract.Confidence
 
 const (
-	// Extracted 表示该事实在 IR/AST 里直接存在，可确定性复现。
+	// Extracted 表示该事实在 IR 里直接存在，可确定性复现。
 	Extracted = contract.EXTRACTED
-	// Derived 表示由 IR/AST 事实经一步规则推出，规则本身是确定的。
+	// Derived 表示由 IR 事实经一步规则推出，规则本身是确定的。
 	Derived = contract.DERIVED
 	// Inferred 表示 LLM 从代码语义推断，不可确定性复现。
 	Inferred = contract.INFERRED
@@ -72,6 +72,10 @@ type BehaviorLane = contract.BehaviorLane
 type BehaviorRole = contract.BehaviorRole
 type BehaviorEdgeKind = contract.BehaviorEdgeKind
 type BehaviorStats = contract.BehaviorStats
+
+// AI 摘要层。
+type AISummary = contract.AiSummary
+type AIRisk = contract.AiRisk
 
 // 行为视图的节点角色。名称来自 docs/07-behavior-model.md。
 const (

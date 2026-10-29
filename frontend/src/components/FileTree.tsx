@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 import { buildTree, countChanged, type TreeNode } from '../lib/tree';
-import { baseName } from '../lib/format';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
-import type { Fact, Side } from '../types';
+import type { DiffStats } from '../lib/diff';
 import { IconChevronRight, IconFile, IconFolder } from './Icons';
 import styles from './FileTree.module.css';
 
@@ -30,12 +29,15 @@ function FileRows({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
       {nodes.map((node) => {
         if (node.type === 'dir') {
           const changed = countChanged(node);
+          const aggregate = collectStats(node.children, stats);
           return (
-            <details key={node.path} className={styles.dir} open={depth < 2}>
+            <details key={node.path} className={styles.dir} open={depth < 4}>
               <summary className={styles.dirRow} style={{ paddingLeft: 6 + depth * 12 }}>
                 <IconChevronRight className={styles.chevron} width={12} height={12} />
                 <IconFolder width={13} height={13} className={styles.folder} />
                 <span className={styles.dirName}>{node.name}</span>
+                {aggregate.adds > 0 && <b className={styles.plus}>+{aggregate.adds}</b>}
+                {aggregate.dels > 0 && <b className={styles.minus}>−{aggregate.dels}</b>}
                 {changed > 0 && <span className={styles.count}>{changed}</span>}
               </summary>
               <FileRows nodes={node.children} depth={depth + 1} />
@@ -72,47 +74,55 @@ function FileRows({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
   );
 }
 
-function ProjectFact({ fact, side }: { fact: Fact; side: Side }) {
-  const dispatch = useAppDispatch();
-  return (
-    <button
-      type="button"
-      className={styles.projectFact}
-      title={fact.detail ?? fact.title}
-      onClick={() => {
-        if (fact.file) dispatch({ type: 'code/open', file: fact.file, line: fact.line, side });
-      }}
-    >
-      <span className={`${styles.sign} ${side === 'after' ? styles.plus : styles.minus}`}>
-        {side === 'after' ? '+' : '−'}
-      </span>
-      <span className={styles.factTitle}>{fact.title}</span>
-      {fact.file && (
-        <span className={styles.factLoc}>
-          {baseName(fact.file)}
-          {fact.line ? `:${fact.line}` : ''}
-        </span>
-      )}
-    </button>
-  );
+function collectStats(nodes: TreeNode[], stats: Map<string, DiffStats>): { adds: number; dels: number; changed: number; files: number } {
+  let adds = 0;
+  let dels = 0;
+  let changed = 0;
+  let files = 0;
+  for (const node of nodes) {
+    if (node.type === 'dir') {
+      const nested = collectStats(node.children, stats);
+      adds += nested.adds;
+      dels += nested.dels;
+      changed += nested.changed;
+      files += nested.files;
+      continue;
+    }
+    files += 1;
+    if (node.file.status !== 'unchanged') changed += 1;
+    const stat = stats.get(node.path);
+    adds += stat?.adds ?? 0;
+    dels += stat?.dels ?? 0;
+  }
+  return { adds, dels, changed, files };
 }
 
-export function FileTree() {
+export function FileTree({ variant = 'project' }: { variant?: 'project' | 'files' }) {
   const { payload, onlyChanged } = useApp();
   const dispatch = useAppDispatch();
-  const { review, files } = useReviewData();
+  const { review, files, stats } = useReviewData();
   const tree = useMemo(() => buildTree(files, onlyChanged), [files, onlyChanged]);
   const changed = files.filter((file) => file.status !== 'unchanged').length;
-  const projectAdded = review?.project.added ?? [];
-  const projectRemoved = review?.project.removed ?? [];
+  const totals = collectStats(buildTree(files, true), stats);
+  const added = files.filter((file) => file.status === 'added').length;
+  const removed = files.filter((file) => file.status === 'removed').length;
+  const modified = files.filter((file) => file.status === 'modified').length;
+  const all = Math.max(1, added + modified + removed);
 
   return (
     <div className={styles.panel}>
       <div className={styles.head}>
         <div>
-          <div className={styles.title}>文件</div>
+          <div className={styles.title}>{variant === 'project' ? '项目改动' : '变更文件'}</div>
           <div className={styles.sub}>
             {changed} 个变更 · {files.length} 个文件
+            <span className={styles.factCount}>
+              <b>代码</b> +{totals.adds}/−{totals.dels}
+              {' · '}
+              <b>结构</b> +{review?.project.added.length ?? 0}/−{review?.project.removed.length ?? 0}
+              {' · '}
+              <b>调用</b> +{review?.logic.added.length ?? 0}/−{review?.logic.removed.length ?? 0}
+            </span>
           </div>
         </div>
         <button
@@ -125,6 +135,19 @@ export function FileTree() {
         </button>
       </div>
 
+      <div className={styles.summaryWrap} aria-label="改动构成">
+        <div className={styles.summaryBar}>
+          <i className={styles.summaryAdded} style={{ width: `${(added / all) * 100}%` }} />
+          <i className={styles.summaryModified} style={{ width: `${(modified / all) * 100}%` }} />
+          <i className={styles.summaryRemoved} style={{ width: `${(removed / all) * 100}%` }} />
+        </div>
+        <div className={styles.summaryLegend}>
+          <span><i className={styles.legendAdded} />新增 {added}</span>
+          <span><i className={styles.legendModified} />修改 {modified}</span>
+          <span><i className={styles.legendRemoved} />删除 {removed}</span>
+        </div>
+      </div>
+
       <div className={styles.scroll}>
         {tree.length ? (
           <div className={styles.tree}>
@@ -134,23 +157,6 @@ export function FileTree() {
           <div className={styles.empty}>没有可显示的文件</div>
         )}
 
-        {(projectAdded.length > 0 || projectRemoved.length > 0) && (
-          <section className={styles.project}>
-            <div className={styles.sectionTitle}>
-              项目结构
-              <span>
-                {projectAdded.length > 0 && <b className={styles.plus}>+{projectAdded.length}</b>}
-                {projectRemoved.length > 0 && <b className={styles.minus}>−{projectRemoved.length}</b>}
-              </span>
-            </div>
-            {projectAdded.map((fact) => (
-              <ProjectFact key={fact.identity} fact={fact} side="after" />
-            ))}
-            {projectRemoved.map((fact) => (
-              <ProjectFact key={fact.identity} fact={fact} side="before" />
-            ))}
-          </section>
-        )}
       </div>
 
       <div className={styles.foot}>

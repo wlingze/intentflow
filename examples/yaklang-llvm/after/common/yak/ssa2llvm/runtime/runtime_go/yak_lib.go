@@ -1,0 +1,1028 @@
+package main
+
+/*
+#cgo LDFLAGS: -L${SRCDIR}/libs -lgc
+#include "local_gc.h"
+#include <stdlib.h>
+#include <stdint.h>
+
+// Forward declaration of the proxy function defined in c_stub.c
+void yak_finalizer_proxy(void* obj, void* client_data);
+
+// GC control wrappers defined in c_stub.c (they call GC_disable/GC_enable
+// from local_gc.h).
+void yak_gc_disable(void);
+void yak_gc_enable(void);
+*/
+import "C"
+import (
+	"fmt"
+	"math"
+	"reflect"
+	"runtime"
+	"runtime/cgo"
+	"strconv"
+	"sync"
+	"time"
+	"unsafe"
+
+	"github.com/yaklang/yaklang/common/yak/ssa2llvm/runtime/abi"
+)
+
+func main() {}
+
+func recoverRuntimePanic() {
+	if r := recover(); r != nil {
+		logRecoveredRuntimePanic("panic", r)
+	}
+}
+
+const yakTaggedPointerMask = uint64(1) << 62
+const yakShadowMagic = uint64(0x59414B5353413251) // "YAKSSA2Q" (opaque marker)
+
+// shadowHandles tracks valid shadow allocations without dereferencing pointers.
+// This avoids signal-based crashes (SIGSEGV) when a bogus/freed pointer is passed
+// into the runtime from user code; such crashes cannot be recovered by `recover()`.
+var shadowHandles sync.Map // map[uintptr]uintptr(handleID)
+
+func tryResolveShadowString(ptr unsafe.Pointer) (string, bool) {
+	defer func() {
+		_ = recover()
+	}()
+	// The compiler tags pointer values before passing them as call args; clear
+	// the tag so the shadow handle lookup sees the real address.
+	raw := uint64(uintptr(ptr))
+	raw &^= yakTaggedPointerMask
+	ptr = unsafe.Pointer(uintptr(raw))
+	h, ok := handleFromShadow(ptr)
+	if !ok {
+		return "", false
+	}
+	switch v := h.Value().(type) {
+	case string:
+		return v, true
+	case []byte:
+		return string(v), true
+	case *[]byte:
+		// make([]byte) and []byte(string) both store *[]byte. An empty or nil
+		// slice is still a successful conversion: falling through would read
+		// the shadow pointer itself as a C string.
+		if v == nil {
+			return "", true
+		}
+		return string(*v), true
+	default:
+		return "", false
+	}
+}
+
+//export yak_internal_print_int
+func yak_internal_print_int(n int64) {
+	defer recoverRuntimePanic()
+	if (uint64(n) & yakTaggedPointerMask) != 0 {
+		raw := uint64(n) &^ yakTaggedPointerMask
+		ptr := unsafe.Pointer(uintptr(raw))
+		if ptr == nil {
+			fmt.Println("")
+			return
+		}
+		if s, ok := tryResolveShadowString(ptr); ok {
+			fmt.Println(s)
+			return
+		}
+		if s, ok := tryCString(uint64(uintptr(ptr))); ok {
+			fmt.Println(s)
+			return
+		}
+		fmt.Println(n)
+		return
+	}
+	fmt.Println(n)
+}
+
+//export yak_internal_malloc
+func yak_internal_malloc(size int64) (ret uintptr) {
+	defer recoverRuntimePanic()
+	// Use Boehm GC for internal allocations too
+	return uintptr(C.GC_malloc(C.size_t(size)))
+}
+
+//export yak_runtime_make_object
+func yak_runtime_make_object() int64 {
+	defer recoverRuntimePanic()
+	return int64(uintptr(newStdlibShadow(newRuntimeOrderedMap())))
+}
+
+//export yak_runtime_make_callable
+func yak_runtime_make_callable(fn uintptr, paramMemberCount int64, freeCount int64, freeValues unsafe.Pointer) int64 {
+	defer recoverRuntimePanic()
+	if fn == 0 {
+		return 0
+	}
+	var captures []uint64
+	if freeCount > 0 && freeValues != nil {
+		captures = append(captures, unsafe.Slice((*uint64)(freeValues), int(freeCount))...)
+	}
+	return int64(uintptr(newRuntimeShadow(runtimeCallableClosure{
+		fn:               uint64(fn),
+		paramMemberCount: int(paramMemberCount),
+		freeValues:       captures,
+	})))
+}
+
+//export yak_runtime_get_closure_free_slot
+func yak_runtime_get_closure_free_slot(closureRaw uint64, index int64) int64 {
+	defer recoverRuntimePanic()
+	closure, ok := runtimeCallableClosureValueFromRaw(closureRaw)
+	if !ok || index < 0 || int(index) >= len(closure.freeValues) {
+		return 0
+	}
+	// By-reference captures store a slot pointer; return it so the compiler
+	// can redirect the caller's variable reads through the same heap slot.
+	return int64(closure.freeValues[index])
+}
+
+//export yak_runtime_read_closure_free_value
+func yak_runtime_read_closure_free_value(closureRaw uint64, index int64, byRef int64) int64 {
+	defer recoverRuntimePanic()
+	closure, ok := runtimeCallableClosureValueFromRaw(closureRaw)
+	if !ok || index < 0 || int(index) >= len(closure.freeValues) {
+		return 0
+	}
+	raw := closure.freeValues[index]
+	if byRef != 0 {
+		ptr := unsafe.Pointer(uintptr(raw))
+		if ptr == nil {
+			return 0
+		}
+		return int64(*(*uint64)(ptr))
+	}
+	return int64(raw)
+}
+
+// runtimeToStringWord formats an ABI word the way yak string conversion does.
+// Tagged pointers are cleared before the shadow and C-string probes: bit 62 is
+// also set by every float64 in [2, 4), so running the float heuristic first
+// prints a host like 127.0.0.1:port as "2.062...". The float check still uses
+// the original word, so a real float is unchanged when the untagged bits are
+// not a readable string.
+func runtimeToStringWord(raw int64) int64 {
+	if raw == 0 {
+		return int64(uintptr(newStdlibShadow("")))
+	}
+	word := uint64(raw)
+	untagged := word &^ yakTaggedPointerMask
+	if h, ok := handleFromShadow(unsafe.Pointer(uintptr(untagged))); ok {
+		if isRuntimeNilBox(h.Value()) {
+			return int64(uintptr(newStdlibShadow("")))
+		}
+		switch v := h.Value().(type) {
+		case string:
+			return int64(uintptr(newStdlibShadow(v)))
+		case []byte:
+			return int64(uintptr(newStdlibShadow(string(v))))
+		case *[]byte:
+			if v == nil {
+				return int64(uintptr(newStdlibShadow("")))
+			}
+			return int64(uintptr(newStdlibShadow(string(*v))))
+		case error:
+			if v != nil {
+				return int64(uintptr(newStdlibShadow(v.Error())))
+			}
+		default:
+			if v != nil {
+				return int64(uintptr(newStdlibShadow(fmt.Sprint(v))))
+			}
+		}
+		return int64(uintptr(newStdlibShadow("")))
+	}
+	if s, ok := tryCString(untagged); ok {
+		return int64(uintptr(newStdlibShadow(s)))
+	}
+	if f, ok := plausibleFloat(word); ok {
+		return int64(uintptr(newStdlibShadow(strconv.FormatFloat(f, 'g', -1, 64))))
+	}
+	return int64(uintptr(newStdlibShadow(strconv.FormatInt(raw, 10))))
+}
+
+func runtimeStringContainsNUL(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeCopyBytes(b []byte) *[]byte {
+	out := make([]byte, len(b))
+	copy(out, b)
+	return &out
+}
+
+// runtimeStringToBytesValue copies the bytes of a string or byte-slice word.
+// Shadow strings keep every byte, including interior NULs and lengths past
+// the C-string probe. A short literal is still a C string and is read until
+// its trailing NUL. The result is *[]byte, the same shape make([]byte) uses.
+func runtimeStringToBytesValue(raw int64) *[]byte {
+	word := uint64(raw) &^ yakTaggedPointerMask
+	if word != 0 {
+		if h, ok := handleFromShadow(unsafe.Pointer(uintptr(word))); ok {
+			switch v := h.Value().(type) {
+			case string:
+				buf := []byte(v)
+				return &buf
+			case []byte:
+				return runtimeCopyBytes(v)
+			case *[]byte:
+				if v == nil {
+					buf := []byte{}
+					return &buf
+				}
+				return runtimeCopyBytes(*v)
+			}
+		}
+		if s, ok := tryCString(word); ok {
+			buf := []byte(s)
+			return &buf
+		}
+	}
+	buf := []byte{}
+	return &buf
+}
+
+//export yak_runtime_string_to_bytes
+func yak_runtime_string_to_bytes(raw int64) int64 {
+	defer recoverRuntimePanic()
+	return int64(uintptr(newStdlibShadow(runtimeStringToBytesValue(raw))))
+}
+
+//export yak_runtime_to_cstring
+func yak_runtime_to_cstring(ptr uintptr) *C.char {
+	defer recoverRuntimePanic()
+	raw := uint64(ptr)
+	raw &^= yakTaggedPointerMask
+	if raw != 0 {
+		if s, ok := tryResolveShadowString(unsafe.Pointer(uintptr(raw))); ok {
+			if runtimeStringContainsNUL(s) {
+				// C.CString stops at the first NUL. Callers that resolve a
+				// shadow (concat, argument decode) need the bytes after it,
+				// for example a binary protocol payload interpolated into a
+				// response. The shadow lives in GC memory, not the Go heap,
+				// so returning it as *C.char is not an unpinned Go pointer.
+				return (*C.char)(newStdlibShadow(s))
+			}
+			// Intentionally leaked: used by native binary as an owned C string.
+			return C.CString(s)
+		}
+	}
+	if s, ok := tryCString(raw); ok {
+		// Always hand back a C-owned copy: cgo refuses to return a raw Go/static
+		// binary pointer from an exported function ("unpinned Go pointer").
+		return C.CString(s)
+	}
+	// A small integer (e.g. a map key or index) is not a C-string address;
+	// convert it to its string form so dynamic member keys work. Passing
+	// such a value as unsafe.Pointer would trip cgo's unpinned-pointer
+	// check before the function body runs, so the ABI takes uintptr.
+	// Zero is a valid integer key ("0"), not a nil C string. Negative
+	// integers must keep their sign: -1 is an index, not the huge
+	// positive word produced by masking the tag bit. The same decimal
+	// form is used when the word looks like a pointer but is not readable.
+	return C.CString(fmt.Sprintf("%d", int64(ptr)))
+}
+
+// --- Handle Management ---
+
+//export yak_host_release_handle
+func yak_host_release_handle(id C.uintptr_t) {
+	defer recoverRuntimePanic()
+	h := cgo.Handle(id)
+	if runtimeGCLogEnabled() {
+		runtimeDiagPrintf("[Go] Releasing handle %d\n", id)
+	}
+	h.Delete()
+}
+
+// --- Yak Runtime (Boehm GC Integrated) ---
+
+//export yak_internal_release_shadow
+func yak_internal_release_shadow(ptr unsafe.Pointer) {
+	defer recoverRuntimePanic()
+	if ptr == nil {
+		return
+	}
+	handleAny, ok := shadowHandles.LoadAndDelete(uintptr(ptr))
+	if !ok {
+		return
+	}
+	handleRaw, ok := handleAny.(uintptr)
+	if !ok {
+		return
+	}
+	handleID := C.uintptr_t(handleRaw)
+
+	if runtimeGCLogEnabled() {
+		runtimeDiagPrintf("[Yak GC] Finalizer triggered\n")
+		runtimeDiagPrintf("[Yak GC] Releasing shadow %p -> Handle %d\n", ptr, handleID)
+	}
+
+	// Release the Go handle
+	yak_host_release_handle(handleID)
+}
+
+//export yak_runtime_new_shadow
+func yak_runtime_new_shadow(handleID C.uintptr_t) (ret unsafe.Pointer) {
+	defer recoverRuntimePanic()
+	// 1. Allocate memory managed by Boehm GC
+	// Layout:
+	//   [0:8]  magic (yakShadowMagic)
+	//   [8:16] handleID (uintptr_t)
+	ptr := C.GC_malloc(C.size_t(16))
+
+	// 2. Write the magic + handleID into the allocated memory
+	*(*uint64)(ptr) = yakShadowMagic
+	*(*C.uintptr_t)(unsafe.Pointer(uintptr(ptr) + 8)) = handleID
+	shadowHandles.Store(uintptr(ptr), uintptr(handleID))
+
+	// 3. Register Finalizer
+	// When Boehm GC determines 'ptr' is unreachable, it will call yak_finalizer_proxy(ptr, nil)
+	C.GC_register_finalizer(
+		ptr,
+		(C.GC_finalization_proc)(C.yak_finalizer_proxy),
+		nil, nil, nil,
+	)
+
+	if runtimeGCLogEnabled() {
+		runtimeDiagPrintf("[Yak] GC_malloc shadow %p for Handle %d\n", ptr, handleID)
+	}
+
+	return ptr
+}
+
+func handleFromShadow(objPtr unsafe.Pointer) (cgo.Handle, bool) {
+	if objPtr == nil {
+		return 0, false
+	}
+	handleAny, ok := shadowHandles.Load(uintptr(objPtr))
+	if !ok {
+		return 0, false
+	}
+	handleRaw, ok := handleAny.(uintptr)
+	if !ok {
+		return 0, false
+	}
+	return cgo.Handle(handleRaw), true
+}
+
+func resolveField(obj any, name string) (reflect.Value, error) {
+	if om, ok := obj.(runtimeStringMap); ok {
+		value, exists := om.Get(name)
+		if !exists {
+			if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+				return method, nil
+			}
+			return reflect.Value{}, nil
+		}
+		if value == nil {
+			return reflect.ValueOf(runtimeNilSingleton), nil
+		}
+		return reflect.ValueOf(value), nil
+	}
+
+	v := reflect.ValueOf(obj)
+	for v.IsValid() && (v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr) {
+		if v.IsNil() {
+			return reflect.Value{}, fmt.Errorf("nil object while resolving %q", name)
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return reflect.Value{}, fmt.Errorf("invalid object while resolving %q", name)
+	}
+
+	switch v.Kind() {
+	case reflect.String:
+		runes := []rune(v.String())
+		idx, ok := resolveCollectionIndex(len(runes), name)
+		if !ok {
+			if _, err := strconv.Atoi(name); err == nil {
+				return reflect.Value{}, fmt.Errorf("index %q out of range", name)
+			}
+			if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+				return method, nil
+			}
+			return reflect.Value{}, nil
+		}
+		return reflect.ValueOf(runes[idx]), nil
+	case reflect.Struct:
+		f := v.FieldByName(name)
+		if f.IsValid() {
+			return f, nil
+		}
+		// Yak method calls on a Go value are member reads (obj.Method). The
+		// method is not a struct field; return the bound method so the call
+		// site can invoke it. Pointer methods are resolved from the original
+		// value, before this function dereferenced it.
+		if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+			return method, nil
+		}
+		return reflect.Value{}, fmt.Errorf("field %q not found", name)
+	case reflect.Map:
+		key, ok := resolveMapKey(v.Type().Key(), name)
+		if !ok {
+			return reflect.Value{}, fmt.Errorf("invalid map key %q", name)
+		}
+		f := v.MapIndex(key)
+		if !f.IsValid() {
+			if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+				return method, nil
+			}
+			return reflect.Value{}, nil
+		}
+		return f, nil
+	case reflect.Slice, reflect.Array:
+		idx, ok := resolveCollectionIndex(v.Len(), name)
+		if !ok {
+			// Numeric names are index reads: preserve the negative-index
+			// support and report out-of-range errors. Non-numeric member
+			// names are method probes emitted by the compiler for member
+			// callees; those read as nil.
+			if _, err := strconv.Atoi(name); err == nil {
+				return reflect.Value{}, fmt.Errorf("index %q out of range", name)
+			}
+			if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+				return method, nil
+			}
+			return reflect.Value{}, nil
+		}
+		return v.Index(idx), nil
+	default:
+		// Weak-typed member reads on unsupported receivers (e.g. a string
+		// probed as an object) read as nil instead of panicking. Before falling
+		// back to nil, try the Go method set so interface-returned values and
+		// promoted methods from embedded structs remain callable.
+		if method, err := runtimeResolveMethod(obj, name); err == nil && method.IsValid() {
+			return method, nil
+		}
+		return reflect.Value{}, nil
+	}
+}
+
+func resolveMapKey(keyType reflect.Type, name string) (reflect.Value, bool) {
+	switch keyType.Kind() {
+	case reflect.String:
+		return reflect.ValueOf(name).Convert(keyType), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v, err := strconv.ParseInt(name, 10, 64)
+		if err != nil {
+			return reflect.Value{}, false
+		}
+		ret := reflect.New(keyType).Elem()
+		ret.SetInt(v)
+		return ret, true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		v, err := strconv.ParseUint(name, 10, 64)
+		if err != nil {
+			return reflect.Value{}, false
+		}
+		ret := reflect.New(keyType).Elem()
+		ret.SetUint(v)
+		return ret, true
+	case reflect.Interface:
+		return reflect.ValueOf(name), true
+	default:
+		return reflect.Value{}, false
+	}
+}
+
+func resolveCollectionIndex(length int, name string) (int, bool) {
+	idx, err := strconv.Atoi(name)
+	if err != nil {
+		return 0, false
+	}
+	if idx < 0 {
+		idx = length + idx
+	}
+	if idx < 0 || idx >= length {
+		return 0, false
+	}
+	return idx, true
+}
+
+func newRuntimeShadow(value any) unsafe.Pointer {
+	if value == nil {
+		return nil
+	}
+	h := cgo.NewHandle(value)
+	return yak_runtime_new_shadow(C.uintptr_t(h))
+}
+
+// runtimeNilBox is the single heap value shadowed for a stored yak nil.
+// Integer 0 uses the same ABI word, so nil cannot travel as word 0 once it
+// has been loaded out of a container.
+type runtimeNilBox struct{}
+
+var runtimeNilSingleton = &runtimeNilBox{}
+
+var (
+	runtimeABIBoxOnce   sync.Once
+	runtimeTrueWordInt  int64
+	runtimeFalseWordInt int64
+	runtimeNilWordInt   int64
+)
+
+func runtimeInitABIBoxes() {
+	runtimeABIBoxOnce.Do(func() {
+		runtimeTrueWordInt = int64(uintptr(newRuntimeShadow(true)))
+		runtimeFalseWordInt = int64(uintptr(newRuntimeShadow(false)))
+		runtimeNilWordInt = int64(uintptr(newRuntimeShadow(runtimeNilSingleton)))
+	})
+}
+
+func runtimeTrueWord() int64 {
+	runtimeInitABIBoxes()
+	return runtimeTrueWordInt
+}
+
+func runtimeFalseWord() int64 {
+	runtimeInitABIBoxes()
+	return runtimeFalseWordInt
+}
+
+func runtimeNilWord() int64 {
+	runtimeInitABIBoxes()
+	return runtimeNilWordInt
+}
+
+func isRuntimeNilBox(v any) bool {
+	_, ok := v.(*runtimeNilBox)
+	return ok
+}
+
+func unwrapRuntimeNilBox(v any) any {
+	if isRuntimeNilBox(v) {
+		return nil
+	}
+	return v
+}
+
+func runtimeShadowValue(raw uint64) (any, bool) {
+	untagged := raw &^ yakTaggedPointerMask
+	if untagged == 0 {
+		return nil, false
+	}
+	h, ok := handleFromShadow(unsafe.Pointer(uintptr(untagged)))
+	if !ok {
+		return nil, false
+	}
+	return h.Value(), true
+}
+
+func runtimeHandleValue(ptr unsafe.Pointer) (any, bool) {
+	h, ok := handleFromShadow(ptr)
+	if !ok {
+		return nil, false
+	}
+	return unwrapRuntimeNilBox(h.Value()), true
+}
+
+// runtimeFieldWord is the get_field encoding. Method returns stay on
+// runtimeValueToInt64 so a bool result remains the 0/1 word conditions and
+// bitwise checks already use. Values loaded from a container are different:
+// a bool is a shared shadow, and a real nil is the nil shadow. A missing
+// field stays word 0.
+func runtimeFieldWord(f reflect.Value) int64 {
+	if !f.IsValid() {
+		return 0
+	}
+	for f.IsValid() && f.Kind() == reflect.Interface {
+		if f.IsNil() {
+			return runtimeNilWord()
+		}
+		f = f.Elem()
+	}
+	if !f.IsValid() {
+		return runtimeNilWord()
+	}
+	if f.Kind() == reflect.Bool {
+		if f.Bool() {
+			return runtimeTrueWord()
+		}
+		return runtimeFalseWord()
+	}
+	if f.CanInterface() && isRuntimeNilBox(f.Interface()) {
+		return runtimeNilWord()
+	}
+	if f.Kind() == reflect.Ptr && f.IsNil() {
+		return runtimeNilWord()
+	}
+	return runtimeValueToInt64(f)
+}
+
+//export yak_runtime_is_true
+func yak_runtime_is_true(raw int64) int64 {
+	defer recoverRuntimePanic()
+	if raw == 0 {
+		return 0
+	}
+	if v, ok := runtimeShadowValue(uint64(raw)); ok {
+		if isRuntimeNilBox(v) {
+			return 0
+		}
+		if b, ok := v.(bool); ok {
+			if b {
+				return 1
+			}
+			return 0
+		}
+	}
+	// Empty containers stay truthy: their word is a non-nil shadow, and
+	// equality with nil is a separate rule.
+	return 1
+}
+
+//export yak_runtime_get_module
+func yak_runtime_get_module(name *C.char) int64 {
+	defer recoverRuntimePanic()
+	moduleName := runtimeCStringToGoString(unsafe.Pointer(name))
+	if moduleName == "" {
+		return 0
+	}
+	runtimeYaklibRegistryMu.RLock()
+	exports, ok := runtimeYaklibModules[moduleName]
+	if ok {
+		// The registry map is mutable during startup; expose a stable map
+		// snapshot to Yak so aliases can resolve module members like ordinary
+		// object fields without racing registration.
+		snapshot := make(map[string]any, len(exports))
+		for key, value := range exports {
+			snapshot[key] = value
+		}
+		exports = snapshot
+	}
+	runtimeYaklibRegistryMu.RUnlock()
+	if !ok {
+		return 0
+	}
+	return int64(uintptr(newRuntimeShadow(exports)))
+}
+
+func runtimeValueToInt64(v reflect.Value) int64 {
+	if !v.IsValid() {
+		return 0
+	}
+	for v.IsValid() && v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return 0
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return 0
+	}
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return int64(v.Uint())
+	case reflect.Bool:
+		if v.Bool() {
+			return 1
+		}
+		return 0
+	case reflect.Float32, reflect.Float64:
+		// Floats travel through the ABI as their IEEE-754 bit pattern, the same
+		// way the compiler emits a float constant and the way runtimeDecodeArg
+		// reads one back for a float64 parameter.
+		return int64(math.Float64bits(v.Float()))
+	case reflect.String:
+		// Normalize named Go string types (for example pcapdb.State) to the
+		// builtin string type before crossing the Yak ABI. Keeping the named
+		// type in the shadow makes string decoding/comparison see a foreign Go
+		// type and silently produce the zero value.
+		return int64(uintptr(newRuntimeShadow(v.String())))
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Func, reflect.Chan:
+		if v.Kind() == reflect.Ptr && v.IsNil() {
+			return 0
+		}
+		if !v.CanInterface() {
+			return 0
+		}
+		return int64(uintptr(newRuntimeShadow(v.Interface())))
+	default:
+		if v.CanInterface() {
+			return int64(uintptr(newRuntimeShadow(v.Interface())))
+		}
+		return 0
+	}
+}
+
+func setReflectValue(v reflect.Value, val int64) bool {
+	if !v.IsValid() || !v.CanSet() {
+		return false
+	}
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(val)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		v.SetUint(uint64(val))
+	case reflect.Bool:
+		v.SetBool(val != 0)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(float64(val))
+	default:
+		return false
+	}
+	return true
+}
+
+func valueForSet(targetType reflect.Type, val int64) (reflect.Value, bool) {
+	if targetType == nil {
+		return reflect.Value{}, false
+	}
+	if decoded, ok := decodedValueForSet(targetType, val); ok {
+		return decoded, true
+	}
+	switch targetType.Kind() {
+	case reflect.Interface:
+		// Only the empty interface accepts any value directly. A non-empty
+		// interface (e.g. error) must not receive a raw int64 word; callers
+		// fall back to a zero value instead.
+		if targetType.NumMethod() == 0 {
+			return reflect.ValueOf(val), true
+		}
+		return reflect.Value{}, false
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		ret := reflect.New(targetType).Elem()
+		ret.SetInt(val)
+		return ret, true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		ret := reflect.New(targetType).Elem()
+		ret.SetUint(uint64(val))
+		return ret, true
+	case reflect.Bool:
+		ret := reflect.New(targetType).Elem()
+		ret.SetBool(val != 0)
+		return ret, true
+	case reflect.Float32, reflect.Float64:
+		ret := reflect.New(targetType).Elem()
+		ret.SetFloat(float64(val))
+		return ret, true
+	default:
+		return reflect.Value{}, false
+	}
+}
+
+func decodedValueForSet(targetType reflect.Type, val int64) (reflect.Value, bool) {
+	raw := uint64(val)
+	decoded := decodeTaggedArg(raw)
+	if decoded == nil {
+		return reflect.Zero(targetType), true
+	}
+
+	if intValue, ok := decoded.(int64); ok {
+		if shadowValue, ok := runtimeDecodeShadowArg(raw, targetType); ok {
+			return shadowValue, true
+		}
+		if (raw & yakTaggedPointerMask) == 0 {
+			return reflect.Value{}, false
+		}
+		decoded = intValue
+	}
+
+	value := reflect.ValueOf(decoded)
+	if !value.IsValid() {
+		return reflect.Zero(targetType), true
+	}
+	if value.Type().AssignableTo(targetType) {
+		return value, true
+	}
+	if value.Type().ConvertibleTo(targetType) {
+		return value.Convert(targetType), true
+	}
+	if targetType.Kind() == reflect.Interface && value.Type().Implements(targetType) {
+		return value, true
+	}
+	if targetType.Kind() == reflect.String {
+		return reflect.ValueOf(fmt.Sprint(decoded)).Convert(targetType), true
+	}
+	return reflect.Value{}, false
+}
+
+func orderedMapValueForSet(val int64, flags uint64) (any, bool) {
+	if flags&abi.FlagFieldNil != 0 {
+		return nil, true
+	}
+	if flags&abi.FlagFieldBool != 0 {
+		return val != 0, true
+	}
+
+	raw := uint64(val)
+	if flags&abi.FlagFieldString != 0 {
+		if (raw & yakTaggedPointerMask) != 0 {
+			raw &^= yakTaggedPointerMask
+		}
+		ptr := unsafe.Pointer(uintptr(raw))
+		if ptr == nil {
+			return "", true
+		}
+		if h, ok := handleFromShadow(ptr); ok {
+			return fmt.Sprint(h.Value()), true
+		}
+		if s, ok := tryCString(raw); ok {
+			return s, true
+		}
+		return fmt.Sprint(int64(raw)), true
+	}
+
+	if (raw & yakTaggedPointerMask) != 0 {
+		return decodeTaggedArg(raw), true
+	}
+	if h, ok := handleFromShadow(unsafe.Pointer(uintptr(raw))); ok {
+		return h.Value(), true
+	}
+	return val, true
+}
+
+// runtimeContainerValueForSet honors field flags that valueForSet drops.
+// []any and map[K]any otherwise store the raw int64, so true becomes 1 and
+// nil becomes integer 0.
+func runtimeContainerValueForSet(targetType reflect.Type, val int64, flags uint64) (reflect.Value, bool) {
+	if targetType == nil {
+		return reflect.Value{}, false
+	}
+	if flags&abi.FlagFieldNil != 0 {
+		switch targetType.Kind() {
+		case reflect.Interface, reflect.Ptr, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+			return reflect.Zero(targetType), true
+		case reflect.Bool:
+			ret := reflect.New(targetType).Elem()
+			ret.SetBool(false)
+			return ret, true
+		}
+	}
+	if flags&abi.FlagFieldBool != 0 {
+		switch targetType.Kind() {
+		case reflect.Bool:
+			ret := reflect.New(targetType).Elem()
+			ret.SetBool(val != 0)
+			return ret, true
+		case reflect.Interface:
+			if targetType.NumMethod() == 0 {
+				return reflect.ValueOf(val != 0), true
+			}
+		}
+	}
+	return valueForSet(targetType, val)
+}
+
+func looksLikeCStringPointer(raw uint64) bool {
+	if raw < 4096 {
+		return false
+	}
+	sign := (raw >> 47) & 1
+	upper := raw >> 48
+	if sign == 0 {
+		return upper == 0
+	}
+	return upper == 0xffff
+}
+
+func setRuntimeField(obj any, name string, val int64, flags ...uint64) error {
+	fieldFlags := uint64(0)
+	if len(flags) > 0 {
+		fieldFlags = flags[0]
+	}
+	if om, ok := obj.(runtimeStringMap); ok {
+		mapVal, ok := orderedMapValueForSet(val, fieldFlags)
+		if !ok {
+			return fmt.Errorf("ordered map value for key %q is not assignable", name)
+		}
+		om.Set(name, mapVal)
+		return nil
+	}
+
+	v := reflect.ValueOf(obj)
+	if !v.IsValid() {
+		return fmt.Errorf("invalid object while setting %q", name)
+	}
+	if v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return fmt.Errorf("nil interface while setting %q", name)
+		}
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return fmt.Errorf("nil pointer while setting %q", name)
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		return fmt.Errorf("invalid object while setting %q", name)
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		f := v.FieldByName(name)
+		if !f.IsValid() {
+			return fmt.Errorf("field %q not found", name)
+		}
+		if fieldFlags&(abi.FlagFieldNil|abi.FlagFieldBool) != 0 {
+			converted, ok := runtimeContainerValueForSet(f.Type(), val, fieldFlags)
+			if ok && f.CanSet() && converted.Type().AssignableTo(f.Type()) {
+				f.Set(converted)
+				return nil
+			}
+		}
+		if !setReflectValue(f, val) {
+			return fmt.Errorf("field %q is not assignable from int64", name)
+		}
+		return nil
+	case reflect.Map:
+		key, ok := resolveMapKey(v.Type().Key(), name)
+		if !ok {
+			return fmt.Errorf("invalid map key %q", name)
+		}
+		mapVal, ok := runtimeContainerValueForSet(v.Type().Elem(), val, fieldFlags)
+		if !ok {
+			return fmt.Errorf("map value for key %q is not assignable from int64", name)
+		}
+		v.SetMapIndex(key, mapVal)
+		return nil
+	case reflect.Slice, reflect.Array:
+		idx, ok := resolveCollectionIndex(v.Len(), name)
+		if !ok {
+			return fmt.Errorf("index %q out of range", name)
+		}
+		target := v.Index(idx)
+		converted, ok := runtimeContainerValueForSet(target.Type(), val, fieldFlags)
+		if !ok {
+			return fmt.Errorf("index %q is not assignable from int64", name)
+		}
+		target.Set(converted)
+		return nil
+	default:
+		// Weak-typed member writes on unsupported receivers are no-ops.
+		return nil
+	}
+}
+
+//export yak_runtime_get_field
+func yak_runtime_get_field(objPtr unsafe.Pointer, name *C.char) int64 {
+	defer recoverRuntimePanic()
+	h, ok := handleFromShadow(objPtr)
+	if !ok || name == nil {
+		return 0
+	}
+	f, err := resolveField(h.Value(), runtimeCStringToGoString(unsafe.Pointer(name)))
+	if err != nil {
+		panic(err)
+	}
+	return runtimeFieldWord(f)
+}
+
+//export yak_runtime_set_field
+func yak_runtime_set_field(objPtr unsafe.Pointer, name *C.char, val int64, flags uint64) {
+	defer recoverRuntimePanic()
+	h, ok := handleFromShadow(objPtr)
+	if !ok || name == nil {
+		return
+	}
+	if err := setRuntimeField(h.Value(), runtimeCStringToGoString(unsafe.Pointer(name)), val, flags); err != nil {
+		panic(err)
+	}
+}
+
+//export yak_runtime_dump
+func yak_runtime_dump(objPtr unsafe.Pointer) {
+	defer recoverRuntimePanic()
+	h, ok := handleFromShadow(objPtr)
+	if !ok {
+		return
+	}
+	runtimeDiagPrintf("[Go] Dump: %+v\n", h.Value())
+}
+
+//export yak_runtime_dump_handle
+func yak_runtime_dump_handle(objPtr unsafe.Pointer) {
+	defer recoverRuntimePanic()
+	yak_runtime_dump(objPtr)
+}
+
+//export yak_runtime_gc
+func yak_runtime_gc() {
+	defer recoverRuntimePanic()
+	// Automatic Boehm collections cannot see shadow references held on Go's
+	// cgo callback stacks (LLVM alloca slots/registers), so they would
+	// reclaim live shadows mid-script (finalizers drop the cgo handle and
+	// later lookups miss). Keep collections explicit: enable only around
+	// this call, which runs after the script's main has finished.
+	C.yak_gc_enable()
+	C.GC_gcollect()
+	C.yak_gc_disable()
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+}

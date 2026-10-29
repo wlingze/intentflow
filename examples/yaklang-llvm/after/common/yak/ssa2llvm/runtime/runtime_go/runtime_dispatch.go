@@ -1,0 +1,90 @@
+package main
+
+import (
+	"fmt"
+	"reflect"
+	"unsafe"
+
+	"github.com/yaklang/yaklang/common/yak/ssa2llvm/runtime/abi"
+)
+
+type runtimeDispatchFunc func(args []uint64, ellipsis bool) (int64, error)
+
+// runtimeDispatchTargets holds minimal runtime builtins that are not registered
+// via yaklib module imports (print/append). All other stdlib calls use IDYaklibCall.
+var runtimeDispatchTargets = map[abi.FuncID]any{
+	abi.IDPrint:   runtimeBuiltinPrint,
+	abi.IDPrintf:  runtimeBuiltinPrintf,
+	abi.IDPrintln: runtimeBuiltinPrintln,
+	abi.IDAppend:  runtimeSliceAppend,
+	abi.IDAssert:  runtimeBuiltinAssert,
+}
+
+func runtimeRegisterDispatchTarget(id abi.FuncID, target any) {
+	if id == 0 || target == nil {
+		return
+	}
+	runtimeDispatchTargets[id] = target
+}
+
+var runtimeDispatchHandlers = map[abi.FuncID]runtimeDispatchFunc{
+	abi.IDRuntimeShadowMethod: runtimeDispatchShadowMethod,
+	abi.IDYaklibCall:          runtimeDispatchYaklibCall,
+	abi.IDRuntimeNext:         runtimeDispatchNext,
+	abi.IDRuntimeIn:           runtimeDispatchIn,
+	abi.IDRuntimeEq:           runtimeDispatchEq,
+	abi.IDRuntimeChanRecv:     runtimeDispatchChanRecv,
+	abi.IDRuntimeChanSend:     runtimeDispatchChanSend,
+	abi.IDRuntimeMakeChan:     runtimeDispatchMakeChan,
+	abi.IDRuntimeWaitAsync:    runtimeDispatchWaitAsync,
+	abi.IDRuntimeSelect:       runtimeDispatchSelect,
+}
+
+// runtimeDispatchWaitAsync implements the yak builtin waitAllAsyncCallFinish():
+// block until every goroutine started by `go func` has finished.
+func runtimeDispatchWaitAsync(args []uint64, ellipsis bool) (int64, error) {
+	yakAsyncWaitGroup.Wait()
+	return 0, nil
+}
+
+func executeRuntimeDispatch(ctx unsafe.Pointer) {
+	if ctx == nil {
+		return
+	}
+
+	argc := ctxArgc(ctx)
+	if argc < 0 || argc > 256 {
+		return
+	}
+
+	flags := ctxLoadWord(ctx, abi.WordFlags)
+	args := ctxArgsSlice(ctx, argc)
+	ctxSetRet(ctx, dispatchRuntimeCall(abi.FuncID(int64(ctxLoadWord(ctx, abi.WordTarget))), args, flags&abi.FlagEllipsis != 0))
+}
+
+func dispatchRuntimeCall(id abi.FuncID, args []uint64, ellipsis bool) int64 {
+	if handler, ok := runtimeDispatchHandlers[id]; ok && handler != nil {
+		ret, err := handler(args, ellipsis)
+		if err != nil {
+			panic(err)
+		}
+		return ret
+	}
+	target, ok := runtimeDispatchTargets[id]
+	if !ok {
+		return 0
+	}
+	ret, err := callRuntimeFunction(target, args)
+	if err != nil {
+		panic(err)
+	}
+	return ret
+}
+
+func callRuntimeFunction(fn any, rawArgs []uint64) (int64, error) {
+	value := reflect.ValueOf(fn)
+	if !value.IsValid() || value.Kind() != reflect.Func {
+		return 0, fmt.Errorf("invalid runtime dispatch target %T", fn)
+	}
+	return callRuntimeValue(value, rawArgs, false)
+}

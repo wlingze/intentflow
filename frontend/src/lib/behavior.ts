@@ -3,155 +3,156 @@ import type {
   BehaviorGraph,
   BehaviorNode,
   BehaviorRole,
+  BehaviorRow,
   BehaviorLayout,
+  DeltaKind,
   LaidOutEdge,
   LaidOutNode,
 } from '../types';
 
-const NODE_WIDTH = 176;
-const NODE_HEIGHT = 78;
-const GAP_X = 50;
-const GAP_Y = 36;
-const LEFT = 28;
-const TOP = 54;
-const BOTTOM = 24;
+const NODE_WIDTH = 168;
+const NODE_HEIGHT = 74;
+const GAP_X = 46;
+const LEFT = 26;
+const TOP = 42;
+const ROW_GAP = 34;
+const HEADER = 34;
+const ARC = 42;
 
-const ROLE_ORDER: Record<BehaviorRole, number> = {
-  trigger: 0,
-  decision: 1,
-  transform: 2,
-  effect: 3,
+const DELTA_ORDER: Record<DeltaKind, number> = {
+  modified: 0,
+  added: 1,
+  removed: 2,
+  unchanged: 3,
 };
 
-function nodeOrder(node: BehaviorNode, graph: BehaviorGraph): number {
-  const index = graph.scenarios.findIndex((scenario) => scenario.nodes.includes(node.id));
-  return index === -1 ? graph.scenarios.length : index;
+function nodeMap(graph: BehaviorGraph): Map<string, BehaviorNode> {
+  return new Map(graph.nodes.map((node) => [node.id, node]));
 }
 
+/**
+ * 每条 scenario 独占一行。行内按 scenario.nodes 排步骤，效果贴到右边界。
+ * 不同行之间不画边，所以一条行为的判定不会连到另一条行为的步骤。
+ */
 export function layoutBehavior(graph: BehaviorGraph): BehaviorLayout {
-  if (!graph.nodes.length) {
-    return {
-      nodes: [],
-      edges: [],
-      width: 0,
-      height: 0,
-      stageCount: 0,
-      nodeWidth: NODE_WIDTH,
-      nodeHeight: NODE_HEIGHT,
-    };
+  if (!graph.nodes.length || !graph.scenarios.length) {
+    return { rows: [], nodes: [], edges: [], width: 0, height: 0, nodeWidth: NODE_WIDTH, nodeHeight: NODE_HEIGHT };
   }
 
-  const stages = Math.max(graph.stageCount, 1);
-  const columns = new Map<number, BehaviorNode[]>();
-  for (const node of graph.nodes) {
-    const stage = Math.max(0, Math.min(stages - 1, node.stage));
-    const list = columns.get(stage) ?? [];
-    list.push(node);
-    columns.set(stage, list);
-  }
-  for (const list of columns.values()) {
-    list.sort((a, b) => {
-      const byScenario = nodeOrder(a, graph) - nodeOrder(b, graph);
-      if (byScenario !== 0) return byScenario;
-      const byRole = ROLE_ORDER[a.role] - ROLE_ORDER[b.role];
-      if (byRole !== 0) return byRole;
-      return a.label.localeCompare(b.label);
-    });
-  }
+  const base = nodeMap(graph);
+  const scenarios = [...graph.scenarios].sort((left, right) => {
+    const byTitle = left.title.localeCompare(right.title);
+    if (byTitle !== 0) return byTitle;
+    return DELTA_ORDER[left.delta] - DELTA_ORDER[right.delta];
+  });
 
-  let tallest = 0;
-  for (const list of columns.values()) {
-    const height = list.length * NODE_HEIGHT + Math.max(0, list.length - 1) * GAP_Y;
-    tallest = Math.max(tallest, height);
-  }
-  const height = TOP + tallest + BOTTOM;
-  const width = LEFT * 2 + stages * NODE_WIDTH + Math.max(0, stages - 1) * GAP_X;
+  const maxNodes = Math.max(...scenarios.map((scenario) => scenario.nodes.length), 1);
+  const width = Math.max(760, LEFT * 2 + maxNodes * NODE_WIDTH + Math.max(0, maxNodes - 1) * GAP_X);
+  const rows: BehaviorRow[] = [];
+  const allNodes: LaidOutNode[] = [];
+  const allEdges: LaidOutEdge[] = [];
+  let y = TOP;
 
-  const nodes: LaidOutNode[] = [];
-  for (const [stage, list] of columns) {
-    const columnHeight = list.length * NODE_HEIGHT + Math.max(0, list.length - 1) * GAP_Y;
-    const startY = TOP + (tallest - columnHeight) / 2;
-    list.forEach((node, index) => {
-      nodes.push({
+  scenarios.forEach((scenario, index) => {
+    const ids = scenario.nodes.filter((id) => base.has(id));
+    const rowKey = scenario.id;
+    const rowY = y + HEADER;
+    const nodes: LaidOutNode[] = ids.map((id, slot) => {
+      const node = base.get(id)!;
+      // 每行按自己的步骤数从左往右排；短链路不再被拉到全局最右列。
+      const x = LEFT + slot * (NODE_WIDTH + GAP_X);
+      return {
         ...node,
-        x: LEFT + stage * (NODE_WIDTH + GAP_X),
-        y: startY + index * (NODE_HEIGHT + GAP_Y),
+        x,
+        y: rowY,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
+        rowKey,
+        scenarioId: scenario.id,
+      };
+    });
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+
+    const edges: LaidOutEdge[] = [];
+    const scenarioEdges = graph.edges.filter((edge) => edge.scenario === scenario.id);
+    const controls = scenarioEdges.filter((edge) => edge.kind === 'control');
+    // 调用边与判定路径同时存在时，只画判定路径。调用边保留在数据里，
+    // 但不让它绕过判定卡片，造成「守卫被跳过」的错觉。
+    const visibleEdges = scenarioEdges.filter(
+      (edge) =>
+        edge.kind !== 'call' ||
+        !controls.some((control) => control.from === edge.from || control.to === edge.to),
+    );
+    visibleEdges
+      .forEach((edge, edgeIndex) => {
+        const from = byId.get(edge.from);
+        const to = byId.get(edge.to);
+        if (!from || !to) return;
+        edges.push(layEdge(edge, from, to, rowKey, edgeIndex));
       });
-    });
-  }
 
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const parallel = new Map<string, number>();
-  for (const edge of graph.edges) {
-    const key = `${edge.from}>${edge.to}`;
-    parallel.set(key, (parallel.get(key) ?? 0) + 1);
-  }
-  const slot = new Map<string, number>();
-  const edges: LaidOutEdge[] = [];
-
-  graph.edges.forEach((edge, index) => {
-    const from = byId.get(edge.from);
-    const to = byId.get(edge.to);
-    if (!from || !to) return;
-
-    const key = `${edge.from}>${edge.to}`;
-    const total = parallel.get(key) ?? 1;
-    const current = slot.get(key) ?? 0;
-    slot.set(key, current + 1);
-    const offset = (current - (total - 1) / 2) * 24;
-
-    const x1 = from.x + from.width;
-    const y1 = from.y + from.height / 2;
-    const x2 = to.x;
-    const y2 = to.y + to.height / 2;
-
-    let path: string;
-    let labelX = (x1 + x2) / 2;
-    let labelY = (y1 + y2) / 2 - 9 + offset;
-    if (x2 <= x1) {
-      const midX = Math.max(x1, x2) + 38;
-      path = `M ${x1} ${y1} C ${midX} ${y1 + offset}, ${midX} ${y2 + offset}, ${x2} ${y2}`;
-      labelX = midX;
-    } else {
-      const dx = Math.max(54, (x2 - x1) * 0.46);
-      path = `M ${x1} ${y1} C ${x1 + dx} ${y1 + offset}, ${x2 - dx} ${y2 + offset}, ${x2} ${y2}`;
-    }
-
-    edges.push({
-      ...edge,
-      path,
-      labelX,
-      labelY,
-      pathId: `behavior-edge-${index}`,
-    });
+    const row: BehaviorRow = {
+      id: scenario.id,
+      index,
+      title: scenario.title,
+      delta: scenario.delta,
+      source: scenario.source,
+      shape: scenario.shape,
+      category: scenario.category,
+      x: LEFT,
+      y,
+      width,
+      height: HEADER + NODE_HEIGHT + ARC,
+      nodes,
+      edges,
+    };
+    rows.push(row);
+    allNodes.push(...nodes);
+    allEdges.push(...edges);
+    y += row.height + ROW_GAP;
   });
 
   return {
-    nodes,
-    edges,
+    rows,
+    nodes: allNodes,
+    edges: allEdges,
     width,
-    height,
-    stageCount: stages,
+    height: Math.max(y + 18, 260),
     nodeWidth: NODE_WIDTH,
     nodeHeight: NODE_HEIGHT,
   };
 }
 
-export function stageLabels(graph: BehaviorGraph): string[] {
-  const labels: string[] = [];
-  for (let stage = 0; stage < Math.max(graph.stageCount, 1); stage += 1) {
-    const roles = new Set(graph.nodes.filter((node) => node.stage === stage).map((node) => node.role));
-    if (roles.size === 0) {
-      labels.push('');
-    } else if (roles.size === 1) {
-      labels.push(roleLabel([...roles][0]));
-    } else {
-      labels.push([...roles].map(roleLabel).join(' / '));
-    }
+function layEdge(
+  edge: BehaviorEdge,
+  from: LaidOutNode,
+  to: LaidOutNode,
+  rowKey: string,
+  index: number,
+): LaidOutEdge {
+  const x1 = from.x + from.width;
+  const y1 = from.y + from.height / 2;
+  const x2 = to.x;
+  const y2 = to.y + to.height / 2;
+  const sameRow = Math.abs(y1 - y2) < 2;
+  const skipsNode = x2 - (from.x + from.width) > 180;
+  let path: string;
+  let labelX = (x1 + x2) / 2;
+  let labelY = (y1 + y2) / 2 - 7;
+
+  if (sameRow && skipsNode) {
+    // 数据边跨过判定节点时从下方绕行，避免被判定卡片遮住。
+    const arcY = from.y + from.height + 26;
+    path = `M ${x1} ${y1} C ${x1 + 42} ${arcY}, ${x2 - 42} ${arcY}, ${x2} ${y2}`;
+    labelY = arcY + 2;
+  } else if (sameRow) {
+    path = `M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 - 24} ${y2}, ${x2} ${y2}`;
+  } else {
+    const midX = (x1 + x2) / 2;
+    path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+    labelX = midX;
   }
-  return labels;
+  return { ...edge, path, labelX, labelY, pathId: `edge-${rowKey}-${index}`, rowKey };
 }
 
 export function roleLabel(role: BehaviorRole): string {
@@ -168,11 +169,7 @@ export function roleLabel(role: BehaviorRole): string {
 }
 
 export function edgeLabel(edge: BehaviorEdge): string {
-  if (edge.kind === 'data') {
-    return edge.label || '数据';
-  }
-  if (edge.kind === 'control') {
-    return edge.label || '控制';
-  }
+  if (edge.kind === 'data') return edge.label || '数据';
+  if (edge.kind === 'control') return edge.label || '控制';
   return edge.label || '调用';
 }

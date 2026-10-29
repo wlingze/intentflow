@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import styles from './App.module.css';
+import { BehaviorSidebar } from './components/BehaviorSidebar';
 import { CodeStage } from './components/CodeStage';
 import { Composer } from './components/Composer';
 import { FileTree } from './components/FileTree';
@@ -60,7 +61,14 @@ export default function App() {
         <>
           <div className={styles.main}>
             <aside className={styles.left}>
-              <FileTree />
+              {view === 'graph' ? (
+                <FileTree variant="project" />
+              ) : (
+                <>
+                  <BehaviorSidebar />
+                  <FileTree variant="files" />
+                </>
+              )}
             </aside>
             <main className={styles.center}>
               {view === 'graph' ? <GraphView /> : <CodeStage />}

@@ -2,7 +2,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: 100%;
+  height: auto;
+  flex: 1;
 }
 
 .head {
@@ -264,4 +265,71 @@ details[open] > .dirRow > .chevron {
 .foot b {
   color: var(--amber);
   font-weight: 500;
+}
+
+.totalDiff {
+  display: inline-flex;
+  gap: 5px;
+  margin-left: 7px;
+}
+
+.summaryWrap {
+  flex: none;
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.summaryBar {
+  display: flex;
+  height: 4px;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+
+.summaryBar i {
+  display: block;
+  min-width: 2px;
+}
+
+.summaryAdded { background: var(--green); }
+.summaryModified { background: var(--amber); }
+.summaryRemoved { background: var(--red); }
+
+.summaryLegend {
+  display: flex;
+  gap: 9px;
+  margin-top: 6px;
+  color: var(--faint);
+  font: 8.5px/1 var(--mono);
+}
+
+.summaryLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.summaryLegend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.legendAdded { background: var(--green); }
+.legendModified { background: var(--amber); }
+.legendRemoved { background: var(--red); }
+
+.factCount {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+  font: 8.5px/1.3 var(--mono);
+  white-space: normal;
+}
+
+.factCount b {
+  color: var(--dim);
+  font-weight: 650;
 }

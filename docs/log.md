@@ -205,3 +205,73 @@ demo 结果与上一轮一致：意图层 ±2/1，逻辑层 ±6/2，项目层 ±
   缩略图点击跳转、选中引用、评论、提交、搜索、深色/浅色。
 - `review.md` 与 `review-state.json` 已写入 `examples/demo-go/out/`。
 - 未上传 GitHub，全部为本地提交。
+
+## 2026-10-30 · 第五轮：去掉字法树，按行为行重排，跑 yaklang LLVM 分支
+
+### 去掉 go/ast
+
+项目层、逻辑层、意图层现在共用一次 SSA 编译：
+
+- 文件：`Program.FileList`
+- 函数：`Program.EachFunction`
+- 调用：`*ssa.Call`
+- 分支：`*ssa.If` / `*ssa.Switch`
+- 数据来源与形态：SyntaxFlow + `GetTopDefs`
+
+`internal/scan/ir.go` 是唯一入口。`project.go` 只保留路径工具；`behavior.go`
+不再出现 `go/parser`。
+
+### 行为图重排
+
+旧版把所有节点塞进全局阶段列，`handleSearch` 的守卫同时连向 `findUser`
+和 `loadTemplate`，看起来像一条分叉。实际是两条 scenario。
+
+现在一条 scenario 一行：
+
+- 行内按 `scenario.nodes` 从左往右排。
+- 不同行之间不画边。
+- 数据边跨判定时从下方绕行。
+- 调用边和判定路径同时存在时，只画判定路径。
+
+### 工作台
+
+- 图上点击节点只开底部详情/代码坞，不自动切代码。
+- 代码坞可拖高、可关闭，带证据与「引用到评论」。
+- 代码视角左侧改成行为导航；下面是变更文件树；没有悬浮缩略图。
+- 左栏换成项目改动目录树：目录聚合 +/− 行数、变更文件数、结构/调用事实数。
+- 右侧加 AI tab。
+
+### LLM
+
+新增 `internal/insight`。只读事实，输出 `summary`、`risks`、`focus`。
+默认走 OpenAI Responses 兼容端点：
+
+```text
+INTENTFLOW_LLM_BASE_URL
+INTENTFLOW_LLM_API_KEY
+INTENTFLOW_LLM_MODEL
+```
+
+没配置时 `status=unavailable`，不影响分析。prompt 要求 evidence 只能引用
+输入里的标题、路径或行号。
+
+### yaklang 分支
+
+- before：`main`
+- after：`feature/ssa2llvm/support_ci_and_mustpass_test`
+- 范围：`common/yak/ssa2llvm`，304 个文件，122 个改动
+
+结果：项目层 +581/−6，逻辑层 +1935/−106，意图层 +9，关注点 22，
+行为图 15 条 scenario，48 节点 / 67 边（23 新增 / 21 移除 / 0 变化）。触发函数与变换函数按 before/after 对齐后，未变的入口不再被标成新增。SSA 编译约 1 分钟。
+
+LLM 摘要指出：编译器调用绑定/闭包/控制流大范围调整，新增 FileReadFile、
+FileOpen、FileSave、FileCopy 等 env→format→文件读写行为；优先复核 aotlib
+文件路径、elfsplit 运行时补丁和测试覆盖。
+
+### 验证
+
+- `go build ./...`、`go vet ./...` 通过。
+- `pnpm typecheck`、`pnpm build` 通过。
+- 浏览器验证：两条 scenario 分行、format 弧线、底部代码坞、拖拽、
+  代码视角行为导航、项目目录树、AI tab、SyntaxFlow/Review。
+- `examples/yaklang-llvm/out/review.json` 与 `review.md` 已生成。

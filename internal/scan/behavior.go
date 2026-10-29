@@ -1,14 +1,7 @@
 package scan
 
 import (
-	"bytes"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/printer"
-	"go/token"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -23,10 +16,13 @@ import (
 //	效果 effect     可观察的副作用（SQL / 文件 / 进程 / 响应）
 //
 // 这不是调用图。一个函数可以只出现在「变换」里；一个 if 可以单独成为
-// 「判定」节点。每一行是一条 scenario，列是行为阶段。
+// 「判定」节点。每一行是一条 scenario，列是这条 scenario 自己的步骤。
+//
+// 关键约束：不同 scenario 之间不连边。同一个触发函数可以出现在两条
+// scenario 的开头，但一条 scenario 的判定不能连到另一条 scenario 的步骤。
+// 旧版把所有节点按全局阶段排成一列，才会把 handleSearch 的守卫画到
+// loadTemplate 旁边，看起来像一条分叉；这是排版错误，不是代码错误。
 
-// branchInfo 是一处条件或分发。它只记录「哪个调用在哪个分支里」，
-// 不试图做完整的路径敏感分析。
 type branchInfo struct {
 	Func       string
 	File       string
@@ -35,7 +31,7 @@ type branchInfo struct {
 	Kind       string // if | switch
 	Cond       string
 	GroupLabel string
-	Branch     string // true | false | case 值
+	Branch     string // true | false | case 值 | default
 	ThenCalls  map[string]struct{}
 	ElseCalls  map[string]struct{}
 	ThenStart  int32
@@ -45,94 +41,151 @@ type branchInfo struct {
 	Guard      bool
 }
 
-type funcInfo struct {
-	Name      string
-	File      string
-	Line      int32
-	Package   string
-	Params    []string
-	Calls     map[string]int32
-	Branches  []branchInfo
-	EntryKind string
-}
-
 type sideGraph struct {
 	nodes     map[string]model.BehaviorNode
 	edges     map[string]model.BehaviorEdge
 	scenarios map[string]model.BehaviorScenario
 }
 
-// BuildBehavior 用两侧全量事实与 AST 构造行为图，再按稳定身份做 diff。
-// 图完全由代码分析得到；这里没有任何 LLM 参与。
-func BuildBehavior(beforeRoot, afterRoot string, review *model.Review, before, after model.FactSet) model.BehaviorGraph {
-	bFuncs, _ := indexFunctions(beforeRoot)
-	aFuncs, _ := indexFunctions(afterRoot)
+// BuildBehavior 用两侧 SSA 索引与意图 diff 构造行为图。
+// 图完全由 SSA + SyntaxFlow 得到；这里没有任何 LLM 参与。
+//
+// 行为图只展示改动涉及的 scenario，但改动路径上的触发、变换、副作用
+// 仍要和 before 对齐。否则一个没变过的入口函数也会被标成「新增」。
+// before 侧因此先取全部意图事实建图，再按 after 的触发函数过滤；
+// after 侧只取新增事实，避免把无关行为带进来。
+func BuildBehavior(beforeIdx, afterIdx *IRIndex, beforeFacts []model.Fact, review *model.Review) model.BehaviorGraph {
+	a := buildSide(afterIdx, review.Intent.Added)
+	removed := buildSide(beforeIdx, review.Intent.Removed)
+	allBefore := buildSide(beforeIdx, beforeFacts)
 
-	b := buildSide(before, bFuncs, review.Intent.Removed)
-	a := buildSide(after, aFuncs, review.Intent.Added)
+	keep := map[string]bool{}
+	for _, s := range a.scenarios {
+		keep[s.Trigger] = true
+	}
+	for _, s := range removed.scenarios {
+		keep[s.Trigger] = true
+	}
+	b := filterSideByTriggers(allBefore, keep)
 	return mergeBehavior(b, a)
 }
 
-func buildSide(facts model.FactSet, funcs map[string]funcInfo, changed []model.Fact) sideGraph {
+// IntentFacts 返回一侧全部意图事实，供行为图对齐 before 上下文。
+func IntentFacts(set model.FactSet) []model.Fact {
+	out := make([]model.Fact, 0, len(set[model.LayerIntent]))
+	for _, f := range set[model.LayerIntent] {
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
+	return out
+}
+
+// filterSideByTriggers 只保留指定触发函数下的 scenario 与它们引用的节点、边。
+func filterSideByTriggers(g sideGraph, keep map[string]bool) sideGraph {
+	out := sideGraph{
+		nodes:     map[string]model.BehaviorNode{},
+		edges:     map[string]model.BehaviorEdge{},
+		scenarios: map[string]model.BehaviorScenario{},
+	}
+	for id, s := range g.scenarios {
+		if !keep[s.Trigger] {
+			continue
+		}
+		out.scenarios[id] = s
+		for _, nodeID := range s.Nodes {
+			if n, ok := g.nodes[nodeID]; ok {
+				out.nodes[nodeID] = n
+			}
+		}
+		if n, ok := g.nodes[s.Trigger]; ok {
+			out.nodes[s.Trigger] = n
+		}
+	}
+	for id, e := range g.edges {
+		if _, ok := out.scenarios[e.Scenario]; ok {
+			out.edges[id] = e
+		}
+	}
+	return out
+}
+
+func buildSide(idx *IRIndex, changed []model.Fact) sideGraph {
 	g := sideGraph{
 		nodes:     map[string]model.BehaviorNode{},
 		edges:     map[string]model.BehaviorEdge{},
 		scenarios: map[string]model.BehaviorScenario{},
 	}
-	if len(changed) == 0 {
+	if idx == nil || len(changed) == 0 {
 		return g
 	}
 
-	callers := buildCallers(facts)
+	callers := idx.Callers()
 	for _, fact := range changed {
-		path := scenarioPath(fact, callers, funcs)
+		path := scenarioPath(fact, callers, idx)
 		if len(path) == 0 {
 			continue
 		}
-		entry := funcs[path[0]]
-		trigger := ensureTrigger(g, path[0], entry)
+		triggerInfo := path[0]
+		effectInfo, ok := idx.FuncAt(fact.Function, fact.File)
+		if !ok {
+			effectInfo = IRFunc{Short: fact.Function, File: fact.File, Line: fact.Line}
+		}
 
-		effectID := behaviorEffectID(fact.Category, fact.Function)
-		effect := effectNode(fact, funcs[fact.Function], effectID)
+		trigger := ensureTrigger(path[0].Short, triggerInfo)
+		effect := effectNode(fact, effectInfo)
+		scenarioKey := scenarioID(trigger.Id, effect.Id)
 
+		addNode(g, trigger)
 		ids := []string{trigger.Id}
 		current := trigger.Id
-		addNode(g, trigger)
 
 		for index := 1; index < len(path); index++ {
-			name := path[index]
-			info := funcs[name]
-			step := ensureTransform(g, name, info)
+			info := path[index]
+			name := info.Short
+			if name == "" {
+				continue
+			}
+			step := ensureTransform(name, info)
 			addNode(g, step)
 
-			if decision, ok := decisionFor(funcs[lastFnOr(path, index-1)], name, lastFnOr(path, index-1)); ok {
+			prevInfo := path[index-1]
+			prevName := prevInfo.Short
+			// 调用关系与分支关系是两件事：handleSearch 在守卫之前仍然调用 findUser。
+			// 先保留 call 边，再叠加 control 边，避免新增守卫被误报成「调用被删除」。
+			addEdge(g, callEdge(current, step.Id, scenarioKey))
+			if decision, ok := decisionFor(prevInfo, name, prevName); ok {
 				decisionDelta := decisionNode(decision)
+				decisionDelta.Stage = 0
 				addNode(g, decisionDelta)
-				addEdge(g, controlEdge(decisionDelta.Id, step.Id, decision.Branch, decision.Kind))
-				addEdge(g, controlEdge(current, decisionDelta.Id, "进入判定", decision.Kind))
-				ids = append(ids, decisionDelta.Id)
-			} else {
-				addEdge(g, callEdge(current, step.Id))
+				addEdge(g, controlEdge(current, decisionDelta.Id, "进入判定", decision.Kind, scenarioKey))
+				addEdge(g, controlEdge(decisionDelta.Id, step.Id, decision.Branch, decision.Kind, scenarioKey))
+				if !containsString(ids, decisionDelta.Id) {
+					ids = append(ids, decisionDelta.Id)
+				}
 			}
-			ids = append(ids, step.Id)
+			if !containsString(ids, step.Id) {
+				ids = append(ids, step.Id)
+			}
 			current = step.Id
 		}
 
-		for _, d := range effectDecisions(funcs[fact.Function], fact) {
+		for _, d := range effectDecisions(effectInfo, fact) {
 			dn := decisionNode(d)
 			addNode(g, dn)
-			addEdge(g, controlEdge(current, dn.Id, "进入判定", d.Kind))
-			addEdge(g, controlEdge(dn.Id, effect.Id, d.Branch, d.Kind))
+			addEdge(g, controlEdge(current, dn.Id, "进入判定", d.Kind, scenarioKey))
+			addEdge(g, controlEdge(dn.Id, effect.Id, d.Branch, d.Kind, scenarioKey))
 			if !containsString(ids, dn.Id) {
 				ids = append(ids, dn.Id)
 			}
 		}
 		addNode(g, effect)
-		addEdge(g, dataEdge(current, effect.Id, fact))
-		ids = append(ids, effect.Id)
+		addEdge(g, dataEdge(current, effect.Id, fact, scenarioKey))
+		if !containsString(ids, effect.Id) {
+			ids = append(ids, effect.Id)
+		}
 
 		sc := model.BehaviorScenario{
-			Id:       scenarioID(trigger.Id, effect.Id),
+			Id:       scenarioKey,
 			Trigger:  trigger.Id,
 			Effect:   effect.Id,
 			Title:    scenarioTitle(trigger, effect),
@@ -152,23 +205,16 @@ func buildSide(facts model.FactSet, funcs map[string]funcInfo, changed []model.F
 	return g
 }
 
-func lastFnOr(path []string, index int) string {
-	if index < 0 || index >= len(path) {
-		return ""
-	}
-	return path[index]
-}
-
-func ensureTrigger(g sideGraph, name string, info funcInfo) model.BehaviorNode {
-	id := "trigger:" + name
-	if existing, ok := g.nodes[id]; ok {
-		return existing
-	}
+func ensureTrigger(name string, info IRFunc) model.BehaviorNode {
+	id := behaviorNodeID("trigger", name, info.File)
 	kind := info.EntryKind
 	if kind == "" {
 		kind = "内部入口"
 	}
-	node := model.BehaviorNode{
+	if base := baseFileName(info.File); base != "" {
+		kind += " · " + base
+	}
+	return model.BehaviorNode{
 		Id:         id,
 		Role:       model.RoleTrigger,
 		Label:      name,
@@ -176,22 +222,17 @@ func ensureTrigger(g sideGraph, name string, info funcInfo) model.BehaviorNode {
 		File:       info.File,
 		Line:       info.Line,
 		Function:   name,
-		Package:    info.Package,
+		Package:    filepathPackage(info.File),
 		Confidence: model.Derived,
 		Evidence:   []string{},
 		Tags:       []string{"entry"},
 		Snippet:    "func " + name,
 	}
-	g.nodes[id] = node
-	return node
 }
 
-func ensureTransform(g sideGraph, name string, info funcInfo) model.BehaviorNode {
-	id := "transform:" + name
-	if existing, ok := g.nodes[id]; ok {
-		return existing
-	}
-	node := model.BehaviorNode{
+func ensureTransform(name string, info IRFunc) model.BehaviorNode {
+	id := behaviorNodeID("transform", name, info.File)
+	return model.BehaviorNode{
 		Id:         id,
 		Role:       model.RoleTransform,
 		Label:      name,
@@ -199,14 +240,12 @@ func ensureTransform(g sideGraph, name string, info funcInfo) model.BehaviorNode
 		File:       info.File,
 		Line:       info.Line,
 		Function:   name,
-		Package:    info.Package,
+		Package:    filepathPackage(info.File),
 		Confidence: model.Extracted,
 		Evidence:   []string{},
 		Tags:       []string{"function"},
 		Snippet:    "func " + name,
 	}
-	g.nodes[id] = node
-	return node
 }
 
 func decisionNode(b branchInfo) model.BehaviorNode {
@@ -218,13 +257,14 @@ func decisionNode(b branchInfo) model.BehaviorNode {
 		label = "其他输入"
 	}
 	return model.BehaviorNode{
-		Id:         "decision:" + b.Func + ":" + model.Identity("decision", b.Func, normalize(b.GroupLabel), fmt.Sprint(b.Group))[:8],
+		Id:         behaviorNodeID("decision", b.Func, b.File) + ":" + model.Identity("decision", b.Func, normalize(b.GroupLabel), fmt.Sprint(b.Group))[:8],
 		Role:       model.RoleDecision,
 		Label:      label,
 		Detail:     b.Kind,
 		File:       b.File,
 		Line:       b.Line,
 		Function:   b.Func,
+		Package:    filepathPackage(b.File),
 		Confidence: model.Derived,
 		Evidence:   []string{},
 		Tags:       []string{b.Kind},
@@ -232,17 +272,17 @@ func decisionNode(b branchInfo) model.BehaviorNode {
 	}
 }
 
-func effectNode(f model.Fact, info funcInfo, id string) model.BehaviorNode {
+func effectNode(f model.Fact, info IRFunc) model.BehaviorNode {
 	detail := fmt.Sprintf("%s · %s", shapeHint(f.Shape), sourceText(f.Source))
 	return model.BehaviorNode{
-		Id:         id,
+		Id:         behaviorEffectID(f.Category, f.Function, f.File),
 		Role:       model.RoleEffect,
 		Label:      categoryLabel(f.Category),
 		Detail:     detail,
 		File:       f.File,
 		Line:       f.Line,
 		Function:   f.Function,
-		Package:    info.Package,
+		Package:    filepathPackage(info.File),
 		Confidence: f.Confidence,
 		Evidence:   []string{f.Identity},
 		Tags:       []string{"sink", f.Category},
@@ -253,39 +293,42 @@ func effectNode(f model.Fact, info funcInfo, id string) model.BehaviorNode {
 	}
 }
 
-func callEdge(from, to string) model.BehaviorEdge {
+func callEdge(from, to, scenario string) model.BehaviorEdge {
 	return model.BehaviorEdge{
-		Id:         from + ">" + to + ":call",
+		Id:         from + ">" + to + ":call:" + scenario,
 		From:       from,
 		To:         to,
 		Kind:       model.EdgeCall,
 		Label:      "调用",
+		Scenario:   scenario,
 		Confidence: model.Extracted,
 		Evidence:   []string{},
 	}
 }
 
-func controlEdge(from, to, label, kind string) model.BehaviorEdge {
+func controlEdge(from, to, label, kind, scenario string) model.BehaviorEdge {
 	return model.BehaviorEdge{
-		Id:         from + ">" + to + ":control:" + label,
+		Id:         from + ">" + to + ":control:" + label + ":" + scenario,
 		From:       from,
 		To:         to,
 		Kind:       model.EdgeControl,
 		Label:      label,
+		Scenario:   scenario,
 		Confidence: model.Derived,
 		Evidence:   []string{},
 	}
 }
 
-func dataEdge(from, to string, f model.Fact) model.BehaviorEdge {
+func dataEdge(from, to string, f model.Fact, scenario string) model.BehaviorEdge {
 	return model.BehaviorEdge{
-		Id:         from + ">" + to + ":data:" + f.Shape + ":" + f.Source,
+		Id:         from + ">" + to + ":data:" + f.Shape + ":" + f.Source + ":" + scenario,
 		From:       from,
 		To:         to,
 		Kind:       model.EdgeData,
 		Label:      f.Shape + " · " + sourceText(f.Source),
 		Shape:      f.Shape,
 		Source:     f.Source,
+		Scenario:   scenario,
 		Confidence: model.Derived,
 		Evidence:   []string{f.Identity},
 	}
@@ -311,7 +354,11 @@ func scenarioTitle(trigger, effect model.BehaviorNode) string {
 	if effect.Label == "" {
 		return trigger.Label
 	}
-	return trigger.Label + " → " + effect.Label
+	title := trigger.Label + " → " + effect.Label
+	if effect.Function != "" {
+		title += " · " + effect.Function
+	}
+	return title
 }
 
 func categoryLabel(category string) string {
@@ -324,6 +371,8 @@ func categoryLabel(category string) string {
 		return "文件读写"
 	case "http":
 		return "HTTP 调用"
+	case "env":
+		return "环境变量"
 	}
 	if category == "" {
 		return "效果"
@@ -338,72 +387,77 @@ func sourceText(source string) string {
 	return source
 }
 
-func normalize(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+func baseFileName(file string) string {
+	if i := strings.LastIndex(file, "/"); i >= 0 {
+		return file[i+1:]
+	}
+	return file
 }
 
-// buildCallers 从全量逻辑层事实里取「谁调用了谁」。
-func buildCallers(facts model.FactSet) map[string][]string {
-	callers := map[string][]string{}
-	for _, f := range facts[model.LayerLogic] {
-		parts := strings.Split(f.Title, " → ")
-		if len(parts) != 2 {
-			continue
-		}
-		from, to := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-		if from == "" || to == "" {
-			continue
-		}
-		if !containsString(callers[to], from) {
-			callers[to] = append(callers[to], from)
-		}
+func filepathPackage(file string) string {
+	if i := strings.LastIndex(file, "/"); i >= 0 {
+		return file[:i]
 	}
-	return callers
+	return ""
 }
 
 // scenarioPath 把一条意图事实还原成「入口 → … → sink 函数」。
 //
 // fact.Path 是 SSA 追源时碰到的函数集合，不是调用链；直接反转会把
-// 旁支函数塞进路径。真正的调用关系从逻辑层事实（AST 调用边）取。
-func scenarioPath(f model.Fact, callers map[string][]string, funcs map[string]funcInfo) []string {
-	path := []string{f.Function}
-	for guard := 0; guard < 8; guard++ {
-		first := path[0]
-		next := pickCaller(first, callers, funcs, path, f.Path)
-		if next == "" {
+// 旁支函数塞进路径。真正的调用关系从 SSA 调用边取。
+func scenarioPath(f model.Fact, callers map[string][]IRFunc, idx *IRIndex) []IRFunc {
+	first, ok := idx.FuncAt(f.Function, f.File)
+	if !ok {
+		return nil
+	}
+	path := []IRFunc{first}
+	for guard := 0; guard < 12; guard++ {
+		next, ok := pickCaller(path[0], callers, path, f.Path)
+		if !ok {
 			break
 		}
-		path = append([]string{next}, path...)
+		path = append([]IRFunc{next}, path...)
 	}
 	return path
 }
 
-func pickCaller(name string, callers map[string][]string, funcs map[string]funcInfo, path, ssaPath []string) string {
-	if name == "main" {
-		return ""
+func pickCaller(current IRFunc, callers map[string][]IRFunc, path []IRFunc, ssaPath []string) (IRFunc, bool) {
+	if current.Short == "main" {
+		return IRFunc{}, false
 	}
-	candidates := callers[name]
-	// SSA 追源碰到的函数集合可以用来消歧，但它不是调用链。
+	candidates := callers[current.Short]
 	for _, c := range candidates {
-		if containsString(ssaPath, c) && !containsString(path, c) {
-			return c
+		if containsIRFunc(path, c) {
+			continue
+		}
+		if containsString(ssaPath, c.Short) {
+			return c, true
 		}
 	}
 	for _, c := range candidates {
-		if funcs[c].EntryKind != "" && !containsString(path, c) {
-			return c
+		if !containsIRFunc(path, c) && c.EntryKind != "" {
+			return c, true
 		}
 	}
 	for _, c := range candidates {
-		if !containsString(path, c) {
-			return c
+		if !containsIRFunc(path, c) {
+			return c, true
 		}
 	}
-	return ""
+	return IRFunc{}, false
 }
 
-func decisionFor(info funcInfo, callee, from string) (branchInfo, bool) {
-	if from == "" || info.Name == "" {
+func containsIRFunc(list []IRFunc, value IRFunc) bool {
+	for _, item := range list {
+		if item.Short == value.Short && item.File == value.File {
+			return true
+		}
+	}
+	return false
+}
+
+func decisionFor(info IRFunc, callee, from string) (branchInfo, bool) {
+	if from == "" || info.Short == "" {
 		return branchInfo{}, false
 	}
 	var matches []struct {
@@ -450,8 +504,8 @@ func decisionFor(info funcInfo, callee, from string) (branchInfo, bool) {
 // effectDecisions 找出「直接影响这个副作用」的条件或分发。
 // 若副作用在某个分支体内，只取那个分支；否则取紧挨在副作用前、
 // 且在该函数内最后出现的一组分支（例如 switch 选完模板再执行）。
-func effectDecisions(info funcInfo, f model.Fact) []branchInfo {
-	if info.Name == "" {
+func effectDecisions(info IRFunc, f model.Fact) []branchInfo {
+	if info.Short == "" {
 		return nil
 	}
 	var inside []branchInfo
@@ -494,7 +548,6 @@ func effectDecisions(info funcInfo, f model.Fact) []branchInfo {
 			continue
 		}
 		if b.Kind == "if" {
-			// if/else 是两个可选分支；只有单边 guard 才只有一个出口。
 			out = append(out, b)
 			if b.ElseCalls != nil && len(b.ElseCalls) > 0 {
 				alt := b
@@ -617,8 +670,6 @@ func assignStages(g *model.BehaviorGraph) {
 			stage[n.Id] = 0
 		}
 	}
-	// 按拓扑最长路径排阶段。边包含新增与移除两侧，这样 before 的路径
-	// 也能参与排版，不会因为删除了某条边而把节点挤到第一列。
 	for pass := 0; pass < len(g.Nodes)+1; pass++ {
 		changed := false
 		for _, e := range g.Edges {
@@ -641,7 +692,6 @@ func assignStages(g *model.BehaviorGraph) {
 			stage[id] = 0
 		}
 	}
-	// 效果节点统一贴到最右列，比较同一副作用的 before/after。
 	maxEffect := int32(0)
 	for _, n := range g.Nodes {
 		if n.Role == model.RoleEffect && stage[n.Id] > maxEffect {
@@ -711,8 +761,12 @@ func behaviorStats(g model.BehaviorGraph) model.BehaviorStats {
 	return stats
 }
 
-func behaviorEffectID(category, function string) string {
-	return "effect:" + category + ":" + function
+func behaviorEffectID(category, function, file string) string {
+	return behaviorNodeID("effect:"+category, function, file)
+}
+
+func behaviorNodeID(prefix, name, file string) string {
+	return prefix + ":" + name + ":" + model.Identity("file", file)[:8]
 }
 
 func containsString(list []string, value string) bool {
@@ -722,13 +776,6 @@ func containsString(list []string, value string) bool {
 		}
 	}
 	return false
-}
-
-func appendUnique(list []string, value string) []string {
-	if value == "" || containsString(list, value) {
-		return list
-	}
-	return append(list, value)
 }
 
 func unionStrings(a, b []string) []string {
@@ -751,259 +798,4 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-// ---- AST 索引 ----
-
-func indexFunctions(root string) (map[string]funcInfo, error) {
-	funcs := map[string]funcInfo{}
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if p != root && behaviorSkipDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(p, ".go") {
-			return nil
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, p, nil, 0)
-		if err != nil {
-			return nil
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			name := fn.Name.Name
-			if recv := receiverName(fn); recv != "" {
-				name = recv + "." + name
-			}
-			params := fieldTypes(fset, fn.Type.Params)
-			info := funcInfo{
-				Name:      name,
-				File:      rel,
-				Line:      int32(fset.Position(fn.Pos()).Line),
-				Package:   file.Name.Name,
-				Params:    params,
-				Calls:     map[string]int32{},
-				EntryKind: entryKind(name, params),
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if callee := calleeName(call.Fun); callee != "" {
-					if _, exists := info.Calls[callee]; !exists {
-						info.Calls[callee] = int32(fset.Position(call.Pos()).Line)
-					}
-				}
-				return true
-			})
-			info.Branches = collectBranches(fn, fset, rel, name)
-			funcs[name] = info
-		}
-		return nil
-	})
-	return funcs, err
-}
-
-func fieldTypes(fset *token.FileSet, fields *ast.FieldList) []string {
-	if fields == nil {
-		return nil
-	}
-	var out []string
-	for _, field := range fields.List {
-		if len(field.Names) == 0 {
-			out = append(out, exprText(fset, field.Type))
-			continue
-		}
-		for range field.Names {
-			out = append(out, exprText(fset, field.Type))
-		}
-	}
-	return out
-}
-
-func entryKind(name string, params []string) string {
-	hasWriter, hasRequest := false, false
-	for _, p := range params {
-		switch p {
-		case "http.ResponseWriter":
-			hasWriter = true
-		case "*http.Request":
-			hasRequest = true
-		}
-	}
-	if hasWriter && hasRequest {
-		return "HTTP 入口"
-	}
-	if name == "main" {
-		return "CLI 入口"
-	}
-	if strings.HasSuffix(name, ".ServeHTTP") {
-		return "HTTP 入口"
-	}
-	if strings.HasPrefix(name, "Test") {
-		for _, p := range params {
-			if p == "*testing.T" {
-				return "测试入口"
-			}
-		}
-	}
-	return ""
-}
-
-func collectBranches(fn *ast.FuncDecl, fset *token.FileSet, file, funcName string) []branchInfo {
-	var out []branchInfo
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch stmt := n.(type) {
-		case *ast.IfStmt:
-			line := int32(fset.Position(stmt.Pos()).Line)
-			b := branchInfo{
-				Func:       funcName,
-				File:       file,
-				Line:       line,
-				Group:      line,
-				Kind:       "if",
-				Cond:       exprText(fset, stmt.Cond),
-				GroupLabel: exprText(fset, stmt.Cond),
-				Branch:     "true",
-				ThenCalls:  callsInNode(stmt.Body),
-				ElseCalls:  callsInNode(stmt.Else),
-				ThenStart:  int32(fset.Position(stmt.Body.Lbrace).Line),
-				ThenEnd:    int32(fset.Position(stmt.Body.Rbrace).Line),
-				Guard:      stmt.Else == nil && blockReturns(stmt.Body),
-			}
-			if stmt.Else != nil {
-				b.ElseStart = int32(fset.Position(stmt.Else.Pos()).Line)
-				b.ElseEnd = int32(fset.Position(stmt.Else.End()).Line)
-			}
-			out = append(out, b)
-		case *ast.SwitchStmt:
-			line := int32(fset.Position(stmt.Pos()).Line)
-			tag := exprText(fset, stmt.Tag)
-			groupLabel := "switch"
-			if tag != "" {
-				groupLabel = "switch " + tag
-			}
-			var caseConds []string
-			for _, item := range stmt.Body.List {
-				cc, ok := item.(*ast.CaseClause)
-				if !ok {
-					continue
-				}
-				cond, label := tag, "default"
-				if len(cc.List) > 0 {
-					var labels []string
-					for _, expr := range cc.List {
-						labels = append(labels, exprText(fset, expr))
-					}
-					if tag == "" {
-						cond = strings.Join(labels, " || ")
-						label = "true"
-						caseConds = append(caseConds, cond)
-					} else {
-						label = strings.Join(labels, ",")
-					}
-				}
-				out = append(out, branchInfo{
-					Func:       funcName,
-					File:       file,
-					Line:       int32(fset.Position(cc.Pos()).Line),
-					Group:      line,
-					Kind:       "switch",
-					Cond:       cond,
-					GroupLabel: groupLabel,
-					Branch:     label,
-					ThenCalls:  callsInStatements(cc.Body),
-					ElseCalls:  map[string]struct{}{},
-					ThenStart:  int32(fset.Position(cc.Colon).Line),
-					ThenEnd:    int32(fset.Position(cc.End()).Line),
-				})
-			}
-			if tag == "" && len(caseConds) > 0 {
-				groupLabel = "switch { " + strings.Join(caseConds, " | ") + " }"
-				for i := range out {
-					if out[i].Group == line {
-						out[i].GroupLabel = groupLabel
-					}
-				}
-			}
-		}
-		return true
-	})
-	return out
-}
-
-func callsInNode(node ast.Node) map[string]struct{} {
-	out := map[string]struct{}{}
-	if node == nil {
-		return out
-	}
-	ast.Inspect(node, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if name := calleeName(call.Fun); name != "" {
-			out[name] = struct{}{}
-		}
-		return true
-	})
-	return out
-}
-
-func callsInStatements(stmts []ast.Stmt) map[string]struct{} {
-	out := map[string]struct{}{}
-	for _, stmt := range stmts {
-		for name := range callsInNode(stmt) {
-			out[name] = struct{}{}
-		}
-	}
-	return out
-}
-
-func blockReturns(body *ast.BlockStmt) bool {
-	if body == nil || len(body.List) == 0 {
-		return false
-	}
-	last := body.List[len(body.List)-1]
-	if _, ok := last.(*ast.ReturnStmt); ok {
-		return true
-	}
-	return false
-}
-
-func exprText(fset *token.FileSet, expr ast.Expr) string {
-	if expr == nil {
-		return ""
-	}
-	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fset, expr); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(buf.String())
-}
-
-func behaviorSkipDir(name string) bool {
-	if strings.HasPrefix(name, ".") {
-		return true
-	}
-	switch name {
-	case "node_modules", "vendor", "dist", "out", "bin", "build", "target", "__pycache__":
-		return true
-	}
-	return false
 }

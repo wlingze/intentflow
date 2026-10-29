@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { layoutBehavior, stageLabels, roleLabel } from '../lib/behavior';
-import { baseName, cx } from '../lib/format';
+import { layoutBehavior, roleLabel } from '../lib/behavior';
+import { cx } from '../lib/format';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
-import type { BehaviorEdge, BehaviorNode, DeltaKind, Fact, LaidOutEdge, LaidOutNode, Side } from '../types';
-import { CodePeek } from './CodePeek';
+import type { BehaviorEdge, BehaviorNode, DeltaKind, LaidOutEdge, LaidOutNode } from '../types';
+import { CodeDock } from './CodeDock';
 import { IconCode, IconSearch } from './Icons';
 import styles from './GraphView.module.css';
 
@@ -102,91 +102,26 @@ function Node({
       <title>
         {node.label} · {node.detail} · {DELTA_LABEL[node.delta]}
       </title>
-      <rect className={styles.card} width={node.width} height={node.height} rx={10} />
-      <rect className={styles.glyphBox} x={12} y={15} width={30} height={30} rx={8} />
-      <text className={styles.glyph} x={27} y={35} textAnchor="middle">
+      <rect className={styles.card} width={node.width} height={node.height} rx={9} />
+      <rect className={styles.glyphBox} x={11} y={14} width={28} height={28} rx={7} />
+      <text className={styles.glyph} x={25} y={33} textAnchor="middle">
         {ROLE_MARK[node.role] ?? '·'}
       </text>
-      <text className={styles.nodeTitle} x={51} y={27}>
-        {truncate(node.label, 18)}
+      <text className={styles.nodeTitle} x={47} y={26}>
+        {truncate(node.label, 17)}
       </text>
-      <text className={styles.nodeSub} x={51} y={44}>
+      <text className={styles.nodeSub} x={47} y={42}>
         {truncate(node.detail, 18)}
       </text>
       {node.change && (
-        <text className={styles.nodeChange} x={51} y={59}>
-          {truncate(node.change, 25)}
+        <text className={styles.nodeChange} x={47} y={57}>
+          {truncate(node.change, 23)}
         </text>
       )}
-      <text className={styles.nodeMark} x={node.width - 14} y={21} textAnchor="end">
+      <text className={styles.nodeMark} x={node.width - 12} y={20} textAnchor="end">
         {node.delta === 'added' ? '+' : node.delta === 'removed' ? '−' : node.delta === 'modified' ? '~' : ''}
       </text>
     </g>
-  );
-}
-
-function FactColumn({
-  title,
-  added,
-  removed,
-  showShape = false,
-}: {
-  title: string;
-  added: Fact[];
-  removed: Fact[];
-  showShape?: boolean;
-}) {
-  const dispatch = useAppDispatch();
-  const rows = [
-    ...added.map((fact) => ({ fact, side: 'after' as Side })),
-    ...removed.map((fact) => ({ fact, side: 'before' as Side })),
-  ];
-  return (
-    <div className={styles.factCol}>
-      <h4>
-        {title}
-        <span>
-          {added.length > 0 && <b className={styles.plus}>+{added.length}</b>}
-          {removed.length > 0 && <b className={styles.minus}>−{removed.length}</b>}
-        </span>
-      </h4>
-      <div className={styles.factRows}>
-        {rows.length === 0 ? (
-          <span className={styles.factEmpty}>无变化</span>
-        ) : (
-          rows.map(({ fact, side }) => (
-            <button
-              key={`${side}-${fact.identity}`}
-              type="button"
-              className={styles.factRow}
-              title={fact.detail || fact.title}
-              onClick={() => {
-                if (fact.file) {
-                  dispatch({
-                    type: 'code/open',
-                    file: fact.file,
-                    line: fact.line,
-                    side,
-                  });
-                }
-              }}
-            >
-              <span className={side === 'after' ? styles.plus : styles.minus}>
-                {side === 'after' ? '+' : '−'}
-              </span>
-              <span className={styles.factTitle}>{fact.title}</span>
-              {showShape && fact.shape && <em className={styles.factShape}>{fact.shape}</em>}
-              {fact.file && (
-                <span className={styles.factLoc}>
-                  {baseName(fact.file)}
-                  {fact.line ? `:${fact.line}` : ''}
-                </span>
-              )}
-            </button>
-          ))
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -201,18 +136,13 @@ export function GraphView() {
 
   if (!review || !graph) return <div className={styles.empty}>没有分析结果。</div>;
 
-  const selectedNode = state.peek.nodeId
-    ? graph.nodes.find((node) => node.id === state.peek.nodeId)
-    : undefined;
+  const baseNode = (id: string) => review.behavior.nodes.find((node) => node.id === id);
+  const selectedNode = state.peek.nodeId ? baseNode(state.peek.nodeId) : undefined;
   const selectedEdge = state.peek.edgeId
-    ? graph.edges.find((edge) => edge.id === state.peek.edgeId)
+    ? review.behavior.edges.find((edge) => edge.id === state.peek.edgeId)
     : undefined;
-  const anchorNode = selectedEdge
-    ? graph.nodes.find((node) => node.id === selectedEdge.to)
-    : undefined;
-  const labels = stageLabels(review.behavior);
 
-  const openPeek = (node: BehaviorNode) => {
+  const openNode = (node: BehaviorNode) => {
     dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
     dispatch({
       type: 'peek/open',
@@ -223,9 +153,9 @@ export function GraphView() {
     });
   };
 
-  const openEdgePeek = (edge: BehaviorEdge) => {
+  const openEdge = (edge: BehaviorEdge) => {
+    const to = baseNode(edge.to);
     dispatch({ type: 'select', selected: { kind: 'edge', id: edge.id } });
-    const to = graph.nodes.find((node) => node.id === edge.to);
     dispatch({
       type: 'peek/open',
       edgeId: edge.id,
@@ -237,27 +167,23 @@ export function GraphView() {
 
   const firstChanged = review.intent.added[0] ?? review.intent.removed[0];
   const openCode = () => {
-    if (firstChanged?.file) {
-      dispatch({ type: 'code/open', file: firstChanged.file, line: firstChanged.line, side: 'after' });
+    const target = selectedNode ?? (selectedEdge ? baseNode(selectedEdge.to) : undefined);
+    const file = target?.file ?? firstChanged?.file;
+    const line = target?.line ?? firstChanged?.line;
+    if (file) {
+      dispatch({ type: 'code/open', file, line, side: selectedNode?.delta === 'removed' ? 'before' : 'after' });
     } else {
       dispatch({ type: 'code/open' });
     }
   };
 
-  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const edges = graph.edges
-    .map((edge) => {
-      const from = nodeById.get(edge.from);
-      const to = nodeById.get(edge.to);
-      return from && to ? { edge, from, to } : null;
-    })
-    .filter((value): value is { edge: LaidOutEdge; from: LaidOutNode; to: LaidOutNode } => Boolean(value));
+  const changedFiles = files.filter((file) => file.status !== 'unchanged').length;
 
   return (
     <section className={styles.panel}>
       <header className={styles.head}>
         <div className={styles.titleGroup}>
-          <div className={styles.eyebrow}>行为视图</div>
+          <div className={styles.eyebrow}>行为视图 · 每条行为一行</div>
           <div className={styles.titleRow}>
             <h1>{review.behavior.stats.scenarios} 条行为</h1>
             <span className={styles.sub}>
@@ -292,8 +218,8 @@ export function GraphView() {
         </div>
       </header>
 
-      <div className={styles.canvasWrap} onClick={() => dispatch({ type: 'peek/close' })}>
-        {graph.nodes.length === 0 ? (
+      <div className={styles.canvasWrap}>
+        {graph.rows.length === 0 ? (
           <div className={styles.empty}>
             <p>本次改动没有可绘制的行为。</p>
             <p>可能两侧都没有命中 sink，或 SSA 未启用。</p>
@@ -301,9 +227,11 @@ export function GraphView() {
         ) : (
           <svg
             className={styles.canvas}
+            width={graph.width}
+            height={graph.height}
             viewBox={`0 0 ${graph.width} ${graph.height}`}
             role="img"
-            aria-label="行为数据流图"
+            aria-label="行为图"
           >
             <defs>
               {(['added', 'removed', 'modified', 'unchanged'] as const).map((delta) => (
@@ -317,149 +245,81 @@ export function GraphView() {
                   markerHeight="6"
                   orient="auto-start-reverse"
                 >
-                  <path
-                    d="M 0 0 L 10 5 L 0 10 z"
-                    className={styles[`marker_${delta}`]}
-                  />
+                  <path d="M 0 0 L 10 5 L 0 10 z" className={styles[`marker_${delta}`]} />
                 </marker>
               ))}
             </defs>
 
-            {labels.map((label, stage) => {
-              if (!label) return null;
-              const node = graph.nodes.find((candidate) => candidate.stage === stage);
-              if (!node) return null;
-              return (
-                <text
-                  key={stage}
-                  className={styles.stageLabel}
-                  x={node.x + node.width / 2}
-                  y={28}
-                  textAnchor="middle"
-                >
-                  {label}
+            {graph.rows.map((row) => (
+              <g key={row.id}>
+                <line
+                  className={styles.rowLine}
+                  x1={row.x}
+                  y1={row.y + row.height - 6}
+                  x2={row.width - row.x}
+                  y2={row.y + row.height - 6}
+                />
+                <text className={styles.rowIndex} x={row.x} y={row.y + 13}>
+                  {String(row.index + 1).padStart(2, '0')}
                 </text>
-              );
-            })}
-
-            {edges.map(({ edge, from, to }) => (
-              <Edge
-                key={edge.id}
-                edge={edge}
-                from={from}
-                to={to}
-                onSelect={() => openEdgePeek(edge)}
-              />
+                <text
+                  className={cx(styles.rowTitle, styles[`row_${row.delta}`])}
+                  x={row.x + 24}
+                  y={row.y + 13}
+                >
+                  {truncate(row.title, 48)}
+                </text>
+                <text className={styles.rowMeta} x={row.x + 24} y={row.y + 26}>
+                  {DELTA_LABEL[row.delta]} · {row.source || '未知来源'} · {row.shape || '—'}
+                </text>
+              </g>
             ))}
 
-            {graph.nodes.map((node) => (
-              <Node
-                key={node.id}
-                node={node}
-                selected={state.peek.nodeId === node.id || anchorNode?.id === node.id}
-                onSelect={() => openPeek(node)}
-              />
+            {graph.rows.map((row) => (
+              <g key={`${row.id}-edges`}>
+                {row.edges.map((edge) => {
+                  const from = row.nodes.find((node) => node.id === edge.from);
+                  const to = row.nodes.find((node) => node.id === edge.to);
+                  if (!from || !to) return null;
+                  return (
+                    <Edge
+                      key={edge.pathId}
+                      edge={edge}
+                      from={from}
+                      to={to}
+                      onSelect={() => openEdge(edge)}
+                    />
+                  );
+                })}
+              </g>
+            ))}
+
+            {graph.rows.map((row) => (
+              <g key={`${row.id}-nodes`}>
+                {row.nodes.map((node) => (
+                  <Node
+                    key={`${row.id}-${node.id}`}
+                    node={node}
+                    selected={state.selected?.kind === 'node' && state.selected.id === node.id}
+                    onSelect={() => openNode(node)}
+                  />
+                ))}
+              </g>
             ))}
           </svg>
         )}
-
-        {state.peek.open && (selectedNode || selectedEdge) && (
-          <div onClick={(event) => event.stopPropagation()}>
-            <CodePeek
-              node={selectedNode}
-              edge={selectedEdge}
-              anchor={
-                anchorNode
-                  ? {
-                      file: anchorNode.file,
-                      line: anchorNode.line,
-                      side: anchorNode.delta === 'removed' ? 'before' : 'after',
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        )}
-
-        {!state.peek.open && (
-          <div className={styles.hint}>
-            点击节点查看代码与证据。判定节点可以展开分支；效果节点对齐在最右列。
-          </div>
-        )}
       </div>
 
-      <section className={styles.scenarios}>
-        <header className={styles.scenarioHead}>
-          <span className={styles.eyebrow}>行为清单</span>
-          <span className={styles.scenarioHint}>每条 scenario 从触发走到效果，按因果阶段排列</span>
-        </header>
-        <div className={styles.scenarioGrid}>
-          {review.behavior.scenarios.map((scenario) => {
-            const trigger = nodeById.get(scenario.trigger);
-            const effect = nodeById.get(scenario.effect);
-            const pathNodes = scenario.nodes
-              .map((id) => nodeById.get(id))
-              .filter((node): node is LaidOutNode => Boolean(node));
-            return (
-              <button
-                key={scenario.id}
-                type="button"
-                className={styles.scenarioCard}
-                onClick={() => (effect ? openPeek(effect) : trigger && openPeek(trigger))}
-              >
-                <span className={cx(styles.scenarioDelta, styles[`scenario_${scenario.delta}`])}>
-                  {DELTA_LABEL[scenario.delta]}
-                </span>
-                <span className={styles.scenarioTitle}>{scenario.title}</span>
-                <span className={styles.scenarioMeta}>
-                  {scenario.source || '未知来源'} · {scenario.shape || '—'}
-                </span>
-                <span className={styles.scenarioPath}>
-                  {pathNodes.map((node) => (
-                    <i key={`${scenario.id}-${node.id}`} className={styles[`dot_${node.role}`]} title={roleLabel(node.role)} />
-                  ))}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className={styles.ledger}>
-          <FactColumn
-            title="项目结构"
-            added={review.project.added}
-            removed={review.project.removed}
-          />
-          <FactColumn
-            title="逻辑"
-            added={review.logic.added}
-            removed={review.logic.removed}
-            showShape
-          />
-          <FactColumn
-            title="意图"
-            added={review.intent.added}
-            removed={review.intent.removed}
-            showShape
-          />
-        </div>
-        <div className={styles.basis}>
-          <b>分析依据</b>
-          <span>go/ast 调用边 · SSA 追源 · SyntaxFlow sink · 无 LLM 参与</span>
-          <span className={styles.basisCount}>
-            {review.intent.added.length + review.intent.removed.length} 条意图事实 ·{' '}
-            {review.signals.length} 个关注点
-          </span>
-        </div>
-      </section>
+      <CodeDock />
 
       <footer className={styles.foot}>
         <span>
           {review.behavior.entry
-            ? `入口：${review.behavior.entry.replace('trigger:', '')}`
+            ? `主入口：${review.behavior.entry.replace('trigger:', '').split(':')[0]}`
             : '未识别入口'}
         </span>
-        <span>{files.filter((file) => file.status !== 'unchanged').length} 个变更文件</span>
-        <span>{review.behavior.stageCount} 个因果阶段</span>
+        <span>{changedFiles} 个变更文件</span>
+        <span>{review.behavior.stats.scenarios} 条行为 · 判定不跨行连边</span>
       </footer>
     </section>
   );

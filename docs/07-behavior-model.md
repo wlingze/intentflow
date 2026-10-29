@@ -7,7 +7,7 @@
 
 ## 1. 一句话定义
 
-**行为视图是代码依赖图的一个场景投影：把一次改动的端到端执行拆成「触发 → 判定 → 变换 → 效果」，按因果阶段排版，按稳定身份做 diff。**
+**行为视图是代码依赖图的一个场景投影：把一次改动的端到端执行拆成「触发 → 判定 → 变换 → 效果」，按 scenario 分行，按稳定身份做 diff。**
 
 它不是调用图，不是控制流图，也不是 LLM 生成的架构图。
 
@@ -74,10 +74,10 @@
 
 | 节点 | identity | 说明 |
 | --- | --- | --- |
-| 触发 | `trigger:<function>` | 函数名稳定 |
-| 判定 | `decision:<function>:<hash(groupLabel, groupLine)>` | 同一条件组一个节点；分支是边 |
-| 变换 | `transform:<function>` | 函数名稳定 |
-| 效果 | `effect:<category>:<function>` | **不含 shape**，shape 变化才是 modified |
+| 触发 | `trigger:<function>:<filehash>` | 同名函数按文件区分 |
+| 判定 | `decision:<function>:<filehash>:<hash(groupLabel, groupLine)>` | 同一条件组一个节点；分支是边 |
+| 变换 | `transform:<function>:<filehash>` | 同名函数按文件区分 |
+| 效果 | `effect:<category>:<function>:<filehash>` | **不含 shape**，shape 变化才是 modified |
 
 行号不进入 identity。改注释、挪行不会产生新节点。
 
@@ -131,7 +131,7 @@
 
 - 同一个入口的不同效果是不同 scenario（variant）。
 - 同一个效果被两个分支到达时，scenario 只有一个，判定节点有两个出边。
-- `nodes` 是成员列表，不是严格的执行顺序；真正的顺序由边决定。
+- `nodes` 是行内顺序：触发到效果。边补充数据/控制语义。
 
 ### 5.1 路径还原
 
@@ -140,19 +140,20 @@
 正确做法：
 
 1. 从 `Fact.Function`（sink 所在函数）开始。
-2. 从**全量逻辑层事实**里找调用者（`from → to`）。
+2. 从 SSA 调用边索引里找调用者（`from → to`，带文件路径）。
 3. 优先选出现在 `Fact.Path` 里的调用者；其次选入口函数；最后选第一个未见过的调用者。
 4. 直到 `main` 或没有调用者。
 5. 反转得到「入口 → … → sink 函数」。
 
-## 6. 阶段排版
+## 6. 行排版
 
 ### 6.1 规则
 
-1. 触发节点 stage = 0。
-2. 对每条边 `from → to`，`stage[to] = max(stage[to], stage[from] + 1)`，迭代到稳定。
-3. 所有效果节点统一贴到最大 stage。
-4. `stageCount = max(stage) + 1`。
+1. 一条 scenario 占一行。
+2. 行内按 `scenario.nodes` 从左到右排；效果在行末，不再对齐全局最右列。
+3. 不同 scenario 之间不画边。
+4. `stage` 仍保留在 JSON 里，作为角色/因果深度的元数据；UI 不再用它做全局列布局。
+5. `stageCount` 只用于统计。
 
 ### 6.2 为什么不用固定四列
 
@@ -170,18 +171,17 @@ func findUser(name string) {
 ### 6.3 当前 demo 的排版
 
 ```
-stage 0        1              2              3        4
-        ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌────────┐
-        │handleSearch│→│ name == "" │→ │ findUser │→ │ switch │→│ SQL    │
-        └──────────┘  └─────┬──────┘  └──────────┘  └────────┘ └────────┘
-                            │            ┌──────────┐             ┌────────┐
-                            └───────────→│loadTemplate│──────────→│文件读写│
-                                         └──────────┘             └────────┘
+01  handleSearch → SQL 执行
+    [IN] → [name == ""] → [findUser] → [switch] → [SQL 执行]
+                                        ╰── format 数据边 ──╯
+
+02  handleSearch → 文件读写
+    [IN] → [name == ""] → [loadTemplate] → [文件读写]
 ```
 
-- `name == ""` 是新增 guard，两个 scenario 都经过它。
-- `switch` 只属于 SQL 路径，所以文件读写要跨过 stage 3 直达 stage 4。
-- 效果对齐在最右列，before/after 的 shape 可以直接比较。
+- `name == ""` 是新增 guard，两条 scenario 都经过它。
+- `switch` 只属于 SQL 路径，不会连到文件读写。
+- 数据边 `format` 从 `findUser` 跨过判定，画在行下方，避免被卡片遮住。
 
 ## 7. Diff 规则
 
@@ -204,6 +204,8 @@ stage 0        1              2              3        4
 
 ### 7.3 Scenario
 
+- 一条 scenario 在 UI 中占一行；行内按 `nodes` 顺序排步骤，效果不再强行对齐全局最右列。
+- 不同 scenario 之间不画边，避免把一条行为的判定连到另一条行为的步骤。
 - 同一 trigger+effect 在两边都存在：比较 `nodes`、`source`、`shape`。
 - 路径或 shape 变了 → modified。
 - 只在一侧 → added/removed。
@@ -221,25 +223,26 @@ stage 0        1              2              3        4
 
 ## 9. AI 在哪里
 
-当前版本：**不在图里**。
+图里没有 LLM。
 
-- 图的节点/边全部来自 AST + SSA + SyntaxFlow。
+- 图的节点/边全部来自 SSA + SyntaxFlow。
 - `confidence` 只有 `EXTRACTED` / `DERIVED`。
 - 没有 `INFERRED` 节点。
 
-未来如果接 LLM：
+可选的 LLM 叙述层：
 
-- 只生成 `summary`，不生成节点/边。
-- 每个论点必须引用 `evidence`（Fact.identity）。
-- UI 上单独标 `AI 叙述`，不能和确定性分析混在一起。
+- 只生成 `summary`、`risks`、`focus`，不生成节点/边。
+- 每个论点必须引用 `evidence`（Fact.identity、文件行号或节点标题）。
+- UI 单独放在 AI tab，不能和确定性分析混在一起。
+- 未配置端点时返回 `unavailable`，分析照常完成。
 
 ## 10. 已知限制
 
-1. **只支持 Go。** 入口规则、sink 规则、AST 分支解析都是 Go 专用。
+1. **只支持 Go。** 入口规则、sink 规则、SSA 分支解析都是 Go 专用。
 2. **判定的路径敏感性有限。** 只记录「调用在哪个分支里」，不做完整路径条件求解。
 3. **效果节点按 `category + function` 合并。** 同一函数里两个同类别 sink 会合并；后续可加 sink 签名。
-4. **跨包路径依赖 AST 调用名。** 目前取选择器最后一段，跨包同名函数可能混淆。
+4. **跨包路径依赖 SSA 短名。** 目前取最后一段，跨包同名函数可能混淆。
 5. **没有循环/异步建模。** goroutine、channel、定时器暂不进入图。
 6. **没有边界边。** `boundary` 枚举已预留，当前不生成。
 
-这些限制都写在图的下方「运行说明」里，避免让人误以为图是全量语义。
+这些限制会写进 review 的运行说明，避免让人误以为图是全量语义。

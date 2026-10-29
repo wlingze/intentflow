@@ -152,7 +152,7 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, from, to, kind, label, shape, source, delta, confidence, evidence]
+        [id, from, to, kind, label, shape, source, scenario, delta, confidence, evidence]
       properties:
         id: { type: string }
         from: { type: string }
@@ -161,6 +161,7 @@ components:
         label: { type: string }
         shape: { type: string }
         source: { type: string }
+        scenario: { type: string }
         delta: { $ref: '#/components/schemas/DeltaKind' }
         confidence: { $ref: '#/components/schemas/Confidence' }
         evidence:
@@ -231,7 +232,7 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [before, after, project, logic, intent, signals, notes, behavior]
+      required: [before, after, project, logic, intent, signals, notes, behavior, ai]
       properties:
         before: { type: string }
         after: { type: string }
@@ -245,6 +246,34 @@ components:
           type: array
           items: { type: string }
         behavior: { $ref: '#/components/schemas/BehaviorGraph' }
+        ai: { $ref: '#/components/schemas/AiSummary' }
+
+    AiSummary:
+      type: object
+      additionalProperties: false
+      required: [status, model, summary, risks, focus, generated_at]
+      properties:
+        status: { type: string, enum: [ok, unavailable, error] }
+        model: { type: string }
+        summary: { type: string }
+        risks:
+          type: array
+          items: { $ref: '#/components/schemas/AiRisk' }
+        focus:
+          type: array
+          items: { type: string }
+        generated_at: { type: string }
+
+    AiRisk:
+      type: object
+      additionalProperties: false
+      required: [title, detail, evidence]
+      properties:
+        title: { type: string }
+        detail: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
 
     CodeFile:
       type: object

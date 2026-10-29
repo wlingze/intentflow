@@ -94,12 +94,11 @@ ExternLib [fmt]  don't has [Sprintf]
 
 demo（单文件 43 行）：双边编译 + 3 类 sink 规则，约 1–2 秒。
 
-未测大项目。`TODO_SCAN_OPTIMIZATION.md` 记录了 yaklang 侧已知的大项目性能问题（moodle 11134 个 source）。
+已在 yaklang ssa2llvm 的 304 个文件上跑通；整仓 11k 文件未测。`TODO_SCAN_OPTIMIZATION.md` 记录了 yaklang 侧已知的大项目性能问题（moodle 11134 个 source）。
 
 ## 未验证
 
-- 大项目（>100 文件）的编译时间与内存
+- 大项目（>100 文件）的编译时间与内存（yaklang ssa2llvm 304 文件已跑通，约 1 分钟）
 - 跨文件数据流（demo 只有单文件）
 - 泛型、接口、闭包场景下的链完整性
-- `--no-ssa` 降级路径的可用性
 - 行号在 `before`/`after` 间的稳定性（当前 identity 不含行号，但 UI 展示用它）

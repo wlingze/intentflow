@@ -39,7 +39,7 @@ cd frontend
 pnpm exec openapi-typescript ../schema/openapi.yaml -o src/api/schema.gen.ts
 ```
 
-建议加到 `Makefile` 或 `package.json`，不要让生成物和 schema 漂移。
+`make schema` 已串联两条命令；不要手改生成物。
 
 ## 3. 类型层次
 
@@ -50,13 +50,14 @@ Payload
 │   ├── project / logic / intent : Delta<Fact>
 │   ├── signals : Signal[]
 │   ├── notes : string[]
-│   └── behavior : BehaviorGraph
+│   ├── behavior : BehaviorGraph
+│   └── ai : AiSummary
 └── CodeBundle
     └── files : CodeFile[]
 
 BehaviorGraph
 ├── nodes : BehaviorNode[]
-├── edges : BehaviorEdge[]
+├── edges : BehaviorEdge[]          // id/from/to/kind/label/scenario
 ├── scenarios : BehaviorScenario[]
 ├── lanes : BehaviorLane[]        // 图例：角色 + 数量
 ├── entry : string
@@ -69,6 +70,14 @@ ReviewRequest
     ├── comments : Comment[]
     ├── dismissed : string[]
     └── kept : string[]
+
+AiSummary
+├── status : ok | unavailable | error
+├── model : string
+├── summary : string
+├── risks : AiRisk[]
+├── focus : string[]
+└── generated_at : string
 ```
 
 ### 3.1 必填策略

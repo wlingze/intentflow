@@ -69,7 +69,7 @@ AppMap 通过运行应用记录 HTTP 请求、函数调用、SQL、下游请求�
 
 它的优势是真实；劣势是必须先跑起来，而且只能看到被覆盖的路径。review 一个静态 diff 时，很多新分支根本没有测试覆盖。
 
-所以 intentflow 选择静态 SSA/AST，不依赖运行。运行时可作为未来的证据补充，不作为图的唯一来源。
+所以 intentflow 只选静态 SSA，不依赖运行。运行时可作为未来的证据补充，不作为图的唯一来源。
 
 ### 2.5 Twitter / X 上的讨论
 
@@ -156,16 +156,15 @@ source (入口) → propagation (处理链) → sink (副作用)
 ### 5.1 分析管线
 
 ```
-go/ast
-  ├─ 项目层：import、func、包
-  ├─ 逻辑层：调用边、调用点行号
-  └─ 判定层：if / switch / guard（本次新增）
-
-SSA + SyntaxFlow
-  ├─ sink 匹配（SQL / 文件 / 进程）
-  ├─ 参数回溯 GetTopDefs
-  ├─ 来源分类（http_input / env / cli_args）
-  └─ 到达形态（direct / format / concat / member / call）
+SSA（只编译一次）
+  ├─ 项目层：文件、函数、调用边
+  ├─ 逻辑层：调用点行号、CFG
+  ├─ 判定层：if / switch / guard
+  └─ SyntaxFlow
+       ├─ sink 匹配（SQL / 文件 / 进程）
+       ├─ 参数回溯 GetTopDefs
+       ├─ 来源分类（http_input / env / cli_args）
+       └─ 到达形态（direct / format / concat / member / call）
 
 行为投影
   ├─ 用逻辑层调用边还原 scenario 路径
@@ -175,17 +174,17 @@ SSA + SyntaxFlow
   └─ 按稳定 identity 做 before/after diff
 ```
 
-### 5.2 哪些是 SSA，哪些是 AST
+### 5.2 全部来自 SSA
 
 | 信息 | 来源 | 可信度 |
 | --- | --- | --- |
-| 调用边 | AST（`CallExpr`） | EXTRACTED |
-| 调用点行号 | AST | EXTRACTED |
-| 条件表达式 / 分支 | AST | DERIVED |
+| 调用边 | SSA `*ssa.Call` | EXTRACTED |
+| 调用点行号 | SSA 指令位置 | EXTRACTED |
+| 条件表达式 / 分支 | SSA `*ssa.If` / `*ssa.Switch` | DERIVED |
 | sink 存在 | SSA + SyntaxFlow | EXTRACTED / DERIVED |
 | source 分类 | SSA `GetTopDefs` + 规则 | DERIVED |
 | 到达形态 | SSA opcode + 值文本 | DERIVED |
-| 跨函数路径 | AST 调用边 | DERIVED |
+| 跨函数路径 | SSA 调用边 | DERIVED |
 
 **没有 LLM。** 图里的每个节点和边都能回到代码位置或事实 identity。
 
@@ -195,7 +194,8 @@ SSA + SyntaxFlow
 - 同一个 diff 两次运行可能得到不同结构。
 - 安全相关的 shape（direct/format/concat）必须由 IR 判定，不能猜。
 
-LLM 只能出现在**叙述层**：把结构化事实写成一段人话，并且每个论点必须挂 evidence。当前版本没有接 LLM。
+LLM 只能出现在**叙述层**：把结构化事实写成一段人话，并且每个论点必须挂 evidence。
+当前版本已接可选 LLM；它不生成节点、边或行号，未配置时自动降级。
 
 ## 6. 与现有工具的区别
 
@@ -206,7 +206,7 @@ LLM 只能出现在**叙述层**：把结构化事实写成一段人话，并且
 | Sourcetrail | 静态索引 | 是 | 否（依赖图） | 否 |
 | CodeQL / Joern | CPG / 查询 | 是 | 查询可表达 | 否（要自己写查询） |
 | PR Lens / Archify | 手写/LLM 辅助的架构文档 | 是 | 架构层 | 架构层 |
-| intentflow | SSA + SyntaxFlow + AST | 是 | 是 | 是（三层 + 行为） |
+| intentflow | SSA + SyntaxFlow | 是 | 是 | 是（三层 + 行为） |
 
 intentflow 的差异点不是「又一个图」，而是：
 

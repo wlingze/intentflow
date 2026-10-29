@@ -1,0 +1,28 @@
+# Binaries
+*.a
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.bin
+*.out
+*.ll
+*.bc
+*.s
+
+# Generated headers
+runtime/libyak.h
+runtime/libyak.debug.h
+runtime/runtime_go/libyak.h
+
+# Generated embedded-runtime assets (produced by scripts/build_runtime_embed.sh:
+# the .a/.o are covered by the patterns above; the manifest is generated Go).
+runtime/embed/assets/manifest_generated.go
+
+# Test binaries
+*.test
+
+# elfsplit tool binary (produced by scripts/build_yaklib.sh)
+cmd/elfsplit/elfsplit

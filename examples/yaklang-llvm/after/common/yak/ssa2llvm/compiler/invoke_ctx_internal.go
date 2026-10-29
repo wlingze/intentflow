@@ -1,0 +1,253 @@
+package compiler
+
+import (
+	"fmt"
+
+	"github.com/yaklang/go-llvm"
+	"github.com/yaklang/yaklang/common/yak/ssa"
+	"github.com/yaklang/yaklang/common/yak/ssa2llvm/callframe"
+	"github.com/yaklang/yaklang/common/yak/ssa2llvm/runtime/abi"
+)
+
+func (c *Compiler) ctxI64Ptr() (llvm.Value, error) {
+	if c == nil || c.function == nil || c.function.invokeCtx.IsNil() {
+		return llvm.Value{}, fmt.Errorf("missing invoke context")
+	}
+	i64Ptr := llvm.PointerType(c.LLVMCtx.Int64Type(), 0)
+	if c.function.invokeCtx.Type() == i64Ptr {
+		return c.function.invokeCtx, nil
+	}
+	return c.Builder.CreateBitCast(c.function.invokeCtx, i64Ptr, "yak_ctx_i64p"), nil
+}
+
+func (c *Compiler) ctxWordPtr(word int64) (llvm.Value, error) {
+	ctxPtr, err := c.ctxI64Ptr()
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	i64 := c.LLVMCtx.Int64Type()
+	idx := llvm.ConstInt(i64, uint64(word), false)
+	return c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, ""), nil
+}
+
+func (c *Compiler) loadContextWord(word int64, name string) (llvm.Value, error) {
+	ptr, err := c.ctxWordPtr(word)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	i64 := c.LLVMCtx.Int64Type()
+	return c.Builder.CreateLoad(i64, ptr, name), nil
+}
+
+func (c *Compiler) storeContextWord(word int64, val llvm.Value) error {
+	ptr, err := c.ctxWordPtr(word)
+	if err != nil {
+		return err
+	}
+	c.Builder.CreateStore(c.coerceToInt64(val), ptr)
+	return nil
+}
+
+func (c *Compiler) storeContextReturn(val llvm.Value) error {
+	return c.storeContextWord(abi.WordRet, val)
+}
+
+func (c *Compiler) getOrInsertRuntimeLoadPanicValue() (llvm.Value, llvm.Type) {
+	name := c.runtimeSymName(abi.RuntimeLoadPanicValueSymbol)
+	fn := c.Mod.NamedFunction(name)
+	i8Ptr := llvm.PointerType(c.LLVMCtx.Int8Type(), 0)
+	fnType := llvm.FunctionType(c.LLVMCtx.Int64Type(), []llvm.Type{i8Ptr}, false)
+	if fn.IsNil() {
+		fn = llvm.AddFunction(c.Mod, name, fnType)
+	}
+	return fn, fnType
+}
+
+func (c *Compiler) clearContextFlags(mask uint64) error {
+	flags, err := c.loadContextWord(abi.WordFlags, "yak_ctx_flags")
+	if err != nil {
+		return err
+	}
+	cleared := c.Builder.CreateAnd(flags, llvm.ConstInt(c.LLVMCtx.Int64Type(), ^mask, false), "yak_ctx_flags_clear")
+	return c.storeContextWord(abi.WordFlags, cleared)
+}
+
+func (c *Compiler) setContextFlags(mask uint64) error {
+	flags, err := c.loadContextWord(abi.WordFlags, "yak_ctx_flags")
+	if err != nil {
+		return err
+	}
+	set := c.Builder.CreateOr(flags, llvm.ConstInt(c.LLVMCtx.Int64Type(), mask, false), "yak_ctx_flags_set")
+	return c.storeContextWord(abi.WordFlags, set)
+}
+
+func (c *Compiler) storeContextPanic(val llvm.Value, flags uint64) error {
+	if err := c.storeContextWord(abi.WordPanic, val); err != nil {
+		return err
+	}
+	if err := c.clearContextFlags(abi.FlagPanicTaggedPointer); err != nil {
+		return err
+	}
+	if flags != 0 {
+		return c.setContextFlags(flags)
+	}
+	return nil
+}
+
+// clearContextPanic resets the invoke-context panic state after a yak-level
+// catch handler has consumed the panic. Without this, a caught panic still
+// leaves WordPanic/flags set and the main wrapper exits 255 even though the
+// catch/finally bodies ran.
+func (c *Compiler) clearContextPanic() error {
+	if err := c.storeContextWord(abi.WordPanic, llvm.ConstInt(c.LLVMCtx.Int64Type(), 0, false)); err != nil {
+		return err
+	}
+	return c.clearContextFlags(abi.FlagPanicTaggedPointer)
+}
+
+func (c *Compiler) loadContextPanic(name string) (llvm.Value, error) {
+	if c == nil || c.function == nil || c.function.invokeCtx.IsNil() {
+		return llvm.Value{}, fmt.Errorf("missing invoke context")
+	}
+	loadFn, loadType := c.getOrInsertRuntimeLoadPanicValue()
+	return c.Builder.CreateCall(loadType, loadFn, []llvm.Value{c.function.invokeCtx}, name), nil
+}
+
+func (c *Compiler) bindParamsFromContext(fn *ssa.Function) error {
+	if fn == nil {
+		return nil
+	}
+
+	ctxPtr, err := c.ctxI64Ptr()
+	if err != nil {
+		return err
+	}
+
+	i64 := c.LLVMCtx.Int64Type()
+	argBase := int64(abi.HeaderWords)
+
+	for i, paramID := range fn.Params {
+		idx := llvm.ConstInt(i64, uint64(argBase+int64(i)), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		val := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("arg_%d", paramID))
+		c.cacheValue(paramID, val)
+	}
+
+	freeValueBase := int64(len(fn.Params) + len(fn.ParameterMembers))
+	i64Ptr := llvm.PointerType(i64, 0)
+	for i, binding := range callframe.OrderedFreeValueBindings(fn) {
+		idx := llvm.ConstInt(i64, uint64(argBase+freeValueBase+int64(i)), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		raw := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("fv_%d", binding.ValueID))
+		if c.freeValueCaptureMode(fn, binding) != freeValueCaptureByValue {
+			// The captured word is a slot pointer; reads/writes go through it
+			// so mutable state persists across calls and shared loop variables
+			// observe the final value.
+			ptr := c.Builder.CreateIntToPtr(raw, i64Ptr, fmt.Sprintf("fv_ptr_%d", binding.ValueID))
+			if c.function.freeValuePointers == nil {
+				c.function.freeValuePointers = make(map[int64]llvm.Value)
+			}
+			c.function.freeValuePointers[binding.ValueID] = ptr
+			val := c.Builder.CreateLoad(i64, ptr, fmt.Sprintf("fv_deref_%d", binding.ValueID))
+			c.cacheValue(binding.ValueID, val)
+			continue
+		}
+		c.cacheValue(binding.ValueID, raw)
+	}
+
+	// Nested callbacks can capture a variable this function never names
+	// (tcp.serverCallback closing over a channel). Those cells are appended
+	// after the declared free values and keyed by the ancestor value id so
+	// the inner closure shares the slot instead of capturing zero.
+	declaredFree := int64(len(callframe.OrderedFreeValueBindings(fn)))
+	for i, extra := range c.extraCaptures(fn) {
+		idx := llvm.ConstInt(i64, uint64(argBase+freeValueBase+declaredFree+int64(i)), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		raw := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("fv_extra_%d", extra.OriginID))
+		ptr := c.Builder.CreateIntToPtr(raw, i64Ptr, fmt.Sprintf("fv_extra_ptr_%d", extra.OriginID))
+		if c.function.transitiveCapturePointers == nil {
+			c.function.transitiveCapturePointers = make(map[int64]llvm.Value)
+		}
+		c.function.transitiveCapturePointers[extra.OriginID] = ptr
+	}
+
+	for _, paramID := range fn.Params {
+		value, ok := fn.GetValueById(paramID)
+		if !ok || value == nil {
+			continue
+		}
+		ssaVal, ok := value.(ssa.Value)
+		if !ok {
+			continue
+		}
+		if err := c.maybeEmitMemberSet(nil, ssaVal, paramID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Compiler) loadBoundParameterValue(fn *ssa.Function, param *ssa.Parameter) (llvm.Value, bool) {
+	if c == nil || fn == nil || param == nil {
+		return llvm.Value{}, false
+	}
+	if val, ok := c.Values[param.GetId()]; ok {
+		return val, true
+	}
+	if c.function == nil || c.function.invokeCtx.IsNil() {
+		return llvm.Value{}, false
+	}
+
+	argBase := int64(abi.HeaderWords)
+	i64 := c.LLVMCtx.Int64Type()
+
+	for i, paramID := range fn.Params {
+		if paramID != param.GetId() {
+			continue
+		}
+		ctxPtr, err := c.ctxI64Ptr()
+		if err != nil {
+			return llvm.Value{}, false
+		}
+		idx := llvm.ConstInt(i64, uint64(argBase+int64(i)), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		val := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("arg_lazy_%d", paramID))
+		c.cacheValue(paramID, val)
+		return val, true
+	}
+
+	for i, memberID := range fn.ParameterMembers {
+		if memberID != param.GetId() {
+			continue
+		}
+		ctxPtr, err := c.ctxI64Ptr()
+		if err != nil {
+			return llvm.Value{}, false
+		}
+		paramIndex := int64(len(fn.Params) + i)
+		idx := llvm.ConstInt(i64, uint64(argBase+paramIndex), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		val := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("pm_lazy_%d", memberID))
+		c.cacheValue(memberID, val)
+		return val, true
+	}
+
+	freeValueBase := int64(len(fn.Params) + len(fn.ParameterMembers))
+	for i, binding := range callframe.OrderedFreeValueBindings(fn) {
+		if binding.ValueID != param.GetId() {
+			continue
+		}
+		ctxPtr, err := c.ctxI64Ptr()
+		if err != nil {
+			return llvm.Value{}, false
+		}
+		idx := llvm.ConstInt(i64, uint64(argBase+freeValueBase+int64(i)), false)
+		elemPtr := c.Builder.CreateGEP(i64, ctxPtr, []llvm.Value{idx}, "")
+		val := c.Builder.CreateLoad(i64, elemPtr, fmt.Sprintf("fv_lazy_%d", binding.ValueID))
+		c.cacheValue(binding.ValueID, val)
+		return val, true
+	}
+
+	return llvm.Value{}, false
+}

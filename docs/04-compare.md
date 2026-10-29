@@ -119,7 +119,7 @@ detect → extract → build → cluster → analyze → report → export
 
 ### intentflow：先算事实
 
-- L3/L2：`go/ast` 解析 import、函数、调用边。
+- L3/L2：SSA 索引文件、函数、调用边与分支。
 - L1：yaklang SSA 编译，SyntaxFlow 查询 sink，`GetTopDefs()` 回溯来源。
 - 规则派生 `shape`（`direct` / `format` / `concat` / …），写进身份键。
 - 每条事实标可信度；意图层不允许标 `EXTRACTED`。

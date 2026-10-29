@@ -1,0 +1,50 @@
+package compiler
+
+import (
+	"github.com/yaklang/go-llvm"
+	"github.com/yaklang/yaklang/common/yak/ssa"
+)
+
+func (c *Compiler) resolveSSAValueAsInt64(contextInst ssa.Instruction, valueID int64, ptrName string) (llvm.Value, error) {
+	if c.hasValueSlot(valueID) && !c.isDynamicMemberValueID(valueID) {
+		return c.coerceToInt64(c.loadSSAValue(valueID)), nil
+	}
+	argVal, err := c.getValue(contextInst, valueID)
+	if err == nil {
+		return c.coerceToInt64(argVal), nil
+	}
+
+	fn := contextInst.GetFunc()
+	if fn != nil {
+		if _, ok := fn.GetValueById(valueID); !ok {
+			return llvm.ConstInt(c.LLVMCtx.Int64Type(), 0, false), nil
+		}
+	}
+	if fn == nil {
+		return llvm.Value{}, err
+	}
+	value, ok := fn.GetValueById(valueID)
+	if !ok || value == nil {
+		return llvm.Value{}, err
+	}
+	if param, ok := ssa.ToParameter(value); ok && param != nil && param.GetDefault() != nil {
+		value = param.GetDefault()
+	}
+	ssaFn, ok := ssa.ToFunction(value)
+	if !ok || ssaFn == nil {
+		return llvm.Value{}, err
+	}
+	llvmFn, _ := c.getOrDeclareLLVMFunction(ssaFn)
+	return c.Builder.CreatePtrToInt(llvmFn, c.LLVMCtx.Int64Type(), ptrName), nil
+}
+
+func (c *Compiler) isDynamicMemberValueID(id int64) bool {
+	if c == nil || c.function == nil || c.function.current == nil || id <= 0 {
+		return false
+	}
+	val, ok := c.function.current.GetValueById(id)
+	if !ok || val == nil {
+		return false
+	}
+	return c.shouldReadMemberValueDynamically(val, id)
+}

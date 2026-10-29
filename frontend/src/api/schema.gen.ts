@@ -117,6 +117,7 @@ export interface components {
             label: string;
             shape: string;
             source: string;
+            scenario: string;
             delta: components["schemas"]["DeltaKind"];
             confidence: components["schemas"]["Confidence"];
             evidence: string[];
@@ -174,6 +175,21 @@ export interface components {
             signals: components["schemas"]["Signal"][];
             notes: string[];
             behavior: components["schemas"]["BehaviorGraph"];
+            ai: components["schemas"]["AiSummary"];
+        };
+        AiSummary: {
+            /** @enum {string} */
+            status: "ok" | "unavailable" | "error";
+            model: string;
+            summary: string;
+            risks: components["schemas"]["AiRisk"][];
+            focus: string[];
+            generated_at: string;
+        };
+        AiRisk: {
+            title: string;
+            detail: string;
+            evidence: string[];
         };
         CodeFile: {
             path: string;

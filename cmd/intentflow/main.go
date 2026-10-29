@@ -18,6 +18,7 @@ import (
 
 	"github.com/yaklang/intentflow/internal/contract"
 	"github.com/yaklang/intentflow/internal/emit"
+	"github.com/yaklang/intentflow/internal/insight"
 	"github.com/yaklang/intentflow/internal/model"
 	"github.com/yaklang/intentflow/internal/payload"
 	"github.com/yaklang/intentflow/internal/scan"
@@ -61,7 +62,8 @@ func usage() {
       只输出 review.json，不启动服务
 
 通用参数：
-  --no-ssa        跳过 SSA，只做项目层与逻辑层
+  --before-label  页面上显示的改动前标签（默认用目录名）
+  --after-label   页面上显示的改动后标签
   --dump-facts    额外写出两侧全量事实
   -v              打印进度
 `)
@@ -69,19 +71,21 @@ func usage() {
 
 // options 是两条命令共享的分析参数。
 type options struct {
-	before  string
-	after   string
-	out     string
-	noSSA   bool
-	dump    bool
-	verbose bool
+	before      string
+	after       string
+	beforeLabel string
+	afterLabel  string
+	out         string
+	dump        bool
+	verbose     bool
 }
 
 func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.before, "before", "", "改动前的代码目录")
 	fs.StringVar(&o.after, "after", "", "改动后的代码目录")
+	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前的显示标签")
+	fs.StringVar(&o.afterLabel, "after-label", "", "改动后的显示标签")
 	fs.StringVar(&o.out, "out", "./intentflow-out", "输出目录")
-	fs.BoolVar(&o.noSSA, "no-ssa", false, "跳过 SSA，只做项目层与逻辑层 diff")
 	fs.BoolVar(&o.dump, "dump-facts", false, "额外写出两侧全量事实，用于调试")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
 }
@@ -97,6 +101,7 @@ func runDiff(args []string) error {
 	if err != nil {
 		return err
 	}
+	review.Ai = insight.Analyze(context.Background(), review, nil)
 	jsonPath, err := emit.JSON(review, opt.out)
 	if err != nil {
 		return fmt.Errorf("写出 review.json 失败: %w", err)
@@ -121,13 +126,6 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	jsonPath, err := emit.JSON(review, opt.out)
-	if err != nil {
-		return fmt.Errorf("写出 review.json 失败: %w", err)
-	}
-	printStats(review)
-	fmt.Println("→", jsonPath)
-
 	bRoot, err := scan.EnsureRoot(opt.before)
 	if err != nil {
 		return fmt.Errorf("before: %w", err)
@@ -143,6 +141,13 @@ func runServe(args []string) error {
 	if code.Truncated {
 		fmt.Printf("注意：%d 个文件超出体积上限，未携带正文\n", len(code.Skipped))
 	}
+	review.Ai = insight.Analyze(context.Background(), review, code.Files)
+	jsonPath, err := emit.JSON(review, opt.out)
+	if err != nil {
+		return fmt.Errorf("写出 review.json 失败: %w", err)
+	}
+	printStats(review)
+	fmt.Println("→", jsonPath)
 
 	return serve.Listen(serve.Config{
 		Addr:    *addr,
@@ -169,63 +174,50 @@ func analyze(opt options) (*model.Review, error) {
 		return nil, fmt.Errorf("after: %w", err)
 	}
 
+	beforeLabel := displayPath(bRoot)
+	if opt.beforeLabel != "" {
+		beforeLabel = opt.beforeLabel
+	}
+	afterLabel := displayPath(aRoot)
+	if opt.afterLabel != "" {
+		afterLabel = opt.afterLabel
+	}
 	review := &model.Review{
-		Before:  displayPath(bRoot),
-		After:   displayPath(aRoot),
+		Before:  beforeLabel,
+		After:   afterLabel,
 		Notes:   []string{},
 		Signals: []model.Signal{},
 	}
 
-	// ---- L3 + L2：语法层，go/ast ----
+	// ---- 所有层级共用一次 SSA 编译 ----
 	if opt.verbose {
-		fmt.Println("· 解析项目结构层与逻辑结构层")
+		fmt.Println("· 编译 SSA（before）")
 	}
-	bSet, err := scan.ProjectFacts(bRoot)
+	bSet, bIndex, bNotes, err := scan.AnalyzeSSA(context.Background(), bRoot, "intentflow_before")
 	if err != nil {
-		return nil, fmt.Errorf("before 解析失败: %w", err)
+		return nil, fmt.Errorf("before 分析失败: %w", err)
 	}
-	aSet, err := scan.ProjectFacts(aRoot)
-	if err != nil {
-		return nil, fmt.Errorf("after 解析失败: %w", err)
+	for _, n := range bNotes {
+		review.Notes = append(review.Notes, "before: "+n)
+	}
+	if opt.verbose {
+		fmt.Printf("  before 事实: project=%d logic=%d intent=%d funcs=%d\n",
+			bSet.Len(model.LayerProject), bSet.Len(model.LayerLogic), bSet.Len(model.LayerIntent), len(bIndex.Funcs))
 	}
 
-	// ---- L1：IR 层，SSA + SyntaxFlow ----
-	if !opt.noSSA {
-		if opt.verbose {
-			fmt.Println("· 编译 SSA 并抽取意图层（before）")
-		}
-		bIntent, bNotes, err := scan.IntentFacts(context.Background(), bRoot, "intentflow_before")
-		if err != nil {
-			review.Notes = append(review.Notes, "before 意图层抽取失败: "+err.Error())
-		} else {
-			mergeLayer(bSet, bIntent, model.LayerIntent)
-			for _, n := range bNotes {
-				review.Notes = append(review.Notes, "before: "+n)
-			}
-			if opt.verbose {
-				fmt.Printf("  before 事实: project=%d logic=%d intent=%d\n",
-					bSet.Len(model.LayerProject), bSet.Len(model.LayerLogic), bSet.Len(model.LayerIntent))
-			}
-		}
-
-		if opt.verbose {
-			fmt.Println("· 编译 SSA 并抽取意图层（after）")
-		}
-		aIntent, aNotes, err := scan.IntentFacts(context.Background(), aRoot, "intentflow_after")
-		if err != nil {
-			review.Notes = append(review.Notes, "after 意图层抽取失败: "+err.Error())
-		} else {
-			mergeLayer(aSet, aIntent, model.LayerIntent)
-			for _, n := range aNotes {
-				review.Notes = append(review.Notes, "after: "+n)
-			}
-			if opt.verbose {
-				fmt.Printf("  after  事实: project=%d logic=%d intent=%d\n",
-					aSet.Len(model.LayerProject), aSet.Len(model.LayerLogic), aSet.Len(model.LayerIntent))
-			}
-		}
-	} else {
-		review.Notes = append(review.Notes, "已跳过 SSA（--no-ssa），意图层结果不完整")
+	if opt.verbose {
+		fmt.Println("· 编译 SSA（after）")
+	}
+	aSet, aIndex, aNotes, err := scan.AnalyzeSSA(context.Background(), aRoot, "intentflow_after")
+	if err != nil {
+		return nil, fmt.Errorf("after 分析失败: %w", err)
+	}
+	for _, n := range aNotes {
+		review.Notes = append(review.Notes, "after: "+n)
+	}
+	if opt.verbose {
+		fmt.Printf("  after  事实: project=%d logic=%d intent=%d funcs=%d\n",
+			aSet.Len(model.LayerProject), aSet.Len(model.LayerLogic), aSet.Len(model.LayerIntent), len(aIndex.Funcs))
 	}
 
 	// ---- 三层 diff ----
@@ -240,7 +232,7 @@ func analyze(opt options) (*model.Review, error) {
 	review.Logic = model.Diff(model.LayerLogic, bSet, aSet)
 	review.Intent = model.Diff(model.LayerIntent, bSet, aSet)
 	review.Signals = scan.Signals(review)
-	review.Behavior = scan.BuildBehavior(bRoot, aRoot, review, bSet, aSet)
+	review.Behavior = scan.BuildBehavior(bIndex, aIndex, scan.IntentFacts(bSet), review)
 	return review, nil
 }
 
