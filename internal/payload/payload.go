@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yaklang/intentflow/internal/model"
+	"github.com/yaklang/intentflow/internal/contract"
 )
 
 // 单文件与整包上限。超过上限的文件只保留状态，不带正文，
@@ -21,39 +21,15 @@ const (
 	MaxTotalBytes = 6 * 1024 * 1024
 )
 
-// Payload 是 GET /api/payload 的响应体。
-type Payload struct {
-	Review *model.Review `json:"review"`
-	Code   CodeBundle    `json:"code"`
-}
-
-// CodeBundle 是两侧源码的合并视图。
-type CodeBundle struct {
-	Root      string     `json:"root"`
-	Files     []CodeFile `json:"files"`
-	Truncated bool       `json:"truncated,omitempty"`
-	// Skipped 列出因体积或编码被跳过的路径，界面上不展示正文。
-	Skipped []string `json:"skipped,omitempty"`
-}
-
-// CodeFile 是一个文件在改动前后的内容。status 由内容比较得出。
-type CodeFile struct {
-	Path     string  `json:"path"`
-	Status   string  `json:"status"`
-	Language string  `json:"language,omitempty"`
-	Before   *string `json:"before,omitempty"`
-	After    *string `json:"after,omitempty"`
-}
-
 // Build 读取 before/after 两个目录，返回按路径排序的合并源码包。
-func Build(beforeRoot, afterRoot, label string) (CodeBundle, error) {
+func Build(beforeRoot, afterRoot, label string) (contract.CodeBundle, error) {
 	before, err := readTree(beforeRoot)
 	if err != nil {
-		return CodeBundle{}, err
+		return contract.CodeBundle{}, err
 	}
 	after, err := readTree(afterRoot)
 	if err != nil {
-		return CodeBundle{}, err
+		return contract.CodeBundle{}, err
 	}
 
 	paths := make([]string, 0, len(before)+len(after))
@@ -70,13 +46,13 @@ func Build(beforeRoot, afterRoot, label string) (CodeBundle, error) {
 	}
 	sort.Strings(paths)
 
-	bundle := CodeBundle{Root: label, Files: make([]CodeFile, 0, len(paths))}
+	bundle := contract.CodeBundle{Root: label, Files: make([]contract.CodeFile, 0, len(paths)), Skipped: []string{}}
 	var total int
 	for _, p := range paths {
 		b, bOK := before[p]
 		a, aOK := after[p]
 
-		file := CodeFile{
+		file := contract.CodeFile{
 			Path:     p,
 			Status:   statusOf(b, bOK, a, aOK),
 			Language: languageOf(p),
@@ -92,28 +68,26 @@ func Build(beforeRoot, afterRoot, label string) (CodeBundle, error) {
 		total += size
 
 		if bOK {
-			text := b
-			file.Before = &text
+			file.Before = b
 		}
 		if aOK {
-			text := a
-			file.After = &text
+			file.After = a
 		}
 		bundle.Files = append(bundle.Files, file)
 	}
 	return bundle, nil
 }
 
-func statusOf(before string, hasBefore bool, after string, hasAfter bool) string {
+func statusOf(before string, hasBefore bool, after string, hasAfter bool) contract.CodeStatus {
 	switch {
 	case !hasBefore && hasAfter:
-		return "added"
+		return contract.CodeStatusAdded
 	case hasBefore && !hasAfter:
-		return "removed"
+		return contract.CodeStatusRemoved
 	case before == after:
-		return "unchanged"
+		return contract.CodeStatusUnchanged
 	default:
-		return "modified"
+		return contract.CodeStatusModified
 	}
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import styles from './App.module.css';
-import { CodeDrawer } from './components/CodeDrawer';
+import { CodeStage } from './components/CodeStage';
 import { Composer } from './components/Composer';
 import { FileTree } from './components/FileTree';
 import { GraphView } from './components/GraphView';
@@ -34,7 +34,7 @@ function ErrorState({ message }: { message: string }) {
 }
 
 export default function App() {
-  const { payload, loading, error } = useApp();
+  const { payload, loading, error, view } = useApp();
   const { pref, setPref } = useTheme();
   const composerRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +63,7 @@ export default function App() {
               <FileTree />
             </aside>
             <main className={styles.center}>
-              <GraphView />
+              {view === 'graph' ? <GraphView /> : <CodeStage />}
             </main>
             <aside className={styles.right}>
               <ReviewPanel />
@@ -72,7 +72,6 @@ export default function App() {
           <div className={styles.composerSlot} ref={composerRef}>
             <Composer />
           </div>
-          <CodeDrawer />
         </>
       )}
       <Toast />

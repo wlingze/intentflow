@@ -159,6 +159,7 @@
       <div>
         <div class="lab">before</div>
         <pre>db.QueryRow("SELECT id FROM users WHERE name = ?", name)</pre>
+        <pre class="muted">// after：新增 name=="" 守卫，并在 findUser 里按 @ 选择 SQL 模板</pre>
       </div>
       <div>
         <div class="lab">after</div>
@@ -186,10 +187,10 @@ os.ReadFile(base + "/templates/search.html")</pre>
         <div class="right"><span class="pill add">EXTRACTED</span><span class="pill info">DERIVED</span></div>
       </div>
       <div class="card-body">
-        <iframe class="frame" id="if-intent" src="/out/index.html?theme=light" title="intentflow 三层语义 diff" loading="lazy"></iframe>
+        <iframe class="frame" id="if-intent" src="http://127.0.0.1:8123/" title="intentflow 行为工作台" loading="lazy"></iframe>
         <div class="actions">
-          <a href="/out/index.html" target="_blank" rel="noopener">打开完整视图 →</a>
-          <span>静态页面 · 自包含 · 无外部依赖</span>
+          <a href="http://127.0.0.1:8123/" target="_blank" rel="noopener">打开工作台 →</a>
+          <span>交互工作台 · 需先运行 <code>intentflow serve</code></span>
           <span class="note">数据：<code>review.json</code> · 由本地 IR 计算</span>
         </div>
       </div>
@@ -272,7 +273,7 @@ os.ReadFile(base + "/templates/search.html")</pre>
 
   <div class="foot">
     <span>同一 demo：<code>examples/demo-go</code></span>
-    <span>intentflow：<code>./bin/intentflow diff --before … --after …</code></span>
+    <span>intentflow：<code>./bin/intentflow serve --before … --after …</code></span>
     <span>PR Lens：<code>pr-lens render examples/demo-go/pr-lens/graph.json</code></span>
     <span>Archify：<code>archify compare architecture base.json head.json</code></span>
   </div>
@@ -341,11 +342,6 @@ os.ReadFile(base + "/templates/search.html")</pre>
     var src=ASSETS[theme][lens];
     if(img&&img.getAttribute('src')!==src)img.setAttribute('src',src);
     if(open)open.setAttribute('href',src);
-    var frame=document.getElementById('if-intent');
-    if(frame){
-      var want='/out/index.html?theme='+theme;
-      if(frame.getAttribute('src')!==want)frame.setAttribute('src',want);
-    }
     syncArchify(false);
   }
   for(var t=0;t<tabs.length;t++){

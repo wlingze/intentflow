@@ -31,11 +31,12 @@ function SignalCard({
   kept: boolean;
 }) {
   const dispatch = useAppDispatch();
+  const { files } = useReviewData();
   const scope = useMemo(() => signalScope(signal, facts), [signal, facts]);
 
   const openScope = () => {
     if (!scope) return;
-    dispatch({ type: 'drawer/open', file: scope.file, line: scope.line, side: signalSide(signal) });
+    dispatch({ type: 'code/open', file: scope.file, line: scope.line, side: signalSide(signal) });
   };
 
   const dismiss = () => {
@@ -46,6 +47,10 @@ function SignalCard({
   const keep = () => {
     if (kept) return;
     const side = signalSide(signal);
+    const file = scope ? files.find((candidate) => candidate.path === scope.file) : undefined;
+    const source = side === 'before' ? file?.before : file?.after;
+    const lineText = source?.split('\n')[(scope?.line ?? 1) - 1]?.trim();
+    const snippet = lineText || scope?.fact.snippet || signal.title;
     const comment: Comment = {
       id: uid('c-'),
       text: signal.detail ?? signal.title,
@@ -59,7 +64,7 @@ function SignalCard({
             side,
             start: scope.line ?? 1,
             end: scope.line ?? 1,
-            snippet: scope.fact.snippet ?? signal.title,
+            snippet,
           }
         : undefined,
     };
@@ -142,7 +147,7 @@ function ReviewCard({
   const openQuote = () => {
     if (!comment.quote) return;
     dispatch({
-      type: 'drawer/open',
+      type: 'code/open',
       file: comment.quote.file,
       line: comment.quote.start,
       side: comment.quote.side,

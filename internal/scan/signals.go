@@ -54,7 +54,7 @@ func Signals(r *model.Review) []model.Signal {
 		if !hasExternalSource(f.Source) {
 			continue
 		}
-		sev := "warn"
+		sev := model.Warn
 		switch {
 		case f.Source == "http_input" && isSensitiveSink(f) && (f.Shape == "format" || f.Shape == "concat"):
 			sev = "high"
@@ -68,7 +68,7 @@ func Signals(r *model.Review) []model.Signal {
 			detail += "数据参与了字符串构造，确认已参数化或校验。"
 		}
 		out = append(out, model.Signal{
-			ID:         model.Identity("sig", f.Identity, "intent-added"),
+			Id:         model.Identity("sig", f.Identity, "intent-added"),
 			Severity:   sev,
 			Title:      title,
 			Detail:     detail,
@@ -83,7 +83,7 @@ func Signals(r *model.Review) []model.Signal {
 			continue
 		}
 		out = append(out, model.Signal{
-			ID:         model.Identity("sig", f.Identity, "intent-removed"),
+			Id:         model.Identity("sig", f.Identity, "intent-removed"),
 			Severity:   "info",
 			Title:      fmt.Sprintf("移除链路：%s", f.Title),
 			Detail:     "确认这是有意收敛，而不是漏改。",
@@ -100,7 +100,7 @@ func Signals(r *model.Review) []model.Signal {
 			continue
 		}
 		out = append(out, model.Signal{
-			ID:         model.Identity("sig", f.Identity, "logic-added"),
+			Id:         model.Identity("sig", f.Identity, "logic-added"),
 			Severity:   "warn",
 			Title:      fmt.Sprintf("新增调用：%s", f.Title),
 			Detail:     reason + "。确认入参已参数化或校验。",
@@ -120,7 +120,7 @@ func Signals(r *model.Review) []model.Signal {
 			continue
 		}
 		out = append(out, model.Signal{
-			ID:         model.Identity("sig", f.Identity, "import-added"),
+			Id:         model.Identity("sig", f.Identity, "import-added"),
 			Severity:   "warn",
 			Title:      fmt.Sprintf("新增依赖：%s", pkg),
 			Detail:     reason + "。确认这是本 PR 引入的必要依赖。",
@@ -139,11 +139,11 @@ func Signals(r *model.Review) []model.Signal {
 	return out
 }
 
-func sevRank(s string) int {
+func sevRank(s model.Severity) int {
 	switch s {
-	case "high":
+	case model.High:
 		return 0
-	case "warn":
+	case model.Warn:
 		return 1
 	default:
 		return 2

@@ -194,3 +194,21 @@ export function IconAlert(props: IconProps) {
     </svg>
   );
 }
+
+export function IconMinus(props: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" {...props}>
+      <path d="M3.5 8h9" />
+    </svg>
+  );
+}
+
+export function IconTarget(props: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" {...props}>
+      <circle cx="8" cy="8" r="4.6" />
+      <circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" />
+      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" strokeLinecap="round" />
+    </svg>
+  );
+}

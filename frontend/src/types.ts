@@ -1,87 +1,32 @@
-export type Confidence = 'EXTRACTED' | 'DERIVED' | 'INFERRED' | 'ASSERTED' | 'UNKNOWN';
-export type Layer = 'project' | 'logic' | 'intent';
-export type Severity = 'info' | 'warn' | 'high';
-export type Side = 'before' | 'after';
-export type DeltaKind = 'added' | 'removed' | 'modified' | 'unchanged';
-export type CodeStatus = 'added' | 'removed' | 'modified' | 'unchanged';
+import type { components } from './api/schema.gen';
 
-export interface Fact {
-  identity: string;
-  layer: Layer;
-  kind: string;
-  title: string;
-  detail?: string;
-  file?: string;
-  line?: number;
-  function?: string;
-  confidence: Confidence;
-  path?: string[];
-  source?: string;
-  category?: string;
-  shape?: string;
-  snippet?: string;
-}
+type Schemas = components['schemas'];
 
-export interface Delta {
-  added: Fact[];
-  removed: Fact[];
-}
+export type Confidence = Schemas['Confidence'];
+export type Layer = Schemas['Layer'];
+export type Severity = Schemas['Severity'];
+export type DeltaKind = Schemas['DeltaKind'];
+export type CodeStatus = Schemas['CodeStatus'];
+export type BehaviorRole = Schemas['BehaviorRole'];
+export type BehaviorEdgeKind = Schemas['BehaviorEdgeKind'];
+export type Side = Schemas['Side'];
 
-export interface Signal {
-  id: string;
-  severity: Severity;
-  title: string;
-  detail?: string;
-  evidence: string[];
-  confidence: Confidence;
-}
-
-export interface Review {
-  before: string;
-  after: string;
-  project: Delta;
-  logic: Delta;
-  intent: Delta;
-  signals?: Signal[];
-  notes?: string[];
-}
-
-export interface CodeFile {
-  path: string;
-  status: CodeStatus;
-  language?: string;
-  before?: string;
-  after?: string;
-}
-
-export interface CodeBundle {
-  root: string;
-  files: CodeFile[];
-  truncated?: boolean;
-}
-
-export interface Payload {
-  review: Review;
-  code: CodeBundle;
-}
-
-export interface Quote {
-  file: string;
-  side: Side;
-  start: number;
-  end: number;
-  snippet: string;
-}
-
-export interface Comment {
-  id: string;
-  text: string;
-  quote?: Quote;
-  source: 'manual' | 'signal';
-  signalId?: string;
-  title?: string;
-  createdAt: number;
-}
+export type Fact = Schemas['Fact'];
+export type Delta = Schemas['Delta'];
+export type Signal = Schemas['Signal'];
+export type BehaviorNode = Schemas['BehaviorNode'];
+export type BehaviorEdge = Schemas['BehaviorEdge'];
+export type BehaviorScenario = Schemas['BehaviorScenario'];
+export type BehaviorLane = Schemas['BehaviorLane'];
+export type BehaviorStats = Schemas['BehaviorStats'];
+export type BehaviorGraph = Schemas['BehaviorGraph'];
+export type Review = Schemas['Review'];
+export type CodeFile = Schemas['CodeFile'];
+export type CodeBundle = Schemas['CodeBundle'];
+export type Payload = Schemas['Payload'];
+export type Quote = Schemas['Quote'];
+export type Comment = Schemas['Comment'];
+export type ReviewState = Schemas['ReviewState'];
 
 export interface PersistedReview {
   comments: Comment[];
@@ -89,79 +34,35 @@ export interface PersistedReview {
   kept: string[];
 }
 
-export interface GraphNode {
+export type ViewMode = 'graph' | 'code';
+export type DiffLayout = 'split' | 'unified';
+export type CodeMode = 'diff' | 'search';
+
+export interface Selection {
+  kind: 'node' | 'edge';
   id: string;
-  kind: 'source' | 'function' | 'sink';
-  label: string;
-  sub: string;
-  delta: DeltaKind;
-  col: number;
-  row: number;
-  file?: string;
-  line?: number;
-  side?: Side;
-  snippet?: string;
-  fact?: Fact;
-  chains: string[];
-  signs: Set<string>;
-  shapes: Set<string>;
 }
 
-export interface GraphEdge {
-  id: string;
-  from: string;
-  to: string;
-  delta: DeltaKind;
-  label: string;
-  shape?: string;
-  source?: string;
-  hero: boolean;
-  fact?: Fact;
-  file?: string;
-  line?: number;
-  side?: Side;
-  snippet?: string;
-  chains: string[];
-  signs: Set<string>;
-}
-
-export interface GraphModel {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  entry: string;
-  primarySource: string;
-  cols: number;
-  rows: number;
-}
-
-export interface LaidOutNode extends GraphNode {
+export interface LaidOutNode extends BehaviorNode {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface LaidOutEdge extends GraphEdge {
+export interface LaidOutEdge extends BehaviorEdge {
   path: string;
   labelX: number;
   labelY: number;
   pathId: string;
 }
 
-export interface Lane {
-  label: string;
-  x: number;
-  width: number;
-  y: number;
-  height: number;
-}
-
-export interface LaidOutGraph {
+export interface BehaviorLayout {
   nodes: LaidOutNode[];
   edges: LaidOutEdge[];
-  lanes: Lane[];
   width: number;
   height: number;
+  stageCount: number;
   nodeWidth: number;
   nodeHeight: number;
 }

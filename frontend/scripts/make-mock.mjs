@@ -87,8 +87,8 @@ async function main() {
       path: rel,
       status: statusOf(beforeText, afterText),
       language: LANGUAGE[path.extname(rel)] ?? 'text',
-      ...(beforeText !== undefined ? { before: beforeText } : {}),
-      ...(afterText !== undefined ? { after: afterText } : {}),
+      before: beforeText ?? '',
+      after: afterText ?? '',
     });
   }
 
@@ -97,7 +97,8 @@ async function main() {
     code: {
       root: 'examples/demo-go',
       files,
-      ...(files.length < paths.length ? { truncated: true } : {}),
+      truncated: files.length < paths.length,
+      skipped: files.length < paths.length ? paths.slice(files.length) : [],
     },
   };
 

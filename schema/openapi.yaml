@@ -1,0 +1,334 @@
+openapi: 3.0.3
+info:
+  title: intentflow review contract
+  version: 0.2.0
+  description: |
+    One schema for the analyzer, the HTTP API and the workbench.
+
+    The graph is a behavior projection, not a call graph:
+    trigger -> decision -> transform -> effect, grouped by scenario.
+
+servers:
+  - url: http://127.0.0.1:8123
+
+paths:
+  /api/payload:
+    get:
+      summary: Full review payload
+      operationId: getPayload
+      responses:
+        '200':
+          description: Review facts, behavior graph and source bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payload'
+  /api/review:
+    post:
+      summary: Save the reviewer's notes
+      operationId: postReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '200':
+          description: review.md written
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+
+components:
+  schemas:
+    Confidence:
+      type: string
+      enum: [EXTRACTED, DERIVED, INFERRED, ASSERTED, UNKNOWN]
+    Layer:
+      type: string
+      enum: [project, logic, intent]
+    Severity:
+      type: string
+      enum: [info, warn, high]
+    DeltaKind:
+      type: string
+      enum: [added, removed, modified, unchanged]
+    CodeStatus:
+      type: string
+      enum: [added, removed, modified, unchanged]
+    BehaviorRole:
+      type: string
+      enum: [trigger, decision, transform, effect]
+    BehaviorEdgeKind:
+      type: string
+      enum: [call, data, control, boundary]
+    Side:
+      type: string
+      enum: [before, after]
+
+    Fact:
+      type: object
+      additionalProperties: false
+      required:
+        [identity, layer, kind, title, detail, file, line, function, confidence,
+         path, source, category, shape, snippet]
+      properties:
+        identity: { type: string }
+        layer: { $ref: '#/components/schemas/Layer' }
+        kind: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+        function: { type: string }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        path:
+          type: array
+          items: { type: string }
+        source: { type: string }
+        category: { type: string }
+        shape: { type: string }
+        snippet: { type: string }
+
+    Delta:
+      type: object
+      additionalProperties: false
+      required: [added, removed]
+      properties:
+        added:
+          type: array
+          items: { $ref: '#/components/schemas/Fact' }
+        removed:
+          type: array
+          items: { $ref: '#/components/schemas/Fact' }
+
+    Signal:
+      type: object
+      additionalProperties: false
+      required: [id, severity, title, detail, evidence, confidence]
+      properties:
+        id: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        title: { type: string }
+        detail: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+
+    BehaviorNode:
+      type: object
+      additionalProperties: false
+      required:
+        [id, role, stage, label, detail, file, line, function, package, delta,
+         confidence, evidence, tags, snippet, source, shape, category, change]
+      properties:
+        id: { type: string }
+        role: { $ref: '#/components/schemas/BehaviorRole' }
+        stage: { type: integer, format: int32 }
+        label: { type: string }
+        detail: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+        function: { type: string }
+        package: { type: string }
+        delta: { $ref: '#/components/schemas/DeltaKind' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        evidence:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        snippet: { type: string }
+        source: { type: string }
+        shape: { type: string }
+        category: { type: string }
+        change: { type: string }
+
+    BehaviorEdge:
+      type: object
+      additionalProperties: false
+      required:
+        [id, from, to, kind, label, shape, source, delta, confidence, evidence]
+      properties:
+        id: { type: string }
+        from: { type: string }
+        to: { type: string }
+        kind: { $ref: '#/components/schemas/BehaviorEdgeKind' }
+        label: { type: string }
+        shape: { type: string }
+        source: { type: string }
+        delta: { $ref: '#/components/schemas/DeltaKind' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        evidence:
+          type: array
+          items: { type: string }
+
+    BehaviorScenario:
+      type: object
+      additionalProperties: false
+      required: [id, trigger, effect, title, delta, nodes, source, shape, category]
+      properties:
+        id: { type: string }
+        trigger: { type: string }
+        effect: { type: string }
+        title: { type: string }
+        delta: { $ref: '#/components/schemas/DeltaKind' }
+        nodes:
+          type: array
+          items: { type: string }
+        source: { type: string }
+        shape: { type: string }
+        category: { type: string }
+
+    BehaviorLane:
+      type: object
+      additionalProperties: false
+      required: [role, label, description, order, count]
+      properties:
+        role: { $ref: '#/components/schemas/BehaviorRole' }
+        label: { type: string }
+        description: { type: string }
+        order: { type: integer, format: int32 }
+        count: { type: integer, format: int32 }
+
+    BehaviorStats:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges, scenarios, added, removed, modified]
+      properties:
+        nodes: { type: integer, format: int32 }
+        edges: { type: integer, format: int32 }
+        scenarios: { type: integer, format: int32 }
+        added: { type: integer, format: int32 }
+        removed: { type: integer, format: int32 }
+        modified: { type: integer, format: int32 }
+
+    BehaviorGraph:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges, scenarios, lanes, entry, stageCount, stats]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/BehaviorNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/BehaviorEdge' }
+        scenarios:
+          type: array
+          items: { $ref: '#/components/schemas/BehaviorScenario' }
+        lanes:
+          type: array
+          items: { $ref: '#/components/schemas/BehaviorLane' }
+        entry: { type: string }
+        stageCount: { type: integer, format: int32 }
+        stats: { $ref: '#/components/schemas/BehaviorStats' }
+
+    Review:
+      type: object
+      additionalProperties: false
+      required: [before, after, project, logic, intent, signals, notes, behavior]
+      properties:
+        before: { type: string }
+        after: { type: string }
+        project: { $ref: '#/components/schemas/Delta' }
+        logic: { $ref: '#/components/schemas/Delta' }
+        intent: { $ref: '#/components/schemas/Delta' }
+        signals:
+          type: array
+          items: { $ref: '#/components/schemas/Signal' }
+        notes:
+          type: array
+          items: { type: string }
+        behavior: { $ref: '#/components/schemas/BehaviorGraph' }
+
+    CodeFile:
+      type: object
+      additionalProperties: false
+      required: [path, status, language, before, after]
+      properties:
+        path: { type: string }
+        status: { $ref: '#/components/schemas/CodeStatus' }
+        language: { type: string }
+        before: { type: string }
+        after: { type: string }
+
+    CodeBundle:
+      type: object
+      additionalProperties: false
+      required: [root, files, truncated, skipped]
+      properties:
+        root: { type: string }
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/CodeFile' }
+        truncated: { type: boolean }
+        skipped:
+          type: array
+          items: { type: string }
+
+    Payload:
+      type: object
+      additionalProperties: false
+      required: [review, code]
+      properties:
+        review: { $ref: '#/components/schemas/Review' }
+        code: { $ref: '#/components/schemas/CodeBundle' }
+
+    Quote:
+      type: object
+      additionalProperties: false
+      required: [file, side, start, end, snippet]
+      properties:
+        file: { type: string }
+        side: { $ref: '#/components/schemas/Side' }
+        start: { type: integer, format: int32 }
+        end: { type: integer, format: int32 }
+        snippet: { type: string }
+
+    Comment:
+      type: object
+      additionalProperties: false
+      required: [id, text, title, source, signalId, createdAt]
+      properties:
+        id: { type: string }
+        text: { type: string }
+        title: { type: string }
+        source: { type: string, enum: [manual, signal] }
+        signalId: { type: string }
+        createdAt: { type: integer, format: int64 }
+        quote: { $ref: '#/components/schemas/Quote' }
+
+    ReviewState:
+      type: object
+      additionalProperties: false
+      required: [comments, dismissed, kept]
+      properties:
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+        dismissed:
+          type: array
+          items: { type: string }
+        kept:
+          type: array
+          items: { type: string }
+
+    ReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [markdown, data]
+      properties:
+        markdown: { type: string }
+        data: { $ref: '#/components/schemas/ReviewState' }
+
+    ReviewResponse:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: { type: string }

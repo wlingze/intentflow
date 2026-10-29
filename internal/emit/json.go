@@ -1,6 +1,5 @@
-// Package emit 负责把 Review 输出成两种消费者能用的形式：
-//   - review.json：给 agent 读的结构化结果
-//   - index.html：给人 review 的三层视图
+// Package emit 负责写出 review.json 与 facts.json。
+// 人类可读的工作台由 internal/serve + frontend/ 提供，不再生成内嵌 HTML。
 package emit
 
 import (

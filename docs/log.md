@@ -150,3 +150,58 @@ demo 结果与上一轮一致：意图层 ±2/1，逻辑层 ±6/2，项目层 ±
 `review.md` 与 `review-state.json` 已写入 `examples/demo-go/out/`。
 
 设计见 [05-frontend.md](05-frontend.md)。
+
+## 2026-10-29 · 第四轮：行为模型、统一契约、双视角工作台
+
+### 先回答三个问题
+
+1. **为什么是入口 / 处理链 / 副作用？** 因为它借用了污点分析的 source → propagation → sink。
+   它适合找漏洞，不适合回答「改动改变了什么行为」。调研与取舍见 `06-behavior-research.md`。
+2. **图是怎么生成的？** Go AST 提供调用边、调用点、条件；SSA + SyntaxFlow 提供
+   source、sink、shape；行为投影把两者拼成 scenario。没有 LLM。
+3. **AI 怎么介入？** 当前不介入。未来只做叙述层，必须引用 Fact.identity。
+
+### 新模型
+
+- 四类角色：触发 / 判定 / 变换 / 效果。
+- 角色回答「是什么」，阶段回答「在因果链的哪一步」。阶段由拓扑最长路径计算，
+  所以判定可以出现在变换之后。
+- 一个判定节点对应一个 `if`/`switch`，分支是边，不是节点。
+- effect 节点 identity 不含 shape：`direct → format` 是 modified。
+- data 边 identity 含 shape/source：before/after 两条边同时出现。
+
+### 统一契约
+
+- 唯一事实来源：`schema/openapi.yaml`。
+- Go：`oapi-codegen v2.4.1` → `internal/contract/types.gen.go`。
+- TS：`openapi-typescript 7.13.0` → `frontend/src/api/schema.gen.ts`。
+- `internal/model` 改为生成类型的领域别名；`internal/payload` / `internal/serve` 直接用生成类型。
+- `make schema` 重新生成，`make check` 校验。
+
+### 双视角
+
+- 行为图视角：全宽 DAG + 右下角代码 peek + 底部行为清单 / 三层事实 ledger。
+- 代码视角：全宽 diff / 搜索 + 左下角可缩放的行为缩略图。
+- 右侧 Review 栏在两个视角都保留；底栏 composer 不变。
+- 删除了旧的右抽屉 `CodeDrawer`，也删除了 Go 内嵌 HTML 的 `internal/emit/web.go`。
+
+### demo
+
+`findUser` 增加 `switch`：输入含 `@` 走 email 模板，否则走 name 模板；两者仍然
+用 `fmt.Sprintf` 拼接。`handleSearch` 增加 `name == ""` 守卫。新增 `loadTemplate`。
+
+结果：
+
+```
+意图层 ±2/1  逻辑层 ±7/2  项目层 ±4/0  关注点 5
+行为图 7 节点 · 10 边 · 2 条行为 · 5 个阶段
+```
+
+### 验证
+
+- `go build ./...`、`go vet ./...` 通过。
+- `pnpm typecheck`、`pnpm build` 通过。
+- 浏览器验证：分叉图、switch 判定、节点 peek、`main.go:21` 跳转、
+  缩略图点击跳转、选中引用、评论、提交、搜索、深色/浅色。
+- `review.md` 与 `review-state.json` 已写入 `examples/demo-go/out/`。
+- 未上传 GitHub，全部为本地提交。

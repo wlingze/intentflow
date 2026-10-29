@@ -1,4 +1,4 @@
-import type { Payload } from '../types';
+import type { Payload, ReviewState } from '../types';
 
 export async function fetchPayload(): Promise<Payload> {
   const params = new URLSearchParams(window.location.search);
@@ -12,7 +12,7 @@ export async function fetchPayload(): Promise<Payload> {
 
 export async function submitReview(
   markdown: string,
-  data: unknown,
+  data: ReviewState,
 ): Promise<{ path?: string }> {
   const response = await fetch('/api/review', {
     method: 'POST',

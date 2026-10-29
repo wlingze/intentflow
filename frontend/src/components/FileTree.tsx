@@ -52,7 +52,7 @@ function FileRows({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
             className={styles.fileRow}
             style={{ paddingLeft: 22 + depth * 12 }}
             title={node.path}
-            onClick={() => dispatch({ type: 'drawer/open', file: node.path })}
+            onClick={() => dispatch({ type: 'code/open', file: node.path })}
           >
             <IconFile width={13} height={13} className={styles.fileIcon} />
             <span className={styles.fileName}>{node.name}</span>
@@ -80,7 +80,7 @@ function ProjectFact({ fact, side }: { fact: Fact; side: Side }) {
       className={styles.projectFact}
       title={fact.detail ?? fact.title}
       onClick={() => {
-        if (fact.file) dispatch({ type: 'drawer/open', file: fact.file, line: fact.line, side });
+        if (fact.file) dispatch({ type: 'code/open', file: fact.file, line: fact.line, side });
       }}
     >
       <span className={`${styles.sign} ${side === 'after' ? styles.plus : styles.minus}`}>

@@ -148,7 +148,7 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 				Title:      title,
 				Detail:     fmt.Sprintf("来源 %s；到达方式 %s（%s）；源头位置 %s", strings.Join(sources, ", "), shape, shapeHint(shape), srcLoc),
 				File:       fileOf(s, programName),
-				Line:       lineOf(s),
+				Line:       int32(lineOf(s)),
 				Function:   caller,
 				Confidence: model.Derived,
 				Path:       path,
@@ -168,6 +168,16 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 // 返回的 rank 用于在同一次调用有多个实参时取「最危险」的那个。
 func shapeOf(v *ssaapi.Value) (string, int) {
 	s := v.String()
+	// Phi（if/switch 汇合后的变量）本身不是 Call，但它的定义里可能包含
+	// fmt.Sprintf。先看值的文本，避免把「格式化后汇合」误判成普通调用。
+	if strings.Contains(s, "add(") {
+		return "concat", 3
+	}
+	for _, f := range []string{"Sprintf", "Sprint", "Sprintln", "Join", "Builder", "WriteString", "Format"} {
+		if strings.Contains(s, f) {
+			return "format", 3
+		}
+	}
 	switch v.GetOpcode() {
 	case "BinOp":
 		// SSA 反汇编把加法写成 add(a, b)，源码里看到的是 a + b，两种都要认。

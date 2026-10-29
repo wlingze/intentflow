@@ -1,86 +1,72 @@
-import { useMemo, useState } from 'react';
-import { buildGraph, layoutGraph } from '../lib/graph';
-import { cx, shortPath } from '../lib/format';
-import { shapeLabel } from '../lib/labels';
+import { useMemo } from 'react';
+import { layoutBehavior, stageLabels, roleLabel } from '../lib/behavior';
+import { baseName, cx } from '../lib/format';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
-import type { GraphEdge, GraphNode, LaidOutEdge, LaidOutNode, Quote } from '../types';
-import { IconBranch, IconCode, IconComment, IconSearch } from './Icons';
+import type { BehaviorEdge, BehaviorNode, DeltaKind, Fact, LaidOutEdge, LaidOutNode, Side } from '../types';
+import { CodePeek } from './CodePeek';
+import { IconCode, IconSearch } from './Icons';
 import styles from './GraphView.module.css';
 
-const DELTA_LABEL: Record<string, string> = {
+const DELTA_LABEL: Record<DeltaKind, string> = {
   added: '新增',
   removed: '移除',
-  modified: '结构变化',
+  modified: '变化',
   unchanged: '未变',
+};
+
+const ROLE_MARK: Record<string, string> = {
+  trigger: 'IN',
+  decision: '??',
+  transform: 'ƒ',
+  effect: 'OUT',
 };
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function locText(node: GraphNode | GraphEdge): string {
-  if (!node.file) return '无代码位置';
-  return `${shortPath(node.file, 42)}${node.line ? `:${node.line}` : ''}`;
-}
-
-function makeQuote(node: GraphNode | GraphEdge): Quote | null {
-  if (!node.file) return null;
-  const line = node.line ?? 1;
-  return {
-    file: node.file,
-    side: node.side ?? 'after',
-    start: line,
-    end: line,
-    snippet: node.snippet ?? node.label,
-  };
-}
-
 function Edge({
   edge,
   from,
   to,
-  reducedMotion,
   onSelect,
 }: {
   edge: LaidOutEdge;
   from: LaidOutNode;
   to: LaidOutNode;
-  reducedMotion: boolean;
-  onSelect: (edge: LaidOutEdge) => void;
+  onSelect: () => void;
 }) {
-  const marker = edge.delta === 'added' ? 'arrow-added' : edge.delta === 'removed' ? 'arrow-removed' : edge.delta === 'modified' ? 'arrow-modified' : 'arrow-unchanged';
+  const showLabel =
+    (edge.kind === 'data' && edge.delta !== 'removed') ||
+    (edge.kind === 'control' && !edge.label.includes('进入判定'));
+  const label = edge.kind === 'data' ? edge.shape || edge.label : edge.label;
   return (
     <g
-      className={cx(styles.edge, styles[`edge_${edge.delta}`])}
+      className={cx(styles.edge, styles[`edge_${edge.delta}`], styles[`kind_${edge.kind}`])}
       role="button"
       tabIndex={0}
       aria-label={`${from.label} 到 ${to.label}，${DELTA_LABEL[edge.delta]}，${edge.label}`}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect(edge);
+        onSelect();
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onSelect(edge);
+          onSelect();
         }
       }}
     >
       <title>
-        {from.label} → {to.label} · {edge.label} · {DELTA_LABEL[edge.delta]}
+        {from.label} → {to.label} · {edge.kind} · {edge.label} · {DELTA_LABEL[edge.delta]}
       </title>
       <path className={styles.edgeHit} d={edge.path} />
-      <path className={styles.edgeLine} d={edge.path} markerEnd={`url(#${marker})`} id={edge.pathId} />
-      <text className={styles.edgeLabel} x={edge.labelX} y={edge.labelY} textAnchor="middle">
-        {truncate(edge.label, 22)}
-      </text>
-      {edge.hero && !reducedMotion && (
-        <circle className={styles.pulse} r={3.2}>
-          <animateMotion dur="3.4s" repeatCount="indefinite">
-            <mpath href={`#${edge.pathId}`} />
-          </animateMotion>
-        </circle>
+      <path className={styles.edgeLine} d={edge.path} markerEnd={`url(#arrow-${edge.delta})`} />
+      {showLabel && (
+        <text className={styles.edgeLabel} x={edge.labelX} y={edge.labelY} textAnchor="middle">
+          {truncate(label, 20)}
+        </text>
       )}
     </g>
   );
@@ -88,159 +74,217 @@ function Edge({
 
 function Node({
   node,
+  selected,
   onSelect,
 }: {
   node: LaidOutNode;
-  onSelect: (node: LaidOutNode) => void;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const colorClass = styles[`node_${node.delta}`];
-  const mark = node.delta === 'added' ? '+' : node.delta === 'removed' ? '−' : node.delta === 'modified' ? '~' : '';
-  const glyph = node.kind === 'source' ? 'IN' : node.kind === 'sink' ? 'OUT' : 'ƒ';
-
   return (
     <g
-      className={cx(styles.node, colorClass)}
+      className={cx(styles.node, styles[`role_${node.role}`], styles[`delta_${node.delta}`], selected && styles.selected)}
       transform={`translate(${node.x} ${node.y})`}
       role="button"
       tabIndex={0}
-      aria-label={`${node.label}，${DELTA_LABEL[node.delta]}`}
+      aria-label={`${node.label}，${roleLabel(node.role)}，${DELTA_LABEL[node.delta]}`}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect(node);
+        onSelect();
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onSelect(node);
+          onSelect();
         }
       }}
     >
       <title>
-        {node.label} · {node.sub} · {DELTA_LABEL[node.delta]}
+        {node.label} · {node.detail} · {DELTA_LABEL[node.delta]}
       </title>
       <rect className={styles.card} width={node.width} height={node.height} rx={10} />
-      <rect className={styles.glyphBox} x={12} y={13} width={30} height={30} rx={8} />
-      <text className={styles.glyph} x={27} y={33} textAnchor="middle">
-        {glyph}
+      <rect className={styles.glyphBox} x={12} y={15} width={30} height={30} rx={8} />
+      <text className={styles.glyph} x={27} y={35} textAnchor="middle">
+        {ROLE_MARK[node.role] ?? '·'}
       </text>
-      <text className={styles.nodeTitle} x={51} y={25}>
+      <text className={styles.nodeTitle} x={51} y={27}>
         {truncate(node.label, 18)}
       </text>
-      <text className={styles.nodeSub} x={51} y={42}>
-        {truncate(node.sub, 24)}
+      <text className={styles.nodeSub} x={51} y={44}>
+        {truncate(node.detail, 18)}
       </text>
-      {mark && (
-        <text className={styles.nodeMark} x={node.width - 14} y={20} textAnchor="end">
-          {mark}
+      {node.change && (
+        <text className={styles.nodeChange} x={51} y={59}>
+          {truncate(node.change, 25)}
         </text>
       )}
+      <text className={styles.nodeMark} x={node.width - 14} y={21} textAnchor="end">
+        {node.delta === 'added' ? '+' : node.delta === 'removed' ? '−' : node.delta === 'modified' ? '~' : ''}
+      </text>
     </g>
+  );
+}
+
+function FactColumn({
+  title,
+  added,
+  removed,
+  showShape = false,
+}: {
+  title: string;
+  added: Fact[];
+  removed: Fact[];
+  showShape?: boolean;
+}) {
+  const dispatch = useAppDispatch();
+  const rows = [
+    ...added.map((fact) => ({ fact, side: 'after' as Side })),
+    ...removed.map((fact) => ({ fact, side: 'before' as Side })),
+  ];
+  return (
+    <div className={styles.factCol}>
+      <h4>
+        {title}
+        <span>
+          {added.length > 0 && <b className={styles.plus}>+{added.length}</b>}
+          {removed.length > 0 && <b className={styles.minus}>−{removed.length}</b>}
+        </span>
+      </h4>
+      <div className={styles.factRows}>
+        {rows.length === 0 ? (
+          <span className={styles.factEmpty}>无变化</span>
+        ) : (
+          rows.map(({ fact, side }) => (
+            <button
+              key={`${side}-${fact.identity}`}
+              type="button"
+              className={styles.factRow}
+              title={fact.detail || fact.title}
+              onClick={() => {
+                if (fact.file) {
+                  dispatch({
+                    type: 'code/open',
+                    file: fact.file,
+                    line: fact.line,
+                    side,
+                  });
+                }
+              }}
+            >
+              <span className={side === 'after' ? styles.plus : styles.minus}>
+                {side === 'after' ? '+' : '−'}
+              </span>
+              <span className={styles.factTitle}>{fact.title}</span>
+              {showShape && fact.shape && <em className={styles.factShape}>{fact.shape}</em>}
+              {fact.file && (
+                <span className={styles.factLoc}>
+                  {baseName(fact.file)}
+                  {fact.line ? `:${fact.line}` : ''}
+                </span>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
 export function GraphView() {
   const state = useApp();
   const dispatch = useAppDispatch();
-  const { review } = useReviewData();
-  const [notesOpen, setNotesOpen] = useState(false);
-  const reducedMotion = useMemo(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    [],
+  const { review, files } = useReviewData();
+  const graph = useMemo(
+    () => (review ? layoutBehavior(review.behavior) : null),
+    [review],
   );
-
-  const graph = useMemo(() => {
-    if (!review) return null;
-    return layoutGraph(buildGraph(review));
-  }, [review]);
 
   if (!review || !graph) return <div className={styles.empty}>没有分析结果。</div>;
 
-  const selectedNode = state.selected?.kind === 'node'
-    ? graph.nodes.find((node) => node.id === state.selected?.id)
+  const selectedNode = state.peek.nodeId
+    ? graph.nodes.find((node) => node.id === state.peek.nodeId)
     : undefined;
-  const selectedEdge = state.selected?.kind === 'edge'
-    ? graph.edges.find((edge) => edge.id === state.selected?.id)
+  const selectedEdge = state.peek.edgeId
+    ? graph.edges.find((edge) => edge.id === state.peek.edgeId)
     : undefined;
+  const anchorNode = selectedEdge
+    ? graph.nodes.find((node) => node.id === selectedEdge.to)
+    : undefined;
+  const labels = stageLabels(review.behavior);
 
-  const openLoc = (item: GraphNode | GraphEdge) => {
-    if (!item.file) {
-      dispatch({ type: 'toast/show', message: '这条事实没有文件位置', kind: 'info' });
-      return;
-    }
-    dispatch({ type: 'drawer/open', file: item.file, line: item.line, side: item.side });
-  };
-
-  const quote = (item: GraphNode | GraphEdge) => {
-    const next = makeQuote(item);
-    if (!next) {
-      dispatch({ type: 'toast/show', message: '这条事实没有文件位置', kind: 'info' });
-      return;
-    }
-    dispatch({ type: 'composer/quote', quote: next });
-    dispatch({ type: 'toast/show', message: '引用已加入输入框', kind: 'info' });
-  };
-
-  const selectNode = (node: LaidOutNode) => {
+  const openPeek = (node: BehaviorNode) => {
     dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
-    openLoc(node);
+    dispatch({
+      type: 'peek/open',
+      nodeId: node.id,
+      file: node.file,
+      line: node.line,
+      side: node.delta === 'removed' ? 'before' : 'after',
+    });
   };
 
-  const selectEdge = (edge: LaidOutEdge) => {
+  const openEdgePeek = (edge: BehaviorEdge) => {
     dispatch({ type: 'select', selected: { kind: 'edge', id: edge.id } });
-    openLoc(edge);
+    const to = graph.nodes.find((node) => node.id === edge.to);
+    dispatch({
+      type: 'peek/open',
+      edgeId: edge.id,
+      file: to?.file,
+      line: to?.line,
+      side: edge.delta === 'removed' ? 'before' : 'after',
+    });
   };
 
   const firstChanged = review.intent.added[0] ?? review.intent.removed[0];
-  const openFirst = () => {
+  const openCode = () => {
     if (firstChanged?.file) {
-      dispatch({ type: 'drawer/open', file: firstChanged.file, line: firstChanged.line, side: 'after' });
+      dispatch({ type: 'code/open', file: firstChanged.file, line: firstChanged.line, side: 'after' });
     } else {
-      dispatch({ type: 'drawer/open' });
+      dispatch({ type: 'code/open' });
     }
   };
 
-  const selected = selectedNode
-    ? { kind: 'node' as const, item: selectedNode }
-    : selectedEdge
-      ? { kind: 'edge' as const, item: selectedEdge }
-      : null;
-
-  const edges = graph.edges.map((edge) => {
-    const from = graph.nodes.find((node) => node.id === edge.from);
-    const to = graph.nodes.find((node) => node.id === edge.to);
-    return from && to ? { edge, from, to } : null;
-  }).filter((value): value is { edge: LaidOutEdge; from: LaidOutNode; to: LaidOutNode } => Boolean(value));
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const edges = graph.edges
+    .map((edge) => {
+      const from = nodeById.get(edge.from);
+      const to = nodeById.get(edge.to);
+      return from && to ? { edge, from, to } : null;
+    })
+    .filter((value): value is { edge: LaidOutEdge; from: LaidOutNode; to: LaidOutNode } => Boolean(value));
 
   return (
-    <div className={styles.panel}>
+    <section className={styles.panel}>
       <header className={styles.head}>
         <div className={styles.titleGroup}>
-          <div className={styles.eyebrow}>
-            <IconBranch width={13} height={13} />
-            意图流
-          </div>
+          <div className={styles.eyebrow}>行为视图</div>
           <div className={styles.titleRow}>
-            <h1>{review.intent.added.length + review.intent.removed.length} 条语义链</h1>
+            <h1>{review.behavior.stats.scenarios} 条行为</h1>
             <span className={styles.sub}>
-              {graph.nodes.length} 节点 · {graph.edges.length} 边
+              {review.behavior.stats.nodes} 节点 · {review.behavior.stats.edges} 边 ·{' '}
+              {review.behavior.stats.added} 新增 / {review.behavior.stats.modified} 变化 /{' '}
+              {review.behavior.stats.removed} 移除
             </span>
           </div>
         </div>
         <div className={styles.actions}>
           <div className={styles.legend}>
-            <span><i className={styles.legAdd} />新增</span>
-            <span><i className={styles.legDel} />移除</span>
-            <span><i className={styles.legMod} />变化</span>
-            <span><i className={styles.legSame} />未变</span>
+            {review.behavior.lanes.map((lane) => (
+              <span key={lane.role} className={styles[`legend_${lane.role}`]}>
+                <i />
+                {lane.label}
+                {lane.count > 0 && <em>{lane.count}</em>}
+              </span>
+            ))}
           </div>
-          <button type="button" className="btn btnSmall" onClick={openFirst}>
+          <button type="button" className="btn btnSmall" onClick={openCode}>
             <IconCode width={13} height={13} />
             代码
           </button>
           <button
             type="button"
             className="btn btnSmall"
-            onClick={() => dispatch({ type: 'drawer/open', mode: 'search' })}
+            onClick={() => dispatch({ type: 'code/open', mode: 'search' })}
           >
             <IconSearch width={13} height={13} />
             搜索
@@ -248,10 +292,10 @@ export function GraphView() {
         </div>
       </header>
 
-      <div className={styles.canvasWrap}>
+      <div className={styles.canvasWrap} onClick={() => dispatch({ type: 'peek/close' })}>
         {graph.nodes.length === 0 ? (
           <div className={styles.empty}>
-            <p>本次改动没有可绘制的意图链。</p>
+            <p>本次改动没有可绘制的行为。</p>
             <p>可能两侧都没有命中 sink，或 SSA 未启用。</p>
           </div>
         ) : (
@@ -259,39 +303,44 @@ export function GraphView() {
             className={styles.canvas}
             viewBox={`0 0 ${graph.width} ${graph.height}`}
             role="img"
-            aria-label="意图数据流图"
-            style={{ minWidth: Math.min(graph.width, 760) }}
+            aria-label="行为数据流图"
           >
             <defs>
-              <marker id="arrow-added" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--green)" />
-              </marker>
-              <marker id="arrow-removed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--red)" />
-              </marker>
-              <marker id="arrow-modified" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--amber)" />
-              </marker>
-              <marker id="arrow-unchanged" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--faint)" />
-              </marker>
+              {(['added', 'removed', 'modified', 'unchanged'] as const).map((delta) => (
+                <marker
+                  key={delta}
+                  id={`arrow-${delta}`}
+                  viewBox="0 0 10 10"
+                  refX="8"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto-start-reverse"
+                >
+                  <path
+                    d="M 0 0 L 10 5 L 0 10 z"
+                    className={styles[`marker_${delta}`]}
+                  />
+                </marker>
+              ))}
             </defs>
 
-            {graph.lanes.map((lane) => (
-              <g key={lane.label}>
-                <rect
-                  className={styles.lane}
-                  x={lane.x}
-                  y={lane.y}
-                  width={lane.width}
-                  height={lane.height}
-                  rx={12}
-                />
-                <text className={styles.laneLabel} x={lane.x + 14} y={lane.y + 19}>
-                  {lane.label}
+            {labels.map((label, stage) => {
+              if (!label) return null;
+              const node = graph.nodes.find((candidate) => candidate.stage === stage);
+              if (!node) return null;
+              return (
+                <text
+                  key={stage}
+                  className={styles.stageLabel}
+                  x={node.x + node.width / 2}
+                  y={28}
+                  textAnchor="middle"
+                >
+                  {label}
                 </text>
-              </g>
-            ))}
+              );
+            })}
 
             {edges.map(({ edge, from, to }) => (
               <Edge
@@ -299,93 +348,119 @@ export function GraphView() {
                 edge={edge}
                 from={from}
                 to={to}
-                reducedMotion={reducedMotion}
-                onSelect={selectEdge}
+                onSelect={() => openEdgePeek(edge)}
               />
             ))}
 
             {graph.nodes.map((node) => (
-              <Node key={node.id} node={node} onSelect={selectNode} />
+              <Node
+                key={node.id}
+                node={node}
+                selected={state.peek.nodeId === node.id || anchorNode?.id === node.id}
+                onSelect={() => openPeek(node)}
+              />
             ))}
           </svg>
         )}
+
+        {state.peek.open && (selectedNode || selectedEdge) && (
+          <div onClick={(event) => event.stopPropagation()}>
+            <CodePeek
+              node={selectedNode}
+              edge={selectedEdge}
+              anchor={
+                anchorNode
+                  ? {
+                      file: anchorNode.file,
+                      line: anchorNode.line,
+                      side: anchorNode.delta === 'removed' ? 'before' : 'after',
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        )}
+
+        {!state.peek.open && (
+          <div className={styles.hint}>
+            点击节点查看代码与证据。判定节点可以展开分支；效果节点对齐在最右列。
+          </div>
+        )}
       </div>
 
-      <section className={styles.inspector}>
-        {!selected ? (
-          <div className={styles.hint}>
-            <IconBranch width={14} height={14} />
-            <span>点击节点或边查看证据。点击后代码抽屉会跳到对应行。</span>
-          </div>
-        ) : selected.kind === 'node' ? (
-          <>
-            <div className={styles.inspectorHead}>
-              <span className={styles.inspectorKind}>节点</span>
-              <b>{selected.item.label}</b>
-              <span className={cx(styles.deltaBadge, styles[`badge_${selected.item.delta}`])}>
-                {DELTA_LABEL[selected.item.delta]}
-              </span>
-              <code className={styles.loc}>{locText(selected.item)}</code>
-            </div>
-            <div className={styles.inspectorSub}>{selected.item.sub}</div>
-            {selected.item.snippet && <pre className={styles.snippet}>{selected.item.snippet}</pre>}
-            <div className={styles.inspectorActions}>
-              <button type="button" className="btn btnSmall" onClick={() => openLoc(selected.item)}>
-                <IconCode width={12} height={12} />
-                查看代码
+      <section className={styles.scenarios}>
+        <header className={styles.scenarioHead}>
+          <span className={styles.eyebrow}>行为清单</span>
+          <span className={styles.scenarioHint}>每条 scenario 从触发走到效果，按因果阶段排列</span>
+        </header>
+        <div className={styles.scenarioGrid}>
+          {review.behavior.scenarios.map((scenario) => {
+            const trigger = nodeById.get(scenario.trigger);
+            const effect = nodeById.get(scenario.effect);
+            const pathNodes = scenario.nodes
+              .map((id) => nodeById.get(id))
+              .filter((node): node is LaidOutNode => Boolean(node));
+            return (
+              <button
+                key={scenario.id}
+                type="button"
+                className={styles.scenarioCard}
+                onClick={() => (effect ? openPeek(effect) : trigger && openPeek(trigger))}
+              >
+                <span className={cx(styles.scenarioDelta, styles[`scenario_${scenario.delta}`])}>
+                  {DELTA_LABEL[scenario.delta]}
+                </span>
+                <span className={styles.scenarioTitle}>{scenario.title}</span>
+                <span className={styles.scenarioMeta}>
+                  {scenario.source || '未知来源'} · {scenario.shape || '—'}
+                </span>
+                <span className={styles.scenarioPath}>
+                  {pathNodes.map((node) => (
+                    <i key={`${scenario.id}-${node.id}`} className={styles[`dot_${node.role}`]} title={roleLabel(node.role)} />
+                  ))}
+                </span>
               </button>
-              <button type="button" className="btn btnSmall btnPrimary" onClick={() => quote(selected.item)}>
-                <IconComment width={12} height={12} />
-                添加评论
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className={styles.inspectorHead}>
-              <span className={styles.inspectorKind}>数据流</span>
-              <b>
-                {selected.item.from.replace(/^fn:/, '').replace(/^src:/, '').replace(/^sink:/, '')}
-                {' → '}
-                {selected.item.to.replace(/^fn:/, '').replace(/^src:/, '').replace(/^sink:/, '')}
-              </b>
-              <span className={cx(styles.deltaBadge, styles[`badge_${selected.item.delta}`])}>
-                {DELTA_LABEL[selected.item.delta]}
-              </span>
-              <code className={styles.loc}>{locText(selected.item)}</code>
-            </div>
-            <div className={styles.inspectorSub}>
-              {selected.item.shape ? shapeLabel(selected.item.shape) : selected.item.label}
-              {selected.item.source ? ` · 来源 ${selected.item.source}` : ''}
-            </div>
-            {selected.item.snippet && <pre className={styles.snippet}>{selected.item.snippet}</pre>}
-            <div className={styles.inspectorActions}>
-              <button type="button" className="btn btnSmall" onClick={() => openLoc(selected.item)}>
-                <IconCode width={12} height={12} />
-                查看代码
-              </button>
-              <button type="button" className="btn btnSmall btnPrimary" onClick={() => quote(selected.item)}>
-                <IconComment width={12} height={12} />
-                添加评论
-              </button>
-            </div>
-          </>
-        )}
+            );
+          })}
+        </div>
+        <div className={styles.ledger}>
+          <FactColumn
+            title="项目结构"
+            added={review.project.added}
+            removed={review.project.removed}
+          />
+          <FactColumn
+            title="逻辑"
+            added={review.logic.added}
+            removed={review.logic.removed}
+            showShape
+          />
+          <FactColumn
+            title="意图"
+            added={review.intent.added}
+            removed={review.intent.removed}
+            showShape
+          />
+        </div>
+        <div className={styles.basis}>
+          <b>分析依据</b>
+          <span>go/ast 调用边 · SSA 追源 · SyntaxFlow sink · 无 LLM 参与</span>
+          <span className={styles.basisCount}>
+            {review.intent.added.length + review.intent.removed.length} 条意图事实 ·{' '}
+            {review.signals.length} 个关注点
+          </span>
+        </div>
       </section>
 
-      {review.notes && review.notes.length > 0 && (
-        <div className={styles.notes}>
-          <button type="button" className={styles.notesToggle} onClick={() => setNotesOpen((value) => !value)}>
-            运行说明 ({review.notes.length})
-            <span>{notesOpen ? '收起' : '展开'}</span>
-          </button>
-          {notesOpen && (
-            <ul>
-              {review.notes.map((note) => <li key={note}>{note}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+      <footer className={styles.foot}>
+        <span>
+          {review.behavior.entry
+            ? `入口：${review.behavior.entry.replace('trigger:', '')}`
+            : '未识别入口'}
+        </span>
+        <span>{files.filter((file) => file.status !== 'unchanged').length} 个变更文件</span>
+        <span>{review.behavior.stageCount} 个因果阶段</span>
+      </footer>
+    </section>
   );
 }

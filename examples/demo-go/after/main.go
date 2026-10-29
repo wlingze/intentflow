@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var db *sql.DB
 
 func findUser(name string) (string, error) {
-	query := fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
+	var query string
+	switch {
+	case strings.Contains(name, "@"):
+		query = fmt.Sprintf("SELECT id FROM users WHERE email LIKE '%%%s%%'", name)
+	default:
+		query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
+	}
 	rows, err := db.Query(query)
 	if err != nil {
 		return "", err
@@ -27,6 +34,10 @@ func loadTemplate() (string, error) {
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
 	id, err := findUser(name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusInternalServerError)

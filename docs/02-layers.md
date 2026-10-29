@@ -11,7 +11,8 @@ git diff（或两个目录）
         └── L1 意图层     ── SSA + SF ──── 数据从入口到副作用
                                    │
                                    ▼
-                        review.json（agent）+ index.html（人）
+                        review.json（agent）+ 行为工作台（人）
+                        schema/openapi.yaml 生成两侧类型
 ```
 
 ## 为什么 L3/L2 不用 SSA
@@ -28,7 +29,7 @@ SSA 只在 L1 有不可替代性：**只有 IR 能看到 `r.URL.Query().Get("nam
 |---|---|---|
 | `EXTRACTED` | 语法/IR 里直接存在 | L3 全部、L2 全部 |
 | `DERIVED` | 由 IR 事实经一层规则推出 | L1 全部（来源分类、到达形态、跨函数路径是规则映射的） |
-| `INFERRED` | LLM 从语义推断 | `Summary` 层 |
+| `INFERRED` | LLM 从语义推断 | 预留；当前图与事实都不用 LLM |
 | `ASSERTED` | 来自 PR 描述 / commit message | 尚未接入 |
 | `UNKNOWN` | 无依据 | — |
 

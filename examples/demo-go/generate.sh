@@ -19,6 +19,9 @@ echo "== intentflow =="
 cd "$ROOT"
 go build -o bin/intentflow ./cmd/intentflow
 ./bin/intentflow diff --before examples/demo-go/before --after examples/demo-go/after --out examples/demo-go/out
+if [ ! -f "$ROOT/frontend/dist/index.html" ]; then
+  echo "前端产物不存在；先运行：cd frontend && pnpm install && pnpm build" >&2
+fi
 
 echo "== pr-lens =="
 if [ -f "$PR_LENS_DIR/packages/cli/dist/bin.js" ]; then
@@ -46,6 +49,10 @@ else
 fi
 
 echo
-echo "打开对比页："
-echo "  python3 -m http.server 8123 --bind 0.0.0.0 --directory $DEMO"
-echo "  http://192.168.5.6:8123/"
+echo "打开工作台："
+echo "  ./bin/intentflow serve --before examples/demo-go/before --after examples/demo-go/after --out examples/demo-go/out"
+echo "  http://127.0.0.1:8123/"
+echo
+echo "打开三工具对比页（另开端口，iframe 指向 8123）："
+echo "  python3 -m http.server 8124 --directory examples/demo-go"
+echo "  http://127.0.0.1:8124/"

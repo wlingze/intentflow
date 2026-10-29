@@ -10,30 +10,35 @@ import { fetchPayload } from '../lib/api';
 import { loadPersisted, reviewStorageKey, savePersisted } from '../lib/persistence';
 import type {
   Comment,
+  DiffLayout,
   Payload,
   PersistedReview,
   Quote,
+  Selection,
   Side,
+  ViewMode,
+  CodeMode,
 } from '../types';
 
 export type RightTab = 'signals' | 'review';
-export type DrawerMode = 'diff' | 'search';
-export type DiffLayout = 'split' | 'unified';
 
-export interface Selected {
-  kind: 'node' | 'edge';
-  id: string;
-}
-
-export interface DrawerState {
-  open: boolean;
+export interface CodeState {
   files: string[];
   active: string | null;
-  mode: DrawerMode;
+  mode: CodeMode;
   layout: DiffLayout;
   line?: number;
   side?: Side;
   search: string;
+}
+
+export interface PeekState {
+  open: boolean;
+  nodeId?: string;
+  edgeId?: string;
+  file?: string;
+  line?: number;
+  side?: Side;
 }
 
 export interface ComposerState {
@@ -52,13 +57,15 @@ export interface AppState {
   payload: Payload | null;
   loading: boolean;
   error: string | null;
+  view: ViewMode;
   rightTab: RightTab;
-  selected: Selected | null;
+  selected: Selection | null;
+  peek: PeekState;
   comments: Comment[];
   dismissed: string[];
   kept: string[];
   composer: ComposerState;
-  drawer: DrawerState;
+  code: CodeState;
   onlyChanged: boolean;
   toast: ToastState | null;
   toastSeq: number;
@@ -67,8 +74,11 @@ export interface AppState {
 export type Action =
   | { type: 'payload/loaded'; payload: Payload; persisted: PersistedReview | null }
   | { type: 'payload/error'; error: string }
+  | { type: 'view/set'; view: ViewMode }
   | { type: 'tab/set'; tab: RightTab }
-  | { type: 'select'; selected: Selected | null }
+  | { type: 'select'; selected: Selection | null }
+  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side }
+  | { type: 'peek/close' }
   | { type: 'composer/quote'; quote: Quote }
   | { type: 'composer/clearQuote' }
   | { type: 'composer/text'; text: string }
@@ -78,14 +88,14 @@ export type Action =
   | { type: 'signal/dismiss'; id: string }
   | { type: 'signal/undismiss'; id: string }
   | { type: 'signal/keep'; id: string; comment?: Comment }
-  | { type: 'drawer/open'; file?: string; line?: number; side?: Side; mode?: DrawerMode }
-  | { type: 'drawer/close' }
-  | { type: 'drawer/file'; file: string }
-  | { type: 'drawer/closeFile'; file: string }
-  | { type: 'drawer/mode'; mode: DrawerMode }
-  | { type: 'drawer/layout'; layout: DiffLayout }
-  | { type: 'drawer/search'; search: string }
-  | { type: 'drawer/target'; file?: string; line: number; side?: Side }
+  | { type: 'code/open'; file?: string; line?: number; side?: Side; mode?: CodeMode }
+  | { type: 'code/close' }
+  | { type: 'code/file'; file: string }
+  | { type: 'code/closeFile'; file: string }
+  | { type: 'code/mode'; mode: CodeMode }
+  | { type: 'code/layout'; layout: DiffLayout }
+  | { type: 'code/search'; search: string }
+  | { type: 'code/target'; file?: string; line: number; side?: Side }
   | { type: 'onlyChanged'; value: boolean }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
   | { type: 'toast/clear'; id: number };
@@ -94,14 +104,15 @@ const initialState: AppState = {
   payload: null,
   loading: true,
   error: null,
+  view: 'graph',
   rightTab: 'signals',
   selected: null,
+  peek: { open: false },
   comments: [],
   dismissed: [],
   kept: [],
   composer: { quote: null, text: '', focusToken: 0 },
-  drawer: {
-    open: false,
+  code: {
     files: [],
     active: null,
     mode: 'diff',
@@ -113,15 +124,24 @@ const initialState: AppState = {
   toastSeq: 0,
 };
 
-function addUnique(list: string[], value: string, max = 8): string[] {
+function addUnique(list: string[], value: string, max = 12): string[] {
   const next = list.filter((item) => item !== value);
   next.push(value);
   return next.slice(-max);
 }
 
+function pickDefaultFile(payload: Payload): string | null {
+  return (
+    payload.code.files.find((file) => file.status !== 'unchanged')?.path ??
+    payload.code.files[0]?.path ??
+    null
+  );
+}
+
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'payload/loaded':
+    case 'payload/loaded': {
+      const active = pickDefaultFile(action.payload);
       return {
         ...state,
         payload: action.payload,
@@ -130,13 +150,39 @@ function reducer(state: AppState, action: Action): AppState {
         comments: action.persisted?.comments ?? [],
         dismissed: action.persisted?.dismissed ?? [],
         kept: action.persisted?.kept ?? [],
+        code: {
+          ...state.code,
+          active,
+          files: active ? [active] : [],
+        },
       };
+    }
     case 'payload/error':
       return { ...state, loading: false, error: action.error };
+    case 'view/set':
+      return {
+        ...state,
+        view: action.view,
+        peek: action.view === 'code' ? { open: false } : state.peek,
+      };
     case 'tab/set':
       return { ...state, rightTab: action.tab };
     case 'select':
       return { ...state, selected: action.selected };
+    case 'peek/open':
+      return {
+        ...state,
+        peek: {
+          open: true,
+          nodeId: action.nodeId,
+          edgeId: action.edgeId,
+          file: action.file,
+          line: action.line,
+          side: action.side ?? 'after',
+        },
+      };
+    case 'peek/close':
+      return { ...state, peek: { open: false } };
     case 'composer/quote':
       return {
         ...state,
@@ -186,71 +232,73 @@ function reducer(state: AppState, action: Action): AppState {
         rightTab: 'review',
       };
     }
-    case 'drawer/open': {
-      const files = state.payload?.code.files ?? [];
+    case 'code/open': {
       const fallback =
-        state.drawer.active ??
-        files.find((file) => file.status !== 'unchanged')?.path ??
-        files[0]?.path;
-      const file = action.file ?? fallback;
-      if (!file) return state;
+        action.file ??
+        state.code.active ??
+        (state.payload ? pickDefaultFile(state.payload) : null);
+      if (!fallback) return state;
       return {
         ...state,
-        drawer: {
-          ...state.drawer,
-          open: true,
-          active: file,
-          files: addUnique(state.drawer.files, file),
+        view: 'code',
+        peek: { open: false },
+        code: {
+          ...state.code,
+          active: fallback,
+          files: addUnique(state.code.files, fallback),
           mode: action.mode ?? 'diff',
           line: action.line,
           side: action.side,
         },
       };
     }
-    case 'drawer/close':
-      return { ...state, drawer: { ...state.drawer, open: false } };
-    case 'drawer/file':
+    case 'code/close':
+      return { ...state, view: 'graph', peek: { open: false } };
+    case 'code/file':
       return {
         ...state,
-        drawer: {
-          ...state.drawer,
-          open: true,
+        view: 'code',
+        code: {
+          ...state.code,
           active: action.file,
-          files: addUnique(state.drawer.files, action.file),
+          files: addUnique(state.code.files, action.file),
+          line: undefined,
         },
       };
-    case 'drawer/closeFile': {
-      const files = state.drawer.files.filter((file) => file !== action.file);
-      const active = state.drawer.active === action.file ? files[files.length - 1] ?? null : state.drawer.active;
+    case 'code/closeFile': {
+      const files = state.code.files.filter((file) => file !== action.file);
+      const active =
+        state.code.active === action.file ? files[files.length - 1] ?? null : state.code.active;
       return {
         ...state,
-        drawer: {
-          ...state.drawer,
+        code: {
+          ...state.code,
           files,
           active,
-          open: Boolean(active),
+          line: state.code.active === action.file ? undefined : state.code.line,
         },
       };
     }
-    case 'drawer/mode':
-      return { ...state, drawer: { ...state.drawer, mode: action.mode, open: true } };
-    case 'drawer/layout':
-      return { ...state, drawer: { ...state.drawer, layout: action.layout } };
-    case 'drawer/search':
-      return { ...state, drawer: { ...state.drawer, search: action.search } };
-    case 'drawer/target': {
-      const file = action.file ?? state.drawer.active;
+    case 'code/mode':
+      return { ...state, code: { ...state.code, mode: action.mode } };
+    case 'code/layout':
+      return { ...state, code: { ...state.code, layout: action.layout } };
+    case 'code/search':
+      return { ...state, code: { ...state.code, search: action.search } };
+    case 'code/target': {
+      const file = action.file ?? state.code.active;
       if (!file) return state;
       return {
         ...state,
-        drawer: {
-          ...state.drawer,
-          open: true,
+        view: 'code',
+        peek: { open: false },
+        code: {
+          ...state.code,
           active: file,
-          files: addUnique(state.drawer.files, file),
+          files: addUnique(state.code.files, file),
           mode: 'diff',
           line: action.line,
-          side: action.side,
+          side: action.side ?? 'after',
         },
       };
     }

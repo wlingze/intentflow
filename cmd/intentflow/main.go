@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/yaklang/intentflow/internal/contract"
 	"github.com/yaklang/intentflow/internal/emit"
 	"github.com/yaklang/intentflow/internal/model"
 	"github.com/yaklang/intentflow/internal/payload"
@@ -147,7 +148,7 @@ func runServe(args []string) error {
 		Addr:    *addr,
 		DistDir: *dist,
 		OutDir:  opt.out,
-		Payload: payload.Payload{Review: review, Code: code},
+		Payload: contract.Payload{Review: *review, Code: code},
 	})
 }
 
@@ -169,8 +170,10 @@ func analyze(opt options) (*model.Review, error) {
 	}
 
 	review := &model.Review{
-		Before: displayPath(bRoot),
-		After:  displayPath(aRoot),
+		Before:  displayPath(bRoot),
+		After:   displayPath(aRoot),
+		Notes:   []string{},
+		Signals: []model.Signal{},
 	}
 
 	// ---- L3 + L2：语法层，go/ast ----
@@ -237,6 +240,7 @@ func analyze(opt options) (*model.Review, error) {
 	review.Logic = model.Diff(model.LayerLogic, bSet, aSet)
 	review.Intent = model.Diff(model.LayerIntent, bSet, aSet)
 	review.Signals = scan.Signals(review)
+	review.Behavior = scan.BuildBehavior(bRoot, aRoot, review, bSet, aSet)
 	return review, nil
 }
 

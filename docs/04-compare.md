@@ -39,7 +39,7 @@ os.ReadFile(base + "/templates/search.html")
 ### intentflow
 
 ```text
-意图层 ±2/1   逻辑层 ±6/2   项目层 ±3/0   关注点 5
+意图层 ±2/1   逻辑层 ±7/2   项目层 ±4/0   关注点 5
 ```
 
 意图层：
@@ -52,7 +52,7 @@ os.ReadFile(base + "/templates/search.html")
 
 身份键是 `函数 | 副作用类别 | 来源类别 | 到达形态`。少了最后的 `shape`，这次 diff 会报 ±0/0。
 
-输出：`review.json` + 单页 HTML（意图流图 + 三层明细）。
+输出：`review.json`（三层事实 + 行为图）+ 交互工作台（`intentflow serve`）。
 
 ### PR Lens
 
@@ -168,7 +168,8 @@ intentflow 算出事实
 ```
 
 intentflow 负责「事实从哪来」；PR Lens / Archify 负责「事实怎么被看见」。
-把 intentflow 的意图链自动投影成 graph document，是下一步最值得做的集成。
+本轮已经把意图链投影成行为图（触发/判定/变换/效果），并在工作台里与代码、评论联动；
+PR Lens 的 graph document 仍可作为另一种导出格式。
 
 ## 复现
 

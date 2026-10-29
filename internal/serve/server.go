@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yaklang/intentflow/internal/payload"
+	"github.com/yaklang/intentflow/internal/contract"
 )
 
 // Config 是 server 的启动参数。
@@ -26,13 +26,7 @@ type Config struct {
 	Addr    string
 	DistDir string
 	OutDir  string
-	Payload payload.Payload
-}
-
-// ReviewRequest 是 POST /api/review 的请求体。
-type ReviewRequest struct {
-	Markdown string          `json:"markdown"`
-	Data     json.RawMessage `json:"data,omitempty"`
+	Payload contract.Payload
 }
 
 // NewHandler 组装 API 与静态资源。dist 不存在时返回可读错误，
@@ -62,7 +56,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			writeError(w, http.StatusBadRequest, "读取请求失败")
 			return
 		}
-		var req ReviewRequest
+		var req contract.ReviewRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "请求不是合法 JSON")
 			return
@@ -76,7 +70,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"path": target})
+		writeJSON(w, http.StatusOK, contract.ReviewResponse{Path: target})
 	})
 
 	mux.Handle("/", spaHandler(cfg.DistDir))
@@ -102,7 +96,7 @@ func Listen(cfg Config) error {
 }
 
 // writeReview 原子写入 review.md，避免中途失败留下半个文件。
-func writeReview(dir string, req ReviewRequest) (string, error) {
+func writeReview(dir string, req contract.ReviewRequest) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("创建输出目录失败: %w", err)
 	}
@@ -129,8 +123,8 @@ func writeReview(dir string, req ReviewRequest) (string, error) {
 	}
 
 	// 附带一份结构化评论，方便后续工具读取；失败不影响主流程。
-	if len(req.Data) > 0 {
-		_ = os.WriteFile(filepath.Join(dir, "review-state.json"), req.Data, 0o644)
+	if raw, err := json.Marshal(req.Data); err == nil {
+		_ = os.WriteFile(filepath.Join(dir, "review-state.json"), raw, 0o644)
 	}
 	return target, nil
 }
@@ -151,7 +145,7 @@ func spaHandler(dist string) http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
-		if path.Ext(rel) != "" {
+		if strings.HasPrefix(rel, "api/") || path.Ext(rel) != "" {
 			http.NotFound(w, r)
 			return
 		}

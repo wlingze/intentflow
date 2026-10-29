@@ -73,7 +73,7 @@ func ProjectFacts(root string) (model.FactSet, error) {
 				Kind:       "import",
 				Title:      "import " + pkg,
 				File:       rel,
-				Line:       fset.Position(imp.Pos()).Line,
+				Line:       int32(fset.Position(imp.Pos()).Line),
 				Confidence: model.Extracted,
 			})
 		}
@@ -95,7 +95,7 @@ func ProjectFacts(root string) (model.FactSet, error) {
 				Kind:       "func",
 				Title:      "func " + name,
 				File:       rel,
-				Line:       fset.Position(fn.Pos()).Line,
+				Line:       int32(fset.Position(fn.Pos()).Line),
 				Function:   name,
 				Confidence: model.Extracted,
 			})
@@ -116,7 +116,7 @@ func ProjectFacts(root string) (model.FactSet, error) {
 					File:     rel,
 					// 行号指向第一处调用点，而不是函数声明。
 					// 图上的「查看代码」要能直接落到调用那一行。
-					Line:       fset.Position(call.pos).Line,
+					Line:       int32(fset.Position(call.pos).Line),
 					Function:   name,
 					Confidence: model.Extracted,
 				})

@@ -17,7 +17,7 @@ export function SearchView() {
   const state = useApp();
   const dispatch = useAppDispatch();
   const { files } = useReviewData();
-  const query = state.drawer.search;
+  const query = state.code.search;
   const deferred = useDeferredValue(query);
   const groups = useMemo(() => searchCode(files, deferred), [files, deferred]);
   const total = groups.reduce((sum, group) => sum + group.hits.length, 0);
@@ -30,7 +30,7 @@ export function SearchView() {
           autoFocus
           value={query}
           placeholder="在 before / after 里搜索…"
-          onChange={(event) => dispatch({ type: 'drawer/search', search: event.target.value })}
+          onChange={(event) => dispatch({ type: 'code/search', search: event.target.value })}
         />
         {query.trim() && <span className={styles.count}>{total} 处</span>}
       </div>
@@ -65,7 +65,7 @@ export function SearchView() {
                   title={`${hit.file}:${hit.line}`}
                   onClick={() =>
                     dispatch({
-                      type: 'drawer/target',
+                      type: 'code/target',
                       file: hit.file,
                       line: hit.line,
                       side: hit.side,

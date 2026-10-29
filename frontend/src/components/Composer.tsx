@@ -29,8 +29,10 @@ export function Composer() {
     const comment: Comment = {
       id: uid('c-'),
       text: value,
+      title: '',
       quote: quote ?? undefined,
       source: 'manual',
+      signalId: '',
       createdAt: Date.now(),
     };
     dispatch({ type: 'comment/add', comment });

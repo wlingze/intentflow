@@ -1,12 +1,14 @@
-import { useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { baseName, cx, shortPath } from '../lib/format';
+import { layoutBehavior } from '../lib/behavior';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { Quote } from '../types';
 import { DiffView } from './DiffView';
+import { MiniMap } from './MiniMap';
 import { SearchView } from './SearchView';
-import { IconClose, IconDiff, IconSearch } from './Icons';
-import styles from './CodeDrawer.module.css';
+import { IconBranch, IconClose, IconDiff, IconSearch } from './Icons';
+import styles from './CodeStage.module.css';
 
 const STATUS_LABEL: Record<string, string> = {
   added: '新增',
@@ -15,28 +17,22 @@ const STATUS_LABEL: Record<string, string> = {
   unchanged: '未变',
 };
 
-export function CodeDrawer() {
+export function CodeStage() {
   const state = useApp();
   const dispatch = useAppDispatch();
-  const { files, stats } = useReviewData();
-  const { drawer } = state;
+  const { files, stats, review } = useReviewData();
+  const [miniOpen, setMiniOpen] = useState(true);
 
-  useEffect(() => {
-    if (!drawer.open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dispatch({ type: 'drawer/close' });
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [drawer.open, dispatch]);
-
-  if (!drawer.open) return null;
-
-  const active = files.find((file) => file.path === drawer.active) ?? null;
+  const active = files.find((file) => file.path === state.code.active) ?? null;
   const activeStats = active ? stats.get(active.path) : undefined;
-  const openFiles = drawer.files
+  const openFiles = state.code.files
     .map((path) => files.find((file) => file.path === path))
     .filter((file): file is NonNullable<typeof file> => Boolean(file));
+
+  const graph = useMemo(
+    () => (review ? layoutBehavior(review.behavior) : null),
+    [review],
+  );
 
   const addQuote = (quote: Quote) => {
     dispatch({ type: 'composer/quote', quote });
@@ -44,19 +40,27 @@ export function CodeDrawer() {
   };
 
   return (
-    <aside className={styles.drawer} role="dialog" aria-label="代码">
-      <div className={styles.head}>
+    <section className={styles.stage}>
+      <header className={styles.head}>
+        <button
+          type="button"
+          className={styles.back}
+          onClick={() => dispatch({ type: 'code/close' })}
+        >
+          <IconBranch width={13} height={13} />
+          行为图
+        </button>
         <div className={styles.tabs}>
           {openFiles.map((file) => (
             <div
               key={file.path}
-              className={cx(styles.tab, drawer.active === file.path && styles.tabActive)}
+              className={cx(styles.tab, state.code.active === file.path && styles.tabActive)}
               title={file.path}
             >
               <button
                 type="button"
                 className={styles.tabName}
-                onClick={() => dispatch({ type: 'drawer/file', file: file.path })}
+                onClick={() => dispatch({ type: 'code/file', file: file.path })}
               >
                 <span className={cx(styles.dot, styles[file.status])} />
                 {baseName(file.path)}
@@ -65,31 +69,23 @@ export function CodeDrawer() {
                 type="button"
                 className={styles.tabClose}
                 title="关闭文件"
-                onClick={() => dispatch({ type: 'drawer/closeFile', file: file.path })}
+                onClick={() => dispatch({ type: 'code/closeFile', file: file.path })}
               >
                 <IconClose width={10} height={10} />
               </button>
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          className="iconBtn"
-          title="关闭代码抽屉"
-          onClick={() => dispatch({ type: 'drawer/close' })}
-        >
-          <IconClose width={15} height={15} />
-        </button>
-      </div>
+      </header>
 
       <div className={styles.toolbar}>
         <div className={styles.modes} role="tablist" aria-label="代码视图">
           <button
             type="button"
             role="tab"
-            aria-selected={drawer.mode === 'diff'}
-            className={cx(styles.mode, drawer.mode === 'diff' && styles.modeActive)}
-            onClick={() => dispatch({ type: 'drawer/mode', mode: 'diff' })}
+            aria-selected={state.code.mode === 'diff'}
+            className={cx(styles.mode, state.code.mode === 'diff' && styles.modeActive)}
+            onClick={() => dispatch({ type: 'code/mode', mode: 'diff' })}
           >
             <IconDiff width={13} height={13} />
             Diff
@@ -97,35 +93,35 @@ export function CodeDrawer() {
           <button
             type="button"
             role="tab"
-            aria-selected={drawer.mode === 'search'}
-            className={cx(styles.mode, drawer.mode === 'search' && styles.modeActive)}
-            onClick={() => dispatch({ type: 'drawer/mode', mode: 'search' })}
+            aria-selected={state.code.mode === 'search'}
+            className={cx(styles.mode, state.code.mode === 'search' && styles.modeActive)}
+            onClick={() => dispatch({ type: 'code/mode', mode: 'search' })}
           >
             <IconSearch width={13} height={13} />
             搜索
           </button>
         </div>
 
-        {drawer.mode === 'diff' && active && (
+        {state.code.mode === 'diff' && active && (
           <>
             <div className={styles.layout}>
               <button
                 type="button"
-                className={cx(styles.layoutBtn, drawer.layout === 'split' && styles.layoutActive)}
-                onClick={() => dispatch({ type: 'drawer/layout', layout: 'split' })}
+                className={cx(styles.layoutBtn, state.code.layout === 'split' && styles.layoutActive)}
+                onClick={() => dispatch({ type: 'code/layout', layout: 'split' })}
               >
                 分栏
               </button>
               <button
                 type="button"
-                className={cx(styles.layoutBtn, drawer.layout === 'unified' && styles.layoutActive)}
-                onClick={() => dispatch({ type: 'drawer/layout', layout: 'unified' })}
+                className={cx(styles.layoutBtn, state.code.layout === 'unified' && styles.layoutActive)}
+                onClick={() => dispatch({ type: 'code/layout', layout: 'unified' })}
               >
                 统一
               </button>
             </div>
             <div className={styles.fileMeta}>
-              <span className={styles.filePath} title={active.path}>{shortPath(active.path, 46)}</span>
+              <span className={styles.filePath} title={active.path}>{shortPath(active.path, 56)}</span>
               <span className={cx('badge', active.status === 'modified' && 'badgeAmber', active.status === 'added' && 'badgeGreen', active.status === 'removed' && 'badgeRed')}>
                 {STATUS_LABEL[active.status]}
               </span>
@@ -138,26 +134,52 @@ export function CodeDrawer() {
             </div>
           </>
         )}
-        {drawer.mode === 'search' && (
+        {state.code.mode === 'search' && (
           <span className={styles.searchHint}>搜索范围：{files.length} 个文件的 before / after</span>
+        )}
+        {!miniOpen && graph && graph.nodes.length > 0 && (
+          <button type="button" className="btn btnGhost btnSmall" onClick={() => setMiniOpen(true)}>
+            显示缩略图
+          </button>
         )}
       </div>
 
       <div className={styles.body}>
-        {drawer.mode === 'search' ? (
+        {state.code.mode === 'search' ? (
           <SearchView />
         ) : active ? (
           <DiffView
             file={active}
-            layout={drawer.layout}
-            targetLine={drawer.line}
-            targetSide={drawer.side}
+            layout={state.code.layout}
+            targetLine={state.code.line}
+            targetSide={state.code.side}
             onQuote={addQuote}
           />
         ) : (
           <div className={styles.empty}>没有打开的文件。从左侧目录树选择一个文件。</div>
         )}
+
+        {miniOpen && graph && graph.nodes.length > 0 && (
+          <MiniMap
+            graph={graph}
+            activeNodeId={state.selected?.kind === 'node' ? state.selected.id : undefined}
+            onClose={() => setMiniOpen(false)}
+            onSelect={(node) => {
+              if (!node.file) {
+                dispatch({ type: 'toast/show', message: '这个行为节点没有代码位置', kind: 'info' });
+                return;
+              }
+              dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
+              dispatch({
+                type: 'code/target',
+                file: node.file,
+                line: node.line,
+                side: node.delta === 'removed' ? 'before' : 'after',
+              });
+            }}
+          />
+        )}
       </div>
-    </aside>
+    </section>
   );
 }
