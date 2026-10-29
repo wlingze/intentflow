@@ -1,0 +1,416 @@
+{
+  "after": [
+    {
+      "identity": "162d69596609f307",
+      "layer": "intent",
+      "kind": "chain",
+      "title": "handleSearch → findUser 的数据流入SQL 执行",
+      "detail": "来源 http_input；到达方式 format（经格式化函数拼接进字符串）；源头位置 main.go:13",
+      "file": "/intentflow_after/main.go",
+      "line": 14,
+      "function": "findUser",
+      "confidence": "DERIVED",
+      "path": [
+        "findUser",
+        "handleSearch"
+      ],
+      "source": "http_input",
+      "category": "sql",
+      "shape": "format",
+      "snippet": "Undefined-db.Query(0,Undefined-fmt.Sprintf(\"SELECT id FROM users WHERE name LIKE '%%%s%%'\",Parameter-name))"
+    },
+    {
+      "identity": "1dd9a8c37cc2f704",
+      "layer": "intent",
+      "kind": "chain",
+      "title": "loadTemplate 中的数据流入文件读写",
+      "detail": "来源 env；到达方式 binop（经函数返回后传入）；源头位置 main.go:24",
+      "file": "/intentflow_after/main.go",
+      "line": 24,
+      "function": "loadTemplate",
+      "confidence": "DERIVED",
+      "path": [
+        "loadTemplate"
+      ],
+      "source": "env",
+      "category": "file",
+      "shape": "binop",
+      "snippet": "Undefined-os.ReadFile(add(Undefined-os.Getenv(\"APP_HOME\"), \"/templates/search.html\"))"
+    },
+    {
+      "identity": "b474aaa53c358f70",
+      "layer": "logic",
+      "kind": "call",
+      "title": "findUser → Sprintf",
+      "file": "main.go",
+      "line": 12,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "98f780d9dcae9df2",
+      "layer": "logic",
+      "kind": "call",
+      "title": "loadTemplate → Getenv",
+      "file": "main.go",
+      "line": 22,
+      "function": "loadTemplate",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "7c62710dbb05adc3",
+      "layer": "logic",
+      "kind": "call",
+      "title": "loadTemplate → string",
+      "file": "main.go",
+      "line": 22,
+      "function": "loadTemplate",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "0abb1869db692936",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Error",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "3f5dc780e6a6e37a",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → findUser",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "60a6dfe5a8f73419",
+      "layer": "logic",
+      "kind": "call",
+      "title": "main → ListenAndServe",
+      "file": "main.go",
+      "line": 39,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "4cc390e28598077e",
+      "layer": "logic",
+      "kind": "call",
+      "title": "findUser → Close",
+      "file": "main.go",
+      "line": 12,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "e4385909ffda86d5",
+      "layer": "logic",
+      "kind": "call",
+      "title": "findUser → Query",
+      "file": "main.go",
+      "line": 12,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "02ed8faa2c8fd66a",
+      "layer": "logic",
+      "kind": "call",
+      "title": "loadTemplate → ReadFile",
+      "file": "main.go",
+      "line": 22,
+      "function": "loadTemplate",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "b60c725c116a719e",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Get",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "de03f8f85321ca2d",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Query",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "b37803925fb933c9",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Write",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "d3b703d349752e39",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → loadTemplate",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "9c0c249d0f0c1cc8",
+      "layer": "logic",
+      "kind": "call",
+      "title": "main → HandleFunc",
+      "file": "main.go",
+      "line": 39,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "e62d4ca0c8440d34",
+      "layer": "project",
+      "kind": "func",
+      "title": "func handleSearch",
+      "file": "main.go",
+      "line": 28,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "1a8fac5fab354ab5",
+      "layer": "project",
+      "kind": "func",
+      "title": "func main",
+      "file": "main.go",
+      "line": 39,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "38b14bfb4e7de2f1",
+      "layer": "project",
+      "kind": "import",
+      "title": "import database/sql",
+      "file": "main.go",
+      "line": 4,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "2997fc6c08bdb268",
+      "layer": "project",
+      "kind": "import",
+      "title": "import fmt",
+      "file": "main.go",
+      "line": 5,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "06db4b8674da2ae3",
+      "layer": "project",
+      "kind": "import",
+      "title": "import net/http",
+      "file": "main.go",
+      "line": 6,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "18ec8df0c86adaf1",
+      "layer": "project",
+      "kind": "import",
+      "title": "import os",
+      "file": "main.go",
+      "line": 7,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "68034f422b0956a8",
+      "layer": "project",
+      "kind": "func",
+      "title": "func findUser",
+      "file": "main.go",
+      "line": 12,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "a585aecd37ec5779",
+      "layer": "project",
+      "kind": "func",
+      "title": "func loadTemplate",
+      "file": "main.go",
+      "line": 22,
+      "function": "loadTemplate",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "before": [
+    {
+      "identity": "c1396373d65f4c35",
+      "layer": "intent",
+      "kind": "chain",
+      "title": "handleSearch → findUser 的数据流入SQL 执行",
+      "detail": "来源 http_input；到达方式 direct（参数化传参，值未参与字符串构造）；源头位置 main.go:10",
+      "file": "/intentflow_before/main.go",
+      "line": 12,
+      "function": "findUser",
+      "confidence": "DERIVED",
+      "path": [
+        "findUser",
+        "handleSearch"
+      ],
+      "source": "http_input",
+      "category": "sql",
+      "shape": "direct",
+      "snippet": "Undefined-db.QueryRow(0,\"SELECT id FROM users WHERE name = ?\",Parameter-name)"
+    },
+    {
+      "identity": "0abb1869db692936",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Error",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "b60c725c116a719e",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Get",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "b37803925fb933c9",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Write",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "fc79cf1f11899599",
+      "layer": "logic",
+      "kind": "call",
+      "title": "findUser → QueryRow",
+      "file": "main.go",
+      "line": 10,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "dee323125500ca43",
+      "layer": "logic",
+      "kind": "call",
+      "title": "findUser → Scan",
+      "file": "main.go",
+      "line": 10,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "de03f8f85321ca2d",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → Query",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "3f5dc780e6a6e37a",
+      "layer": "logic",
+      "kind": "call",
+      "title": "handleSearch → findUser",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "9c0c249d0f0c1cc8",
+      "layer": "logic",
+      "kind": "call",
+      "title": "main → HandleFunc",
+      "file": "main.go",
+      "line": 26,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "60a6dfe5a8f73419",
+      "layer": "logic",
+      "kind": "call",
+      "title": "main → ListenAndServe",
+      "file": "main.go",
+      "line": 26,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "1a8fac5fab354ab5",
+      "layer": "project",
+      "kind": "func",
+      "title": "func main",
+      "file": "main.go",
+      "line": 26,
+      "function": "main",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "38b14bfb4e7de2f1",
+      "layer": "project",
+      "kind": "import",
+      "title": "import database/sql",
+      "file": "main.go",
+      "line": 4,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "06db4b8674da2ae3",
+      "layer": "project",
+      "kind": "import",
+      "title": "import net/http",
+      "file": "main.go",
+      "line": 5,
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "68034f422b0956a8",
+      "layer": "project",
+      "kind": "func",
+      "title": "func findUser",
+      "file": "main.go",
+      "line": 10,
+      "function": "findUser",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "identity": "e62d4ca0c8440d34",
+      "layer": "project",
+      "kind": "func",
+      "title": "func handleSearch",
+      "file": "main.go",
+      "line": 16,
+      "function": "handleSearch",
+      "confidence": "EXTRACTED"
+    }
+  ]
+}
