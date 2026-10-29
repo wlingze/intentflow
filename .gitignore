@@ -1,3 +1,4 @@
 /bin/
 /intentflow-out/
 /examples/demo-go/*/go.sum
+/examples/demo-go/out/
