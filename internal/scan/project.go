@@ -149,10 +149,22 @@ func callsIn(body *ast.BlockStmt) []string {
 	return out
 }
 
+// builtinConversions 是 Go 的内建类型转换。它们在 AST 里长得像调用，
+// 但不是函数调用，放进逻辑结构层只会变成噪声。
+var builtinConversions = map[string]struct{}{
+	"string": {}, "bool": {}, "byte": {}, "rune": {}, "error": {},
+	"int": {}, "int8": {}, "int16": {}, "int32": {}, "int64": {},
+	"uint": {}, "uint8": {}, "uint16": {}, "uint32": {}, "uint64": {},
+	"uintptr": {}, "float32": {}, "float64": {}, "complex64": {}, "complex128": {},
+}
+
 // calleeName 从调用表达式里取出被调方名字。
 func calleeName(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.Ident:
+		if _, isBuiltin := builtinConversions[v.Name]; isBuiltin {
+			return ""
+		}
 		return v.Name
 	case *ast.SelectorExpr:
 		return v.Sel.Name

@@ -95,7 +95,7 @@ const pageTemplate = `<!doctype html>
 <body>
 <header>
   <h1>intentflow · <span>语义 diff</span></h1>
-  <div class="sub">before {{.Before}} → after {{.After}}</div>
+  <div class="sub">改动前 {{.Before}} &nbsp;→&nbsp; 改动后 {{.After}}</div>
   <div class="stats">
     <div class="stat"><b>{{len .Intent.Added}}/{{len .Intent.Removed}}</b><span>意图层 ±</span></div>
     <div class="stat"><b>{{len .Logic.Added}}/{{len .Logic.Removed}}</b><span>逻辑层 ±</span></div>

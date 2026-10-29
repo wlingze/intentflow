@@ -110,7 +110,7 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 					}
 					sources = append(sources, cls)
 					if srcLoc == "" {
-						srcLoc = position(leaf)
+						srcLoc = position(leaf, programName)
 					}
 					if f := funcName(leaf); f != "" && f != caller && f != "@main" {
 						pathSet[f] = struct{}{}
@@ -147,7 +147,7 @@ func IntentFacts(ctx context.Context, root, programName string) (model.FactSet, 
 				Kind:       "chain",
 				Title:      title,
 				Detail:     fmt.Sprintf("来源 %s；到达方式 %s（%s）；源头位置 %s", strings.Join(sources, ", "), shape, shapeHint(shape), srcLoc),
-				File:       fileOf(s),
+				File:       fileOf(s, programName),
 				Line:       lineOf(s),
 				Function:   caller,
 				Confidence: model.Derived,
@@ -280,7 +280,10 @@ func funcName(v *ssaapi.Value) string {
 }
 
 // fileOf 返回值的文件路径。
-func fileOf(v *ssaapi.Value) string {
+//
+// SSA 的 editor URL 形如 /<programName>/main.go，前缀是编译时的程序名，
+// 不是项目结构的一部分，必须剥掉，否则换一次运行目录名就变了。
+func fileOf(v *ssaapi.Value, programName string) string {
 	r := v.GetRange()
 	if r == nil {
 		return ""
@@ -289,7 +292,11 @@ func fileOf(v *ssaapi.Value) string {
 	if ed == nil {
 		return ""
 	}
-	return ed.GetUrl()
+	u := ed.GetUrl()
+	if programName != "" {
+		u = strings.TrimPrefix(u, "/"+programName+"/")
+	}
+	return u
 }
 
 // lineOf 返回值的起始行号。
@@ -306,8 +313,8 @@ func lineOf(v *ssaapi.Value) int {
 }
 
 // position 返回 file:line 形式的位置串。
-func position(v *ssaapi.Value) string {
-	f, l := fileOf(v), lineOf(v)
+func position(v *ssaapi.Value, programName string) string {
+	f, l := fileOf(v, programName), lineOf(v)
 	if f == "" {
 		return ""
 	}

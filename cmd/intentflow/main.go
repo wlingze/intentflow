@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yaklang/intentflow/internal/emit"
 	"github.com/yaklang/intentflow/internal/model"
@@ -59,8 +60,8 @@ func run() error {
 	}
 
 	review := &model.Review{
-		Before: filepath.Base(bRoot),
-		After:  filepath.Base(aRoot),
+		Before: displayPath(bRoot),
+		After:  displayPath(aRoot),
 	}
 
 	// ---- L3 + L2：语法层，go/ast ----
@@ -146,6 +147,18 @@ func run() error {
 	fmt.Println("→", jsonPath)
 	fmt.Println("→", webPath)
 	return nil
+}
+
+// displayPath 优先返回相对当前工作目录的路径，便于阅读。
+func displayPath(abs string) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return abs
+	}
+	if rel, err := filepath.Rel(wd, abs); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return abs
 }
 
 // mergeLayer 把 src 中指定层的事实并入 dst。
