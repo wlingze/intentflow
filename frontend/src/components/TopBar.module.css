@@ -162,3 +162,117 @@
   background: var(--panel);
   color: var(--ink) !important;
 }
+
+.compare {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--dim);
+}
+
+.branch code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font: 11px/1.4 var(--mono);
+}
+
+.narrowOnly {
+  display: none;
+  gap: 4px;
+}
+
+.narrowOnly button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.narrowOnly button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+@media (max-width: 940px) {
+  .narrowOnly {
+    display: inline-flex;
+  }
+
+  .compare .branch:first-child {
+    max-width: 130px;
+  }
+
+  .stats {
+    display: none;
+  }
+}
+
+.views button {
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .kicker {
+    display: none;
+  }
+
+  .compare {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .compare .branch:last-of-type {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 940px) {
+  .top {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .brand {
+    flex: none;
+  }
+
+  .compare {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* 窄屏优先保留提交选择器，分支标签让位。 */
+  .compare .branch,
+  .compare .arrow {
+    display: none;
+  }
+
+  .views button {
+    padding: 3px 6px;
+  }
+}
+
+/* 顶栏拥挤时主题切换不能被压成两行。 */
+.top > [class*='switch'] {
+  flex: none;
+}

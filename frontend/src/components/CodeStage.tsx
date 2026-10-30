@@ -4,7 +4,7 @@ import { useReviewData } from '../state/selectors';
 import type { Quote } from '../types';
 import { DiffView } from './DiffView';
 import { SearchView } from './SearchView';
-import { IconBranch, IconClose, IconDiff, IconSearch } from './Icons';
+import { IconClose, IconDiff, IconSearch } from './Icons';
 import styles from './CodeStage.module.css';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -33,14 +33,6 @@ export function CodeStage() {
   return (
     <section className={styles.stage}>
       <header className={styles.head}>
-        <button
-          type="button"
-          className={styles.back}
-          onClick={() => dispatch({ type: 'code/close' })}
-        >
-          <IconBranch width={13} height={13} />
-          行为图
-        </button>
         <div className={styles.tabs}>
           {openFiles.map((file) => (
             <div
@@ -100,6 +92,7 @@ export function CodeStage() {
                 type="button"
                 className={cx(styles.layoutBtn, state.code.layout === 'split' && styles.layoutActive)}
                 onClick={() => dispatch({ type: 'code/layout', layout: 'split' })}
+                title="左右分栏，窄屏时两栏各自横向滚动"
               >
                 分栏
               </button>
@@ -109,6 +102,15 @@ export function CodeStage() {
                 onClick={() => dispatch({ type: 'code/layout', layout: 'unified' })}
               >
                 统一
+              </button>
+              <button
+                type="button"
+                aria-pressed={state.code.wrap}
+                className={cx(styles.layoutBtn, state.code.wrap && styles.layoutActive)}
+                onClick={() => dispatch({ type: 'code/wrap', wrap: !state.code.wrap })}
+                title="自动换行；关闭时按内容宽度横向滚动"
+              >
+                换行
               </button>
             </div>
             <div className={styles.fileMeta}>
@@ -137,6 +139,7 @@ export function CodeStage() {
           <DiffView
             file={active}
             layout={state.code.layout}
+            wrap={state.code.wrap}
             targetLine={state.code.line}
             targetSide={state.code.side}
             onQuote={addQuote}

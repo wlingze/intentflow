@@ -21,6 +21,80 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.panelOpen {
+  flex: 1 1 auto;
+}
+
+.panelHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 4px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+
+.panelToggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: 10px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+
+.panelToggle span {
+  color: var(--ink);
+}
+
+.panelToggle em {
+  margin-left: auto;
+  color: var(--dim);
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.panelToggle:hover {
+  color: var(--ink);
+}
+
+.panelBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.miniGraph {
+  flex: 1 1 auto;
+  min-height: 180px;
+  display: flex;
+  overflow: hidden;
+}
+
+.leftRest {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .center {
@@ -108,13 +182,54 @@
   }
 }
 
+.backdrop {
+  display: none;
+}
+
 @media (max-width: 940px) {
   .main {
     grid-template-columns: minmax(0, 1fr);
+    position: relative;
   }
 
   .left,
   .right {
-    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 80;
+    width: min(320px, 86vw);
+    transform: translateX(-101%);
+    transition: transform 160ms ease;
+    box-shadow: 0 0 40px rgb(0 0 0 / 35%);
+    /* 抽屉必须不透明，否则下面的代码会透上来。 */
+    background: var(--panel);
+  }
+
+  .left {
+    left: 0;
+  }
+
+  .right {
+    right: 0;
+    width: min(380px, 92vw);
+    transform: translateX(101%);
+  }
+
+  .drawerOpen {
+    transform: translateX(0);
+  }
+
+  .backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 70;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .composerSlot {
+    position: relative;
+    z-index: 90;
   }
 }

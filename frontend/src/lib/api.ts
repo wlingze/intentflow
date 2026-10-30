@@ -1,13 +1,27 @@
-import type { Payload, ReviewState } from '../types';
+import type { CommitList, Payload, ReviewState } from '../types';
 
-export async function fetchPayload(): Promise<Payload> {
+export async function fetchPayload(commits?: string[]): Promise<Payload> {
   const params = new URLSearchParams(window.location.search);
-  const url = params.get('payload') || '/api/payload';
+  const override = params.get('payload');
+  let url = override || '/api/payload';
+  if (!override && commits) {
+    const query = new URLSearchParams({ commits: commits.join(',') });
+    url = `/api/payload?${query}`;
+  }
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) {
-    throw new Error(`无法加载 payload（HTTP ${response.status}）`);
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `无法加载 payload（HTTP ${response.status}）`);
   }
   return (await response.json()) as Payload;
+}
+
+export async function fetchCommits(): Promise<CommitList> {
+  const response = await fetch('/api/commits', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`无法加载提交列表（HTTP ${response.status}）`);
+  }
+  return (await response.json()) as CommitList;
 }
 
 export async function submitReview(

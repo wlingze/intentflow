@@ -71,6 +71,26 @@ cd frontend && pnpm dev
 # http://127.0.0.1:5173   /api 代理到 8123
 ```
 
+按 Git 提交比较（工作台里可以勾选提交子集）：
+
+```bash
+./bin/intentflow serve \
+  --repo   ~/Developer/yaklang-workspace/feature-ssa2llvm-support_ci_and_mustpass_test \
+  --subdir common/yak/ssa2llvm \
+  --from   2b73d5555f~6 \
+  --to     2b73d5555f \
+  --addr   0.0.0.0:8124
+```
+
+`--commits` 指定初始选中的提交（逗号分隔，可写短 SHA）。提交选择只应用
+所选提交的文件版本；未选中的提交不会进入比较结果，这一点也会写进
+`comparison.note`。目录模式下顶部显示「目录比较」，不能选提交。
+
+工作台是 review 优先：中间是代码 diff，左侧是文件 / 符号图 / 行为导航
+（都可折叠），右侧是 AI、SyntaxFlow、Review 三个结论面板。AI 风险和
+SyntaxFlow 告警都支持逐条「忽略」和「加入 Review」。窄屏下左右两栏变成
+抽屉，由顶部按钮打开。换行是用户开关，存在 localStorage。
+
 加 `-v` 看进度，`--dump-facts` 导出两侧全量事实。
 `--addr` 改监听地址，`--dist` 改前端产物目录，`--before-label` / `--after-label`
 改页面顶部显示的标签。项目层、逻辑层、意图层都从同一次 SSA 编译读出，

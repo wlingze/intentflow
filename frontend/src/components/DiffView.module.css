@@ -36,8 +36,8 @@
 .splitHead,
 .row {
   display: grid;
-  grid-template-columns: var(--split-cols, 46px 340px 46px 340px);
-  width: max-content;
+  grid-template-columns: var(--split-cols, 46px minmax(0, 1fr) 46px minmax(0, 1fr));
+  width: 100%;
 }
 
 .unifiedHead,
@@ -96,8 +96,14 @@
 .cell {
   height: 20px;
   min-width: 0;
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 1px solid transparent;
+  scrollbar-width: none;
+}
+
+.cell::-webkit-scrollbar {
+  display: none;
 }
 
 .code {

@@ -29,6 +29,15 @@ export type Payload = Schemas['Payload'];
 export type Quote = Schemas['Quote'];
 export type Comment = Schemas['Comment'];
 export type ReviewState = Schemas['ReviewState'];
+export type Comparison = Schemas['Comparison'];
+export type ComparisonMode = Schemas['ComparisonMode'];
+export type Commit = Schemas['Commit'];
+export type CommitList = Schemas['CommitList'];
+export type SymbolGraph = Schemas['SymbolGraph'];
+export type SymbolNode = Schemas['SymbolNode'];
+export type SymbolEdge = Schemas['SymbolEdge'];
+export type SymbolRef = Schemas['SymbolRef'];
+export type SymbolStats = Schemas['SymbolStats'];
 
 export interface PersistedReview {
   comments: Comment[];

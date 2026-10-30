@@ -1,4 +1,5 @@
 .switch {
+  flex: none;
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -8,6 +9,7 @@
 }
 
 .option {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 5px;

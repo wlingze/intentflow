@@ -575,3 +575,66 @@
   font-size: 9.5px;
   line-height: 1.5;
 }
+
+.riskList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.riskListHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.riskListHead span {
+  color: var(--dim);
+  font: 10px/1.4 var(--mono);
+}
+
+.riskCard {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--amber, #d9a441);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+}
+
+.riskDismissed {
+  opacity: 0.55;
+  border-left-color: var(--line);
+}
+
+.riskCard .riskTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.riskCard .riskTitle b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.riskCard .riskTitle em {
+  font-style: normal;
+}
+
+.riskDetail {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.riskActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}

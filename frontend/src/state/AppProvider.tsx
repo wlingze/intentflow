@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { fetchPayload } from '../lib/api';
 import { loadPersisted, reviewStorageKey, savePersisted } from '../lib/persistence';
+import { loadPrefs, savePrefs } from '../lib/prefs';
 import type {
   Comment,
   DeltaKind,
@@ -28,9 +29,15 @@ export interface CodeState {
   active: string | null;
   mode: CodeMode;
   layout: DiffLayout;
+  wrap: boolean;
   line?: number;
   side?: Side;
   search: string;
+}
+
+export interface PanelState {
+  files: boolean;
+  graph: boolean;
 }
 
 export interface PeekState {
@@ -62,6 +69,8 @@ export interface AppState {
   error: string | null;
   view: ViewMode;
   rightTab: RightTab;
+  panels: PanelState;
+  drawer: 'left' | 'right' | null;
   selected: Selection | null;
   peek: PeekState;
   comments: Comment[];
@@ -79,6 +88,9 @@ export type Action =
   | { type: 'payload/error'; error: string }
   | { type: 'view/set'; view: ViewMode }
   | { type: 'tab/set'; tab: RightTab }
+  | { type: 'panel/toggle'; panel: keyof PanelState }
+  | { type: 'drawer/set'; drawer: 'left' | 'right' | null }
+  | { type: 'payload/refresh'; payload: Payload }
   | { type: 'select'; selected: Selection | null }
   | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side; delta?: DeltaKind; function?: string }
   | { type: 'peek/close' }
@@ -97,18 +109,23 @@ export type Action =
   | { type: 'code/closeFile'; file: string }
   | { type: 'code/mode'; mode: CodeMode }
   | { type: 'code/layout'; layout: DiffLayout }
+  | { type: 'code/wrap'; wrap: boolean }
   | { type: 'code/search'; search: string }
   | { type: 'code/target'; file?: string; line: number; side?: Side }
   | { type: 'onlyChanged'; value: boolean }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
   | { type: 'toast/clear'; id: number };
 
+const initialPrefs = loadPrefs();
+
 const initialState: AppState = {
   payload: null,
   loading: true,
   error: null,
-  view: 'graph',
+  view: 'code',
   rightTab: 'ai',
+  panels: { files: initialPrefs.files, graph: initialPrefs.graph },
+  drawer: null,
   selected: null,
   peek: { open: false },
   comments: [],
@@ -119,7 +136,8 @@ const initialState: AppState = {
     files: [],
     active: null,
     mode: 'diff',
-    layout: 'unified',
+    layout: 'split',
+    wrap: initialPrefs.wrap,
     search: '',
   },
   onlyChanged: true,
@@ -131,6 +149,16 @@ function addUnique(list: string[], value: string, max = 12): string[] {
   const next = list.filter((item) => item !== value);
   next.push(value);
   return next.slice(-max);
+}
+
+// Git 模式下 afterLabel 会随选择变化；用仓库+子树做 key，
+// 否则换一个提交集合就看不到之前写的意见。
+function storageKey(payload: Payload): string {
+  const comparison = payload.review.comparison;
+  if (comparison?.mode === 'git') {
+    return `intentflow.review:git:${comparison.repo ?? ''}:${comparison.subdir ?? ''}`;
+  }
+  return reviewStorageKey(payload.review.before, payload.review.after);
 }
 
 function pickDefaultFile(payload: Payload): string | null {
@@ -154,6 +182,7 @@ function reducer(state: AppState, action: Action): AppState {
         dismissed: action.persisted?.dismissed ?? [],
         kept: action.persisted?.kept ?? [],
         rightTab: action.payload.review.ai?.status === 'ok' ? 'ai' : 'signals',
+        view: 'code',
         code: {
           ...state.code,
           active,
@@ -171,6 +200,20 @@ function reducer(state: AppState, action: Action): AppState {
       };
     case 'tab/set':
       return { ...state, rightTab: action.tab };
+    case 'panel/toggle':
+      return { ...state, panels: { ...state.panels, [action.panel]: !state.panels[action.panel] } };
+    case 'drawer/set':
+      return { ...state, drawer: action.drawer };
+    case 'payload/refresh': {
+      const active = pickDefaultFile(action.payload);
+      return {
+        ...state,
+        payload: action.payload,
+        loading: false,
+        error: null,
+        code: { ...state.code, active, files: active ? [active] : [], line: undefined },
+      };
+    }
     case 'select':
       return { ...state, selected: action.selected };
     case 'peek/open':
@@ -259,7 +302,7 @@ function reducer(state: AppState, action: Action): AppState {
       };
     }
     case 'code/close':
-      return { ...state, view: 'graph', peek: { open: false } };
+      return { ...state, view: 'code', peek: { open: false } };
     case 'code/file':
       return {
         ...state,
@@ -289,6 +332,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, code: { ...state.code, mode: action.mode } };
     case 'code/layout':
       return { ...state, code: { ...state.code, layout: action.layout } };
+    case 'code/wrap':
+      return { ...state, code: { ...state.code, wrap: action.wrap } };
     case 'code/search':
       return { ...state, code: { ...state.code, search: action.search } };
     case 'code/target': {
@@ -336,7 +381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fetchPayload()
       .then((payload) => {
         if (cancelled) return;
-        const persisted = loadPersisted(reviewStorageKey(payload.review.before, payload.review.after));
+        const persisted = loadPersisted(storageKey(payload));
         dispatch({ type: 'payload/loaded', payload, persisted });
       })
       .catch((error: unknown) => {
@@ -349,8 +394,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    savePrefs({ ...state.panels, wrap: state.code.wrap });
+  }, [state.panels, state.code.wrap]);
+
+  useEffect(() => {
     if (!state.payload) return;
-    savePersisted(reviewStorageKey(state.payload.review.before, state.payload.review.after), {
+    savePersisted(storageKey(state.payload), {
       comments: state.comments,
       dismissed: state.dismissed,
       kept: state.kept,

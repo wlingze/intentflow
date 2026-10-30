@@ -212,3 +212,21 @@ export function IconTarget(props: IconProps) {
     </svg>
   );
 }
+
+export function IconFiles(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 4h9l3 3v13H4Z" />
+      <path d="M13 4v4h4M8 12h5M8 16h5" />
+    </svg>
+  );
+}
+
+export function IconPanel(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M15 4v16" />
+    </svg>
+  );
+}

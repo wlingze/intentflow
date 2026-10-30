@@ -157,8 +157,13 @@ function ReviewCard({
   return (
     <article className={styles.comment}>
       <div className={styles.commentHead}>
-        <span className={cx('badge', comment.source === 'signal' ? 'badgeBlue' : 'badgePurple')}>
-          {comment.source === 'signal' ? '信号' : '手动'}
+        <span
+          className={cx(
+            'badge',
+            comment.source === 'signal' ? 'badgeBlue' : comment.source === 'ai' ? 'badgeAmber' : 'badgePurple',
+          )}
+        >
+          {comment.source === 'signal' ? 'SyntaxFlow' : comment.source === 'ai' ? 'AI' : '手动'}
         </span>
         {comment.title && <span className={styles.commentTitle}>{comment.title}</span>}
         <time className={styles.time}>{timeLabel(comment.createdAt)}</time>
@@ -209,7 +214,31 @@ function ReviewCard({
   );
 }
 
+function aiRiskId(index: number, title: string): string {
+  return `ai:${index}:${title.replace(/\s+/g, '-').slice(0, 48)}`;
+}
+
+function resolveEvidence(
+  evidence: string[],
+  facts: Map<string, Fact>,
+  files: { path: string; before?: string | null; after?: string | null }[],
+): { file: string; line?: number; side: 'before' | 'after' } | null {
+  for (const item of evidence) {
+    const fact = facts.get(item.trim());
+    if (fact?.file) return { file: fact.file, line: fact.line, side: 'after' };
+  }
+  for (const item of evidence) {
+    const match = files.find((file) => item.includes(file.path));
+    if (match) return { file: match.path, side: 'after' };
+  }
+  return null;
+}
+
 function AIPanel({ ai }: { ai?: AISummary }) {
+  const dispatch = useAppDispatch();
+  const state = useApp();
+  const { facts, files } = useReviewData();
+
   if (!ai || ai.status !== 'ok') {
     return (
       <div className={styles.aiEmpty}>
@@ -221,6 +250,31 @@ function AIPanel({ ai }: { ai?: AISummary }) {
       </div>
     );
   }
+
+  const addRisk = (risk: AISummary['risks'][number], id: string) => {
+    if (state.kept.includes(id)) return;
+    const scope = resolveEvidence(risk.evidence, facts, files);
+    const comment: Comment = {
+      id: uid('c-'),
+      text: risk.detail || risk.title,
+      title: risk.title,
+      source: 'ai',
+      signalId: id,
+      createdAt: Date.now(),
+      quote: scope
+        ? {
+            file: scope.file,
+            side: scope.side,
+            start: scope.line ?? 1,
+            end: scope.line ?? 1,
+            snippet: risk.evidence.join(' · ').slice(0, 400) || risk.title,
+          }
+        : undefined,
+    };
+    dispatch({ type: 'signal/keep', id, comment });
+    dispatch({ type: 'toast/show', message: 'AI 风险已加入 Review', kind: 'success' });
+  };
+
   return (
     <div className={styles.aiBody}>
       <article className={styles.aiCard}>
@@ -243,25 +297,80 @@ function AIPanel({ ai }: { ai?: AISummary }) {
       )}
 
       {ai.risks.length > 0 && (
-        <article className={styles.aiCard}>
-          <h3 className={styles.aiTitle}>风险判断</h3>
-          {ai.risks.map((risk, index) => (
-            <div key={`${index}-${risk.title}`} className={styles.risk}>
-              <div className={styles.riskTitle}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                {risk.title}
-              </div>
-              <p>{risk.detail}</p>
-              {risk.evidence.length > 0 && (
-                <div className={styles.riskEvidence}>
-                  {risk.evidence.map((item) => (
-                    <code key={item}>{item}</code>
-                  ))}
+        <div className={styles.riskList}>
+          <div className={styles.riskListHead}>
+            <h3 className={styles.aiTitle}>风险判断</h3>
+            <span>{ai.risks.length} 条，可逐条忽略或加入 Review</span>
+          </div>
+          {ai.risks.map((risk, index) => {
+            const id = aiRiskId(index, risk.title);
+            const kept = state.kept.includes(id);
+            const dismissed = state.dismissed.includes(id);
+            const scope = resolveEvidence(risk.evidence, facts, files);
+            return (
+              <article
+                key={id}
+                className={cx(styles.riskCard, dismissed && styles.riskDismissed)}
+              >
+                <div className={styles.riskTitle}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <b>{risk.title}</b>
+                  {kept && <em className={cx('badge', 'badgeGreen')}>已加入</em>}
+                  {dismissed && <em className="badge">已忽略</em>}
                 </div>
-              )}
-            </div>
-          ))}
-        </article>
+                <p className={styles.riskDetail}>{risk.detail}</p>
+                {risk.evidence.length > 0 && (
+                  <div className={styles.riskEvidence}>
+                    {risk.evidence.map((item) => (
+                      <code key={item}>{item}</code>
+                    ))}
+                  </div>
+                )}
+                <div className={styles.riskActions}>
+                  {scope ? (
+                    <button
+                      type="button"
+                      className="btn btnGhost btnSmall"
+                      onClick={() =>
+                        dispatch({ type: 'code/open', file: scope.file, line: scope.line, side: scope.side })
+                      }
+                    >
+                      定位 {shortPath(scope.file, 22)}
+                    </button>
+                  ) : (
+                    <span className={styles.scopeMuted}>无可跳转位置</span>
+                  )}
+                  {dismissed ? (
+                    <button
+                      type="button"
+                      className="btn btnGhost btnSmall"
+                      onClick={() => dispatch({ type: 'signal/undismiss', id })}
+                    >
+                      撤销忽略
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btnGhost btnSmall"
+                      onClick={() => dispatch({ type: 'signal/dismiss', id })}
+                    >
+                      忽略
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={cx('btn btnSmall', kept ? '' : 'btnPrimary')}
+                    disabled={kept}
+                    onClick={() => addRisk(risk, id)}
+                  >
+                    <IconCheck width={12} height={12} />
+                    {kept ? '已加入 Review' : '加入 Review'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
 
       <div className={styles.aiNote}>

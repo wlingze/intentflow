@@ -800,3 +800,19 @@
   font: 8.5px var(--mono);
   letter-spacing: 0.04em;
 }
+
+.panelCompact {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 0;
+}
+
+.panelCompact .canvasWrap {
+  min-height: 0;
+}
+
+.panelCompact .canvasHint,
+.panelCompact .viewControls .fitButton {
+  display: none;
+}

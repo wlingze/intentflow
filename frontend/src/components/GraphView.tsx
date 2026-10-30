@@ -168,7 +168,7 @@ function Node({
   );
 }
 
-export function GraphView() {
+export function GraphView({ compact = false }: { compact?: boolean }) {
   const state = useApp();
   const dispatch = useAppDispatch();
   const { review, files } = useReviewData();
@@ -198,6 +198,7 @@ export function GraphView() {
   const firstChanged = review.intent.added[0] ?? review.intent.removed[0];
 
   const openNode = (node: LaidOutNode) => {
+    if (compact) dispatch({ type: 'view/set', view: 'graph' });
     setFocusId(node.id);
     dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
     dispatch({
@@ -335,7 +336,8 @@ export function GraphView() {
   const edgeCount = layout.edges.length;
 
   return (
-    <section className={styles.panel}>
+    <section className={cx(styles.panel, compact && styles.panelCompact)}>
+      {!compact && (
       <header className={styles.head}>
         <div className={styles.titleGroup}>
           <div className={styles.eyebrow}>{headerHint}</div>
@@ -370,6 +372,7 @@ export function GraphView() {
           </button>
         </div>
       </header>
+      )}
 
       <div className={styles.canvasWrap}>
         {layout.nodes.length === 0 ? (
@@ -444,8 +447,9 @@ export function GraphView() {
         )}
       </div>
 
-      <CodeDock />
+      {!compact && <CodeDock />}
 
+      {!compact && (
       <footer className={styles.foot}>
         <span>
           {review.behavior.entry
@@ -455,6 +459,7 @@ export function GraphView() {
         <span>{changedFiles} 个变更文件</span>
         <span>{edgeCount} 条调用 · 点击函数在下方展开内部行为</span>
       </footer>
+      )}
     </section>
   );
 }

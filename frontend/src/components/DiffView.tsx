@@ -303,8 +303,10 @@ export function DiffView({
     return Math.max(340, Math.min(1200, Math.ceil(max * 7.2)));
   }, [rows, wrap]);
 
+  // 分栏始终用两等分列：容器比视口窄时（左右栏展开）也能同时看到 before/after。
+  // 长行在单元格内横向滚动，不会把另一半挤出屏幕。
   const vars = {
-    '--split-cols': `46px ${codeWidth}px 46px ${codeWidth}px`,
+    '--split-cols': '46px minmax(0, 1fr) 46px minmax(0, 1fr)',
     '--unified-cols': `44px 44px 20px ${codeWidth}px`,
   } as CSSProperties;
 
