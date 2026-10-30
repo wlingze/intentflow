@@ -41,6 +41,7 @@ export interface PeekState {
   line?: number;
   side?: Side;
   delta?: DeltaKind;
+  function?: string;
 }
 
 export interface ComposerState {
@@ -79,7 +80,7 @@ export type Action =
   | { type: 'view/set'; view: ViewMode }
   | { type: 'tab/set'; tab: RightTab }
   | { type: 'select'; selected: Selection | null }
-  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side; delta?: DeltaKind }
+  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side; delta?: DeltaKind; function?: string }
   | { type: 'peek/close' }
   | { type: 'composer/quote'; quote: Quote }
   | { type: 'composer/clearQuote' }
@@ -183,6 +184,7 @@ function reducer(state: AppState, action: Action): AppState {
           line: action.line,
           side: action.side ?? 'after',
           delta: action.delta,
+          function: action.function,
         },
       };
     case 'peek/close':

@@ -133,6 +133,8 @@
   fill: none;
   stroke: var(--faint);
   stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
   transition: stroke-width 0.12s;
 }
 
@@ -152,6 +154,8 @@
 
 .edgeLabel {
   fill: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s;
   font: 10px var(--mono);
   paint-order: stroke;
   stroke: var(--panel);
@@ -159,6 +163,11 @@
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;
+}
+
+.edge:hover .edgeLabel,
+.edge:focus-visible .edgeLabel {
+  opacity: 1;
 }
 
 .edge_added .edgeLabel { fill: var(--green); }
@@ -224,7 +233,7 @@
 }
 
 .nodeChange {
-  fill: var(--amber);
+  fill: var(--faint);
   font: 9px var(--mono);
 }
 

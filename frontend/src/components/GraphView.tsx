@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { layoutBehavior, roleLabel } from '../lib/behavior';
-import { layoutFileGraph, layoutFunctionGraph } from '../lib/levels';
-import { cx, shortPath } from '../lib/format';
+import { roleLabel } from '../lib/behavior';
+import { layoutFunctionGraph } from '../lib/levels';
+import { cx } from '../lib/format';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type {
   BehaviorEdge,
   DeltaKind,
-  GraphLevel,
   LaidOutEdge,
   LaidOutNode,
 } from '../types';
 import { CodeDock } from './CodeDock';
-import { IconClose, IconCode, IconSearch } from './Icons';
+import { IconCode, IconSearch } from './Icons';
 import styles from './GraphView.module.css';
 
 const DELTA_LABEL: Record<DeltaKind, string> = {
@@ -31,12 +30,6 @@ const ROLE_MARK: Record<string, string> = {
   transform: 'ƒ',
   effect: 'OUT',
 };
-
-const LEVELS: Array<{ id: GraphLevel; label: string; hint: string }> = [
-  { id: 'file', label: '文件', hint: '文件总览 · 只看文件分类与文件关系，不展示函数内部' },
-  { id: 'function', label: '函数', hint: '函数调用 · 节点按文件分组，保留函数间调用关系' },
-  { id: 'behavior', label: '行为', hint: '行为细节 · 同源 scenario 合并成一行，保留判定与数据边' },
-];
 
 interface ViewState {
   x: number;
@@ -58,10 +51,6 @@ function toWorld(svg: SVGSVGElement, clientX: number, clientY: number): { x: num
   return { x: result.x, y: result.y };
 }
 
-function levelLabel(level: GraphLevel): string {
-  return LEVELS.find((item) => item.id === level)?.label ?? level;
-}
-
 function displayLabel(node: LaidOutNode): string {
   if (node.display === 'file') return '文件';
   return roleLabel(node.role);
@@ -78,10 +67,11 @@ function Edge({
   to: LaidOutNode;
   onSelect: () => void;
 }) {
+  const isAggregatedCall = edge.kind === 'call' && (edge.count ?? 1) > 1;
   const showLabel =
     (edge.kind === 'data' && edge.delta !== 'removed') ||
     (edge.kind === 'control' && !edge.label.includes('进入判定')) ||
-    edge.kind === 'call';
+    isAggregatedCall;
   const label = edge.kind === 'data' ? edge.shape || edge.label : edge.label;
   return (
     <g
@@ -146,7 +136,7 @@ function Node({
       }}
     >
       <title>
-        {node.label} · {node.detail} · {DELTA_LABEL[node.delta]}
+        {node.label} · {node.file || '—'} · {node.detail} · {DELTA_LABEL[node.delta]}
       </title>
       <rect className={styles.card} width={node.width} height={node.height} rx={9} />
       <rect className={styles.glyphBox} x={11} y={14} width={node.display === 'file' ? 32 : 28} height={28} rx={7} />
@@ -178,160 +168,45 @@ function Node({
   );
 }
 
-function FocusCard({
-  node,
-  onClose,
-  onExpand,
-  onFile,
-}: {
-  node: LaidOutNode;
-  onClose: () => void;
-  onExpand: () => void;
-  onFile: () => void;
-}) {
-  const isFile = node.display === 'file';
-  return (
-    <aside className={styles.focusCard} role="dialog" aria-label={`${node.label} 详情`}>
-      <header className={styles.focusHead}>
-        <span className={cx(styles.focusMark, styles[`role_${node.role}`])}>
-          {isFile ? 'DIR' : ROLE_MARK[node.role] ?? '·'}
-        </span>
-        <div className={styles.focusTitle}>
-          <b title={node.label}>{node.label}</b>
-          <span>
-            {displayLabel(node)} · {DELTA_LABEL[node.delta]}
-            {node.count && node.count > 1
-              ? node.display === 'file'
-                ? ` · ${node.count} 个函数`
-                : ` · ${node.count} 个角色`
-              : ''}
-          </span>
-        </div>
-        <button type="button" className={styles.focusClose} onClick={onClose} aria-label="关闭节点详情">
-          <IconClose width={13} height={13} />
-        </button>
-      </header>
-      <div className={styles.focusBody}>
-        {isFile ? (
-          <FocusMeta label="文件" value={shortPath(node.file, 48)} />
-        ) : (
-          <>
-            <FocusMeta label="文件" value={shortPath(node.file || '—', 48)} />
-            <FocusMeta label="行号" value={node.line ? String(node.line) : '—'} />
-            <FocusMeta label="函数" value={node.function || '—'} />
-          </>
-        )}
-        <FocusMeta label="形态" value={node.detail || '—'} />
-        {node.source && <FocusMeta label="来源" value={node.source} />}
-        {node.shape && <FocusMeta label="数据形态" value={node.shape} />}
-        {node.members && node.members.length > 0 && (
-          <div className={styles.focusSection}>
-            <span>{isFile ? '成员' : '角色'}</span>
-            <div className={styles.memberList}>
-              {node.members.slice(0, 8).map((member) => (
-                <code key={member}>{member}</code>
-              ))}
-              {node.members.length > 8 && <em>+{node.members.length - 8}</em>}
-            </div>
-          </div>
-        )}
-        {node.evidence.length > 0 && (
-          <div className={styles.focusSection}>
-            <span>证据</span>
-            <div className={styles.evidenceList}>
-              {node.evidence.slice(0, 4).map((item) => (
-                <code key={item}>{item}</code>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <footer className={styles.focusActions}>
-        <button type="button" className="btn btnSmall" onClick={onExpand}>
-          <IconCode width={12} height={12} />
-          展开代码
-        </button>
-        <button type="button" className="btn btnGhost btnSmall" onClick={onFile}>
-          打开文件
-        </button>
-      </footer>
-    </aside>
-  );
-}
-
-function FocusMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={styles.focusMeta}>
-      <span>{label}</span>
-      <b title={value}>{value}</b>
-    </div>
-  );
-}
-
 export function GraphView() {
   const state = useApp();
   const dispatch = useAppDispatch();
   const { review, files } = useReviewData();
-  const [level, setLevel] = useState<GraphLevel>('function');
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, k: 1 });
   const [focusId, setFocusId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const movedRef = useRef(false);
 
-  const layouts = useMemo(() => {
-    if (!review) return null;
-    return {
-      file: layoutFileGraph(review.behavior),
-      function: layoutFunctionGraph(review.behavior),
-      behavior: layoutBehavior(review.behavior),
-    };
-  }, [review]);
+  const layout = useMemo(
+    () => (review ? layoutFunctionGraph(review.behavior) : null),
+    [review],
+  );
 
   useEffect(() => {
-    setFocusId(null);
-    setView({ x: 0, y: 0, k: 1 });
-    dispatch({ type: 'peek/close' });
-  }, [level, dispatch]);
+    if (!layout) return;
+    const k = Math.min(1, (VIEW_W / layout.width) * 0.92, (VIEW_H / layout.height) * 0.92);
+    setView({
+      x: (VIEW_W - layout.width * k) / 2,
+      y: (VIEW_H - layout.height * k) / 2,
+      k,
+    });
+  }, [layout]);
 
-  if (!review || !layouts) return <div className={styles.empty}>没有分析结果。</div>;
-
-  const layout = layouts[level];
-  const focusNode = focusId ? layout.nodes.find((node) => node.id === focusId) : undefined;
+  if (!review || !layout) return <div className={styles.empty}>没有分析结果。</div>;
   const changedFiles = files.filter((file) => file.status !== 'unchanged').length;
   const firstChanged = review.intent.added[0] ?? review.intent.removed[0];
 
   const openNode = (node: LaidOutNode) => {
     setFocusId(node.id);
     dispatch({ type: 'select', selected: { kind: 'node', id: node.id } });
-    dispatch({ type: 'peek/close' });
-  };
-
-  const expandCode = (node: LaidOutNode) => {
-    const sourceId =
-      node.sourceNodeId && review.behavior.nodes.some((item) => item.id === node.sourceNodeId)
-        ? node.sourceNodeId
-        : undefined;
     dispatch({
       type: 'peek/open',
-      nodeId: sourceId,
+      function: node.function,
       file: node.file,
       line: node.line,
       side: node.delta === 'removed' ? 'before' : 'after',
       delta: node.delta,
-    });
-  };
-
-  const openFile = (node: LaidOutNode) => {
-    if (!node.file) {
-      dispatch({ type: 'toast/show', message: '这个节点没有文件位置', kind: 'info' });
-      return;
-    }
-    dispatch({
-      type: 'code/open',
-      file: node.file,
-      line: node.line,
-      side: node.delta === 'removed' ? 'before' : 'after',
     });
   };
 
@@ -363,15 +238,12 @@ export function GraphView() {
   };
 
   const openCode = () => {
-    const target = focusNode;
-    const file = target?.file ?? firstChanged?.file;
-    const line = target?.line ?? firstChanged?.line;
-    if (file) {
+    if (firstChanged?.file) {
       dispatch({
         type: 'code/open',
-        file,
-        line,
-        side: target?.delta === 'removed' ? 'before' : 'after',
+        file: firstChanged.file,
+        line: firstChanged.line,
+        side: 'after',
       });
     } else {
       dispatch({ type: 'code/open' });
@@ -457,8 +329,8 @@ export function GraphView() {
     });
   };
   const resetFocus = () => setFocusId(null);
-  const headerHint = LEVELS.find((item) => item.id === level)?.hint ?? '';
-  const groupCount = layout.groups?.length ?? 0;
+  const headerHint = '函数关系 · 点击函数，在下方看内部行为';
+  const fileCount = new Set(layout.nodes.map((node) => node.file).filter(Boolean)).size;
   const nodeCount = layout.nodes.length;
   const edgeCount = layout.edges.length;
 
@@ -468,55 +340,22 @@ export function GraphView() {
         <div className={styles.titleGroup}>
           <div className={styles.eyebrow}>{headerHint}</div>
           <div className={styles.titleRow}>
-            <h1>
-              {level === 'behavior'
-                ? `${review.behavior.stats.scenarios} 条行为 · ${layout.rows.length} 组`
-                : level === 'file'
-                  ? `${nodeCount} 个涉及文件`
-                  : `${nodeCount} 个函数`}
-            </h1>
+            <h1>{nodeCount} 个函数</h1>
             <span className={styles.sub}>
-              {level === 'behavior'
-                ? `${review.behavior.stats.nodes} 节点 · ${review.behavior.stats.edges} 边 · ${review.behavior.stats.added} 新增 / ${review.behavior.stats.modified} 变化 / ${review.behavior.stats.removed} 移除`
-                : `${groupCount ? `${groupCount} 个文件分组 · ` : ''}${edgeCount} 条关系 · ${changedFiles} 个变更文件中的行为路径`}
+              {fileCount ? `${fileCount} 个文件 · ` : ''}
+              {edgeCount} 条调用 · 点击函数展开内部行为
             </span>
           </div>
         </div>
         <div className={styles.actions}>
-          <div className={styles.levels} role="tablist" aria-label="图层级">
-            {LEVELS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={level === item.id}
-                className={level === item.id ? styles.levelActive : ''}
-                onClick={() => setLevel(item.id)}
-              >
-                {item.label}
-              </button>
+          <div className={styles.deltaLegend}>
+            {(['added', 'removed', 'modified', 'unchanged'] as const).map((delta) => (
+              <span key={delta} className={styles[`legendDelta_${delta}`]}>
+                <i />
+                {DELTA_LABEL[delta]}
+              </span>
             ))}
           </div>
-          {level === 'behavior' ? (
-            <div className={styles.legend}>
-              {review.behavior.lanes.map((lane) => (
-                <span key={lane.role} className={styles[`legend_${lane.role}`]}>
-                  <i />
-                  {lane.label}
-                  {lane.count > 0 && <em>{lane.count}</em>}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className={styles.deltaLegend}>
-              {(['added', 'removed', 'modified', 'unchanged'] as const).map((delta) => (
-                <span key={delta} className={styles[`legendDelta_${delta}`]}>
-                  <i />
-                  {DELTA_LABEL[delta]}
-                </span>
-              ))}
-            </div>
-          )}
           <button type="button" className="btn btnSmall" onClick={openCode}>
             <IconCode width={13} height={13} />
             代码
@@ -548,7 +387,7 @@ export function GraphView() {
               viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
               preserveAspectRatio="xMinYMin meet"
               role="img"
-              aria-label={`${levelLabel(level)}图`}
+              aria-label="函数关系图"
               onPointerDown={startDrag}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
@@ -576,47 +415,6 @@ export function GraphView() {
               </defs>
 
               <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-                {layout.groups?.map((group) => (
-                  <g key={group.id}>
-                    <rect
-                      className={cx(styles.groupBox, styles[`group_${group.delta}`])}
-                      x={group.x}
-                      y={group.y}
-                      width={group.width}
-                      height={group.height}
-                      rx={12}
-                    />
-                    <text className={styles.groupLabel} x={group.x + 14} y={group.y + 21}>
-                      {group.label} · {group.count}
-                    </text>
-                  </g>
-                ))}
-
-                {layout.rows.map((row) => (
-                  <g key={row.id}>
-                    <line
-                      className={styles.rowLine}
-                      x1={row.x}
-                      y1={row.y + row.height - 6}
-                      x2={row.width - row.x}
-                      y2={row.y + row.height - 6}
-                    />
-                    <text className={styles.rowIndex} x={row.x} y={row.y + 13}>
-                      {String(row.index + 1).padStart(2, '0')}
-                    </text>
-                    <text
-                      className={cx(styles.rowTitle, styles[`row_${row.delta}`])}
-                      x={row.x + 24}
-                      y={row.y + 13}
-                    >
-                      {truncate(row.title, 64)}
-                    </text>
-                    <text className={styles.rowMeta} x={row.x + 24} y={row.y + 26}>
-                      {DELTA_LABEL[row.delta]} · {row.source || '未知来源'} · {row.shape || '—'}
-                    </text>
-                  </g>
-                ))}
-
                 {layout.edges.map((edge) => {
                   const from = layout.nodes.find((node) => node.id === edge.from);
                   const to = layout.nodes.find((node) => node.id === edge.to);
@@ -635,22 +433,13 @@ export function GraphView() {
               </g>
             </svg>
 
-            {focusNode && (
-              <FocusCard
-                node={focusNode}
-                onClose={resetFocus}
-                onExpand={() => expandCode(focusNode)}
-                onFile={() => openFile(focusNode)}
-              />
-            )}
-
             <div className={styles.viewControls} aria-label="画布缩放">
               <button type="button" onClick={() => zoomAtCenter(1.16)} aria-label="放大">+</button>
               <span>{Math.round(view.k * 100)}%</span>
               <button type="button" onClick={() => zoomAtCenter(0.86)} aria-label="缩小">−</button>
               <button type="button" className={styles.fitButton} onClick={fit}>适应</button>
             </div>
-            <div className={styles.canvasHint}>拖拽画布 · 滚轮缩放 · 点击节点放大</div>
+            <div className={styles.canvasHint}>拖拽画布 · 滚轮缩放 · 点击函数看内部行为</div>
           </>
         )}
       </div>
@@ -664,11 +453,7 @@ export function GraphView() {
             : '未识别入口'}
         </span>
         <span>{changedFiles} 个变更文件</span>
-        <span>
-          {level === 'behavior'
-            ? `${layout.rows.length} 组 / ${review.behavior.stats.scenarios} 条同源行为已合并`
-            : `${edgeCount} 条关系 · ${level === 'file' ? '左侧树含全部变更文件' : '函数内部不展开'}`}
-        </span>
+        <span>{edgeCount} 条调用 · 点击函数在下方展开内部行为</span>
       </footer>
     </section>
   );

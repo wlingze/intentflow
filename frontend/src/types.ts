@@ -37,7 +37,6 @@ export interface PersistedReview {
 }
 
 export type ViewMode = 'graph' | 'code';
-export type GraphLevel = 'file' | 'function' | 'behavior';
 export type DiffLayout = 'split' | 'unified';
 export type CodeMode = 'diff' | 'search';
 
@@ -73,18 +72,6 @@ export interface LaidOutEdge extends BehaviorEdge {
   count?: number;
 }
 
-export interface GraphGroup {
-  id: string;
-  label: string;
-  file: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  count: number;
-  delta: DeltaKind;
-}
-
 export interface BehaviorRow {
   id: string;
   index: number;
@@ -105,7 +92,6 @@ export interface BehaviorLayout {
   rows: BehaviorRow[];
   nodes: LaidOutNode[];
   edges: LaidOutEdge[];
-  groups?: GraphGroup[];
   width: number;
   height: number;
   nodeWidth: number;

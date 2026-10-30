@@ -1,6 +1,6 @@
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { roleLabel } from '../lib/behavior';
-import { shortPath } from '../lib/format';
+import { cx, shortPath } from '../lib/format';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { BehaviorEdge, BehaviorNode, Quote, Side } from '../types';
@@ -20,6 +20,10 @@ const ROLE_MARK: Record<string, string> = {
   transform: 'ƒ',
   effect: 'OUT',
 };
+
+function truncateText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
 
 function contextLines(text: string, line: number, radius = 6) {
   const lines = text.split('\n');
@@ -50,14 +54,43 @@ export function CodeDock() {
     ? review?.behavior.nodes.find((item) => item.id === edge.to)
     : node;
   const filePath = targetNode?.file ?? state.peek.file;
-  const open = state.peek.open && Boolean(node || edge || filePath);
+  const functionName = state.peek.function;
+  const functionMode = Boolean(functionName && filePath && !node && !edge);
+  const open = state.peek.open && Boolean(node || edge || filePath || functionName);
 
   const file = filePath
     ? files.find((candidate) => candidate.path === filePath)
     : undefined;
   const side: Side = state.peek.side ?? (targetNode?.delta === 'removed' ? 'before' : 'after');
+
+  const functionScenarios = useMemo(() => {
+    if (!functionMode || !review || !filePath || !functionName) return [];
+    const ids = new Set(
+      review.behavior.nodes
+        .filter((item) => item.file === filePath && item.function === functionName)
+        .map((item) => item.id),
+    );
+    return review.behavior.scenarios.filter((item) => item.nodes.some((id) => ids.has(id)));
+  }, [functionMode, review, filePath, functionName]);
+
+  const functionNodes = useMemo(() => {
+    if (!functionMode || !review) return [];
+    const ids = new Set(functionScenarios.flatMap((item) => item.nodes));
+    return review.behavior.nodes.filter((item) => ids.has(item.id));
+  }, [functionMode, review, functionScenarios]);
+
+  const [pickedNodeId, setPickedNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPickedNodeId(null);
+  }, [functionName]);
+  const activeFunctionNode = functionNodes.find((item) => item.id === pickedNodeId) ??
+    functionNodes.find((item) => item.delta !== 'unchanged') ??
+    functionNodes[0];
   const source = side === 'before' ? file?.before : file?.after;
-  const line = state.peek.line ?? targetNode?.line ?? 1;
+  const line = functionMode
+    ? activeFunctionNode?.line ?? state.peek.line ?? 1
+    : state.peek.line ?? targetNode?.line ?? 1;
   const visible = useMemo(
     () => (source ? contextLines(source, line) : null),
     [source, line],
@@ -123,25 +156,52 @@ export function CodeDock() {
     return (
       <div className={styles.collapsed}>
         <span className={styles.collapsedDot} />
-        点击节点放大详情；在详情里展开代码；拖拽分隔条可调高度
+        点击函数看内部行为；点击步骤看代码；拖拽分隔条可调高度
       </div>
     );
   }
+
+  const codePane = (
+    <div className={styles.code}>
+      {visible ? (
+        <>
+          <div className={styles.codeHead}>
+            <span>{filePath}:{visible.center}</span>
+            <em>{side}</em>
+          </div>
+          <pre className={styles.lines}>
+            {visible.rows.map((row) => (
+              <div key={row.number} className={row.number === visible.center ? styles.hit : undefined}>
+                <span className={styles.lineNo}>{row.number}</span>
+                <code>{row.text || ' '}</code>
+              </div>
+            ))}
+          </pre>
+        </>
+      ) : (
+        <div className={styles.noCode}>
+          {filePath ? '源码未携带（文件超限或被跳过）' : '这个节点没有代码位置'}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <section className={styles.dock} style={{ height }}>
       <div className={styles.resizer} onPointerDown={startDrag} role="separator" aria-label="调整详情高度" />
       <header className={styles.head}>
         <div className={styles.kind}>
-          <span className={styles.mark}>{node ? ROLE_MARK[node.role] ?? '·' : edge ? 'EDGE' : 'FILE'}</span>
+          <span className={styles.mark}>
+            {functionMode ? 'ƒ' : node ? ROLE_MARK[node.role] ?? '·' : edge ? 'EDGE' : 'FILE'}
+          </span>
           <div>
             <div className={styles.title}>
-              {node?.label ?? (edge ? `${edge.kind} · ${edge.label}` : filePath ?? '代码')}
+              {node?.label ?? (edge ? `${edge.kind} · ${edge.label}` : functionName ?? filePath ?? '代码')}
             </div>
             <div className={styles.sub}>
-              {node ? roleLabel(node.role) : edge ? '关系' : '文件'} ·{' '}
+              {node ? roleLabel(node.role) : functionMode ? '函数' : edge ? '关系' : '文件'} ·{' '}
               {DELTA_LABEL[node?.delta ?? edge?.delta ?? state.peek.delta ?? 'unchanged']}
-              {node?.detail ? ` · ${node.detail}` : ''}
+              {functionMode ? ` · ${functionScenarios.length} 条内部行为` : node?.detail ? ` · ${node.detail}` : ''}
             </div>
           </div>
         </div>
@@ -165,6 +225,56 @@ export function CodeDock() {
         </div>
       </header>
 
+      {functionMode ? (
+        <div className={cx(styles.body, styles.functionBody)}>
+          <aside className={styles.flowPane}>
+            <div className={styles.flowHead}>
+              <span>内部行为</span>
+              <em>{functionScenarios.length} 条路径</em>
+            </div>
+            <div className={styles.flowList}>
+              {functionScenarios.length === 0 ? (
+                <div className={styles.flowEmpty}>这个函数没有独立行为路径。</div>
+              ) : (
+                functionScenarios.map((item) => (
+                  <article className={styles.scenario} key={item.id}>
+                    <div className={styles.scenarioHead}>
+                      <span title={item.title}>{truncateText(item.title, 58)}</span>
+                      <em className={styles[`scenario_${item.delta}`]}>{DELTA_LABEL[item.delta]}</em>
+                    </div>
+                    <div className={styles.chain}>
+                      {item.nodes.map((id, index) => {
+                        const step = review?.behavior.nodes.find((candidate) => candidate.id === id);
+                        if (!step) return null;
+                        return (
+                          <span className={styles.chainItem} key={id}>
+                            {index > 0 && <span className={styles.chainArrow}>→</span>}
+                            <button
+                              type="button"
+                              className={cx(
+                                styles.step,
+                                styles[`step_${step.role}`],
+                                activeFunctionNode?.id === step.id && styles.stepActive,
+                              )}
+                              title={`${step.file}:${step.line} · ${step.label}`}
+                              onClick={() => setPickedNodeId(step.id)}
+                            >
+                              <span className={styles.stepMark}>{ROLE_MARK[step.role] ?? '·'}</span>
+                              <b>{truncateText(step.label, 20)}</b>
+                              <em>{roleLabel(step.role)}</em>
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </aside>
+          {codePane}
+        </div>
+      ) : (
       <div className={styles.body}>
         <aside className={styles.meta}>
           {node ? (
@@ -208,30 +318,9 @@ export function CodeDock() {
             </>
           )}
         </aside>
-
-        <div className={styles.code}>
-          {visible ? (
-            <>
-              <div className={styles.codeHead}>
-                <span>{filePath}:{visible.center}</span>
-                <em>{side}</em>
-              </div>
-              <pre className={styles.lines}>
-                {visible.rows.map((row) => (
-                  <div key={row.number} className={row.number === visible.center ? styles.hit : undefined}>
-                    <span className={styles.lineNo}>{row.number}</span>
-                    <code>{row.text || ' '}</code>
-                  </div>
-                ))}
-              </pre>
-            </>
-          ) : (
-            <div className={styles.noCode}>
-              {filePath ? '源码未携带（文件超限或被跳过）' : '这个节点没有代码位置'}
-            </div>
-          )}
-        </div>
+        {codePane}
       </div>
+      )}
     </section>
   );
 }
