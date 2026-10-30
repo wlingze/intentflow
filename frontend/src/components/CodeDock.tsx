@@ -49,10 +49,11 @@ export function CodeDock() {
   const targetNode = edge
     ? review?.behavior.nodes.find((item) => item.id === edge.to)
     : node;
-  const open = state.peek.open && Boolean(node || edge);
+  const filePath = targetNode?.file ?? state.peek.file;
+  const open = state.peek.open && Boolean(node || edge || filePath);
 
-  const file = targetNode?.file
-    ? files.find((candidate) => candidate.path === targetNode.file)
+  const file = filePath
+    ? files.find((candidate) => candidate.path === filePath)
     : undefined;
   const side: Side = state.peek.side ?? (targetNode?.delta === 'removed' ? 'before' : 'after');
   const source = side === 'before' ? file?.before : file?.after;
@@ -69,9 +70,9 @@ export function CodeDock() {
       : undefined;
 
   const quote = (): Quote | null => {
-    if (!visible || !targetNode?.file) return null;
+    if (!visible || !filePath) return null;
     return {
-      file: targetNode.file,
+      file: filePath,
       side,
       start: visible.center,
       end: visible.center,
@@ -90,14 +91,14 @@ export function CodeDock() {
   };
 
   const openCode = () => {
-    if (!targetNode?.file) {
+    if (!filePath) {
       dispatch({ type: 'toast/show', message: '这个节点没有代码位置', kind: 'info' });
       return;
     }
     dispatch({
       type: 'code/open',
-      file: targetNode.file,
-      line: targetNode.line,
+      file: filePath,
+      line,
       side,
     });
   };
@@ -122,7 +123,7 @@ export function CodeDock() {
     return (
       <div className={styles.collapsed}>
         <span className={styles.collapsedDot} />
-        点击节点查看详情与代码；拖拽下方分隔条可调整高度
+        点击节点放大详情；在详情里展开代码；拖拽分隔条可调高度
       </div>
     );
   }
@@ -132,13 +133,14 @@ export function CodeDock() {
       <div className={styles.resizer} onPointerDown={startDrag} role="separator" aria-label="调整详情高度" />
       <header className={styles.head}>
         <div className={styles.kind}>
-          <span className={styles.mark}>{node ? ROLE_MARK[node.role] ?? '·' : 'EDGE'}</span>
+          <span className={styles.mark}>{node ? ROLE_MARK[node.role] ?? '·' : edge ? 'EDGE' : 'FILE'}</span>
           <div>
             <div className={styles.title}>
-              {node?.label ?? `${edge?.kind ?? '边'} · ${edge?.label ?? ''}`}
+              {node?.label ?? (edge ? `${edge.kind} · ${edge.label}` : filePath ?? '代码')}
             </div>
             <div className={styles.sub}>
-              {node ? roleLabel(node.role) : '关系'} · {DELTA_LABEL[node?.delta ?? edge?.delta ?? 'unchanged']}
+              {node ? roleLabel(node.role) : edge ? '关系' : '文件'} ·{' '}
+              {DELTA_LABEL[node?.delta ?? edge?.delta ?? state.peek.delta ?? 'unchanged']}
               {node?.detail ? ` · ${node.detail}` : ''}
             </div>
           </div>
@@ -189,14 +191,20 @@ export function CodeDock() {
                 </div>
               )}
             </>
-          ) : (
+          ) : edge ? (
             <>
-              <Meta label="关系" value={edge?.kind ?? '—'} />
-              <Meta label="标签" value={edge?.label ?? '—'} />
-              <Meta label="来源" value={edge?.source || '—'} />
-              <Meta label="形态" value={edge?.shape || '—'} />
+              <Meta label="关系" value={edge.kind} />
+              <Meta label="标签" value={edge.label || '—'} />
+              <Meta label="来源" value={edge.source || '—'} />
+              <Meta label="形态" value={edge.shape || '—'} />
               <Meta label="场景" value={scenario?.title || '—'} />
               <Meta label="目标" value={targetNode ? `${targetNode.label}` : '—'} />
+            </>
+          ) : (
+            <>
+              <Meta label="文件" value={filePath || '—'} />
+              <Meta label="行号" value={String(line)} />
+              <Meta label="侧" value={side} />
             </>
           )}
         </aside>
@@ -205,7 +213,7 @@ export function CodeDock() {
           {visible ? (
             <>
               <div className={styles.codeHead}>
-                <span>{targetNode?.file}:{visible.center}</span>
+                <span>{filePath}:{visible.center}</span>
                 <em>{side}</em>
               </div>
               <pre className={styles.lines}>
@@ -219,7 +227,7 @@ export function CodeDock() {
             </>
           ) : (
             <div className={styles.noCode}>
-              {targetNode?.file ? '源码未携带（文件超限或被跳过）' : '这个节点没有代码位置'}
+              {filePath ? '源码未携带（文件超限或被跳过）' : '这个节点没有代码位置'}
             </div>
           )}
         </div>

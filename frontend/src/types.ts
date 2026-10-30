@@ -37,6 +37,7 @@ export interface PersistedReview {
 }
 
 export type ViewMode = 'graph' | 'code';
+export type GraphLevel = 'file' | 'function' | 'behavior';
 export type DiffLayout = 'split' | 'unified';
 export type CodeMode = 'diff' | 'search';
 
@@ -52,6 +53,14 @@ export interface LaidOutNode extends BehaviorNode {
   height: number;
   rowKey: string;
   scenarioId: string;
+  /** file/function 聚合节点的成员数。 */
+  count?: number;
+  /** 聚合节点包含的函数或文件。 */
+  members?: string[];
+  /** 控制节点外观；不填按 BehaviorRole 画。 */
+  display?: 'file' | 'function' | 'behavior';
+  /** 聚合节点对应的原始行为节点，用于打开代码坞。 */
+  sourceNodeId?: string;
 }
 
 export interface LaidOutEdge extends BehaviorEdge {
@@ -60,6 +69,20 @@ export interface LaidOutEdge extends BehaviorEdge {
   labelY: number;
   pathId: string;
   rowKey: string;
+  /** 聚合边的原始关系数。 */
+  count?: number;
+}
+
+export interface GraphGroup {
+  id: string;
+  label: string;
+  file: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  count: number;
+  delta: DeltaKind;
 }
 
 export interface BehaviorRow {
@@ -82,6 +105,7 @@ export interface BehaviorLayout {
   rows: BehaviorRow[];
   nodes: LaidOutNode[];
   edges: LaidOutEdge[];
+  groups?: GraphGroup[];
   width: number;
   height: number;
   nodeWidth: number;

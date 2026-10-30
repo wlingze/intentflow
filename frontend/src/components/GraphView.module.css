@@ -87,21 +87,28 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 0 18px;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
   background-image: radial-gradient(var(--grid) 1px, transparent 1px);
   background-size: 18px 18px;
+  cursor: grab;
+}
+
+.canvasWrap:active {
+  cursor: grabbing;
 }
 
 .canvas {
   display: block;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   margin: 0;
-  flex: none;
+  flex: 1;
+  touch-action: none;
+  user-select: none;
 }
 
 .stageLabel {
@@ -262,6 +269,290 @@
   font-size: 12px;
   text-align: center;
 }
+
+
+.levels {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  margin-right: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.levels button {
+  height: 23px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  font: 10px/1 var(--mono);
+}
+
+.levels button:hover {
+  color: var(--ink);
+}
+
+.levels .levelActive {
+  background: var(--panel);
+  color: var(--accent) !important;
+}
+
+.deltaLegend {
+  display: flex;
+  gap: 9px;
+  margin-right: 4px;
+  color: var(--faint);
+  font: 9px/1 var(--mono);
+}
+
+.deltaLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deltaLegend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+
+.legendDelta_added { color: var(--green); }
+.legendDelta_removed { color: var(--red); }
+.legendDelta_modified { color: var(--amber); }
+.legendDelta_unchanged { color: var(--faint); }
+
+.groupBox {
+  fill: color-mix(in srgb, var(--panel-2) 72%, transparent);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.group_added { stroke: color-mix(in srgb, var(--green) 42%, var(--line)); }
+.group_removed { stroke: color-mix(in srgb, var(--red) 42%, var(--line)); stroke-dasharray: 4 3; }
+.group_modified { stroke: color-mix(in srgb, var(--amber) 48%, var(--line)); }
+
+.groupLabel {
+  fill: var(--faint);
+  font: 9.5px var(--mono);
+  letter-spacing: 0.02em;
+}
+
+.focusCard {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 4;
+  width: min(380px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 18px 50px color-mix(in srgb, #000 22%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.focusHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.focusMark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--dim);
+  font: 8.5px var(--mono);
+}
+
+.focusMark.role_trigger { color: var(--blue, #5c9cf5); border-color: color-mix(in srgb, var(--blue, #5c9cf5) 48%, var(--line)); }
+.focusMark.role_effect { color: var(--green); border-color: var(--green-line); }
+.focusMark.role_decision { color: var(--amber); border-color: var(--amber-line); }
+
+.focusTitle {
+  min-width: 0;
+  flex: 1;
+}
+
+.focusTitle b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.focusTitle span {
+  display: block;
+  margin-top: 3px;
+  color: var(--faint);
+  font: 9.5px/1.4 var(--mono);
+}
+
+.focusClose {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.focusClose:hover {
+  color: var(--ink);
+  background: var(--panel-2);
+}
+
+.focusBody {
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.focusMeta {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 6px;
+  padding: 3px 0;
+  font: 10px/1.5 var(--mono);
+}
+
+.focusMeta span { color: var(--faint); }
+.focusMeta b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.focusSection {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.focusSection > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--faint);
+  font: 9px/1 var(--mono);
+}
+
+.memberList,
+.evidenceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.memberList code,
+.evidenceList code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  color: var(--dim);
+  font: 9px/1.4 var(--mono);
+  white-space: nowrap;
+}
+
+.memberList em {
+  color: var(--faint);
+  font: 9px/1.8 var(--mono);
+}
+
+.focusActions {
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--line);
+}
+
+.viewControls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 4px 18px color-mix(in srgb, #000 10%, transparent);
+}
+
+.viewControls button {
+  display: grid;
+  place-items: center;
+  min-width: 25px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dim);
+  font: 12px/1 var(--mono);
+}
+
+.viewControls button:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+.viewControls span {
+  min-width: 34px;
+  text-align: center;
+  color: var(--faint);
+  font: 9px/1 var(--mono);
+}
+
+.fitButton {
+  padding: 0 6px;
+  font-size: 9px !important;
+}
+
+.canvasHint {
+  position: absolute;
+  left: 16px;
+  bottom: 17px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  color: var(--faint);
+  font: 9px/1.4 var(--mono);
+  pointer-events: none;
+}
+
+.node {
+  cursor: pointer;
+}
+
+.node:active {
+  cursor: pointer;
+}
+
 
 @media (max-width: 1180px) {
   .legend { display: none; }

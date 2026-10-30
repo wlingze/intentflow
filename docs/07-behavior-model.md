@@ -204,11 +204,23 @@ func findUser(name string) {
 
 ### 7.3 Scenario
 
-- 一条 scenario 在 UI 中占一行；行内按 `nodes` 顺序排步骤，效果不再强行对齐全局最右列。
-- 不同 scenario 之间不画边，避免把一条行为的判定连到另一条行为的步骤。
+- 一条 scenario 在数据里仍是一条独立路径；UI 的行为层按 trigger 合并成组。
+- 组内保留每条 scenario 的步骤；不同 scenario 之间不画边。
 - 同一 trigger+effect 在两边都存在：比较 `nodes`、`source`、`shape`。
 - 路径或 shape 变了 → modified。
 - 只在一侧 → added/removed。
+
+### 7.4 UI 投影
+
+同一份行为图在 UI 里有三个投影层级：
+
+| 层级 | 节点 | 边 | 规则 |
+| --- | --- | --- | --- |
+| 文件 | 文件 | 文件关系 | 函数节点先按文件聚合；不展示函数内部 |
+| 函数 | 函数 | 调用/数据 | 按 `function + file` 合并角色节点；节点按文件分组 |
+| 行为 | 触发/判定/变换/效果 | 控制/数据/调用 | 按 trigger 分组；组内保留 scenario |
+
+聚合只发生在 UI，不改变 `review.json` 里的节点和边。
 
 ## 8. 与三层事实的关系
 
@@ -235,6 +247,7 @@ func findUser(name string) {
 - 每个论点必须引用 `evidence`（Fact.identity、文件行号或节点标题）。
 - UI 单独放在 AI tab，不能和确定性分析混在一起。
 - 未配置端点时返回 `unavailable`，分析照常完成。
+- 默认模型是 `deepseek-v4.1-flash`；可用 `INTENTFLOW_LLM_MODEL` 覆盖。
 
 ## 10. 已知限制
 

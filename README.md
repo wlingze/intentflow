@@ -146,18 +146,23 @@ scope  = common/yak/ssa2llvm（304 个文件，122 个改动）
 行为图 15 条 scenario、48 节点、67 边（23 新增 / 21 移除 / 0 变化）。SSA 编译约 1 分钟。重新导出源码用
 `examples/yaklang-llvm/generate.sh`。
 
-![yaklang ssa2llvm 工作台](docs/images/yaklang-llvm-graph.png)
+![yaklang ssa2llvm 工作台：函数按文件分组](docs/images/yaklang-llvm-graph.png)
 
-代码视角：左侧行为导航，下面是变更文件树；没有悬浮缩略图。
+文件层只画文件关系和分类；函数层按文件分组；行为层把同源 scenario 合并。
+画布可拖拽、滚轮缩放，点「适应」看全图；点击节点放大详情。
 
+![文件层](docs/images/yaklang-llvm-files.png)
+![行为层：同源 scenario 合并](docs/images/yaklang-llvm-behavior.png)
 ![代码视角](docs/images/yaklang-llvm-code.png)
 
 ## 工作台
 
-- **行为图视角**：每条 scenario 一行，行内按步骤排；点击节点在底部代码坞看详情与源码，拖拽分隔条可调高度。
-- **代码视角**：全宽 diff / 搜索；左侧是行为导航（每条 scenario 一条流程），下面是项目改动目录树。
-- 右侧：SyntaxFlow 结果逐条分诊（认为没事 / 认为有问题），Review 评论可编辑删除。
-- 底部：评论输入框。选中代码或在代码坞里点「引用到评论」会加入引用；点击节点只打开详情。
+- **三级图**：`文件` 只看文件分类与文件关系；`函数` 按文件分组，保留函数调用关系；`行为` 合并同源 scenario，保留判定与数据边。
+- **画布**：拖拽平移、滚轮缩放、`适应` 看全图；节点放大卡片显示文件、行号、角色、证据。
+- **节点详情**：点节点打开放大卡片；卡片里的「展开代码」打开底部代码坞，「打开文件」切到代码视角。
+- **代码视角**：全宽 diff / 搜索；左侧行为导航按触发函数分组，组内展开同源 scenario；下面是项目改动目录树。
+- 右侧：AI / SyntaxFlow / Review；评论可编辑删除。
+- 底部：评论输入框；选中代码或在代码坞里点「引用到评论」会加入引用。
 - 右上：提交 Review → 写入 `review.md`，同时复制 Agent prompt。
 
 设计见 [docs/05-frontend.md](docs/05-frontend.md)。
@@ -216,6 +221,7 @@ docs/                 调研、模型、契约与日志
 - 没有 `INFERRED` 节点。
 
 LLM 是可选叙述层：读事实写摘要、风险和复核顺序。它不生成节点、边或行号。
+默认模型是 `deepseek-v4.1-flash`，可用 `INTENTFLOW_LLM_MODEL` 覆盖。
 每个论点都要求引用输入里的证据；没有配置端点时界面显示“未启用”。
 
 ## 依赖

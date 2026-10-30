@@ -19,13 +19,6 @@ const ROW_GAP = 34;
 const HEADER = 34;
 const ARC = 42;
 
-const DELTA_ORDER: Record<DeltaKind, number> = {
-  modified: 0,
-  added: 1,
-  removed: 2,
-  unchanged: 3,
-};
-
 function nodeMap(graph: BehaviorGraph): Map<string, BehaviorNode> {
   return new Map(graph.nodes.map((node) => [node.id, node]));
 }
@@ -40,74 +33,110 @@ export function layoutBehavior(graph: BehaviorGraph): BehaviorLayout {
   }
 
   const base = nodeMap(graph);
-  const scenarios = [...graph.scenarios].sort((left, right) => {
-    const byTitle = left.title.localeCompare(right.title);
+  const groups = new Map<string, {
+    trigger: string;
+    scenarios: typeof graph.scenarios;
+    nodeIds: string[];
+    edgeKeys: Set<string>;
+    nodes: BehaviorNode[];
+    edges: BehaviorEdge[];
+  }>();
+
+  for (const scenario of graph.scenarios) {
+    const group = groups.get(scenario.trigger) ?? {
+      trigger: scenario.trigger,
+      scenarios: [],
+      nodeIds: [],
+      edgeKeys: new Set<string>(),
+      nodes: [],
+      edges: [],
+    };
+    group.scenarios.push(scenario);
+    for (const id of scenario.nodes) {
+      if (!group.nodeIds.includes(id)) {
+        const node = base.get(id);
+        if (node) {
+          group.nodeIds.push(id);
+          group.nodes.push(node);
+        }
+      }
+    }
+    for (const edge of graph.edges.filter((item) => item.scenario === scenario.id)) {
+      const key = `${edge.from}>${edge.to}:${edge.kind}`;
+      if (!group.edgeKeys.has(key)) {
+        group.edgeKeys.add(key);
+        group.edges.push(edge);
+      }
+    }
+    groups.set(scenario.trigger, group);
+  }
+
+  const ordered = [...groups.values()].sort((left, right) => {
+    const leftNode = base.get(left.trigger);
+    const rightNode = base.get(right.trigger);
+    const byTitle = (leftNode?.label ?? left.trigger).localeCompare(rightNode?.label ?? right.trigger);
     if (byTitle !== 0) return byTitle;
-    return DELTA_ORDER[left.delta] - DELTA_ORDER[right.delta];
+    return mergeDelta(left.scenarios.map((item) => item.delta)) <
+      mergeDelta(right.scenarios.map((item) => item.delta)) ? -1 : 1;
   });
 
-  const maxNodes = Math.max(...scenarios.map((scenario) => scenario.nodes.length), 1);
-  const width = Math.max(760, LEFT * 2 + maxNodes * NODE_WIDTH + Math.max(0, maxNodes - 1) * GAP_X);
   const rows: BehaviorRow[] = [];
   const allNodes: LaidOutNode[] = [];
   const allEdges: LaidOutEdge[] = [];
   let y = TOP;
 
-  scenarios.forEach((scenario, index) => {
-    const ids = scenario.nodes.filter((id) => base.has(id));
-    const rowKey = scenario.id;
+  ordered.forEach((group, index) => {
+    const triggerNode = base.get(group.trigger);
+    const nodes = orderGroupNodes(group.nodes, group.edges);
+    const rowKey = `group:${group.trigger}`;
     const rowY = y + HEADER;
-    const nodes: LaidOutNode[] = ids.map((id, slot) => {
-      const node = base.get(id)!;
-      // 每行按自己的步骤数从左往右排；短链路不再被拉到全局最右列。
-      const x = LEFT + slot * (NODE_WIDTH + GAP_X);
-      return {
-        ...node,
-        x,
-        y: rowY,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        rowKey,
-        scenarioId: scenario.id,
-      };
-    });
-    const byId = new Map(nodes.map((node) => [node.id, node]));
-
-    const edges: LaidOutEdge[] = [];
-    const scenarioEdges = graph.edges.filter((edge) => edge.scenario === scenario.id);
-    const controls = scenarioEdges.filter((edge) => edge.kind === 'control');
-    // 调用边与判定路径同时存在时，只画判定路径。调用边保留在数据里，
-    // 但不让它绕过判定卡片，造成「守卫被跳过」的错觉。
-    const visibleEdges = scenarioEdges.filter(
+    const laidOut = nodes.map((node, slot) => ({
+      ...node,
+      x: LEFT + slot * (NODE_WIDTH + GAP_X),
+      y: rowY,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+      rowKey,
+      scenarioId: rowKey,
+    }));
+    const byId = new Map(laidOut.map((node) => [node.id, node]));
+    const controls = group.edges.filter((edge) => edge.kind === 'control');
+    const visibleEdges = group.edges.filter(
       (edge) =>
         edge.kind !== 'call' ||
         !controls.some((control) => control.from === edge.from || control.to === edge.to),
     );
-    visibleEdges
-      .forEach((edge, edgeIndex) => {
-        const from = byId.get(edge.from);
-        const to = byId.get(edge.to);
-        if (!from || !to) return;
-        edges.push(layEdge(edge, from, to, rowKey, edgeIndex));
-      });
+    const edges: LaidOutEdge[] = [];
+    visibleEdges.forEach((edge, edgeIndex) => {
+      const from = byId.get(edge.from);
+      const to = byId.get(edge.to);
+      if (!from || !to) return;
+      edges.push(layEdge(edge, from, to, rowKey, edgeIndex));
+    });
 
+    const delta = mergeDelta(group.scenarios.map((scenario) => scenario.delta));
+    const sources = unique(group.scenarios.map((scenario) => scenario.source).filter(Boolean));
+    const shapes = unique(group.scenarios.map((scenario) => scenario.shape).filter(Boolean));
     const row: BehaviorRow = {
-      id: scenario.id,
+      id: rowKey,
       index,
-      title: scenario.title,
-      delta: scenario.delta,
-      source: scenario.source,
-      shape: scenario.shape,
-      category: scenario.category,
+      title: `${triggerNode?.label ?? group.trigger} · ${group.scenarios.length} 条行为`,
+      delta,
+      source: sources.join(' / '),
+      shape: shapes.join(' / '),
+      category: unique(group.scenarios.map((scenario) => scenario.category).filter(Boolean)).join(' / '),
       x: LEFT,
       y,
-      width,
+      width: Math.max(
+        760,
+        LEFT * 2 + laidOut.length * NODE_WIDTH + Math.max(0, laidOut.length - 1) * GAP_X,
+      ),
       height: HEADER + NODE_HEIGHT + ARC,
-      nodes,
+      nodes: laidOut,
       edges,
     };
     rows.push(row);
-    allNodes.push(...nodes);
+    allNodes.push(...laidOut);
     allEdges.push(...edges);
     y += row.height + ROW_GAP;
   });
@@ -116,11 +145,50 @@ export function layoutBehavior(graph: BehaviorGraph): BehaviorLayout {
     rows,
     nodes: allNodes,
     edges: allEdges,
-    width,
+    width: Math.max(760, ...rows.map((row) => row.width)),
     height: Math.max(y + 18, 260),
     nodeWidth: NODE_WIDTH,
     nodeHeight: NODE_HEIGHT,
   };
+}
+
+function mergeDelta(values: DeltaKind[]): DeltaKind {
+  const set = new Set(values);
+  if (set.size === 0) return 'unchanged';
+  if (set.size === 1) return values[0];
+  return 'modified';
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function orderGroupNodes(nodes: BehaviorNode[], edges: BehaviorEdge[]): BehaviorNode[] {
+  const ids = new Set(nodes.map((node) => node.id));
+  const depth = new Map<string, number>();
+  for (const node of nodes) depth.set(node.id, node.role === 'trigger' ? 0 : 0);
+  for (let pass = 0; pass < nodes.length + 1; pass += 1) {
+    let changed = false;
+    for (const edge of edges) {
+      if (!ids.has(edge.from) || !ids.has(edge.to)) continue;
+      const from = depth.get(edge.from) ?? 0;
+      const to = depth.get(edge.to) ?? 0;
+      if (to < from + 1) {
+        depth.set(edge.to, from + 1);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const maxDepth = Math.max(0, ...nodes.map((node) => depth.get(node.id) ?? 0));
+  const roleOrder: Record<string, number> = { trigger: 0, decision: 1, transform: 2, effect: 3 };
+  return [...nodes].sort((left, right) => {
+    const leftDepth = left.role === 'effect' ? maxDepth + 1 : depth.get(left.id) ?? 0;
+    const rightDepth = right.role === 'effect' ? maxDepth + 1 : depth.get(right.id) ?? 0;
+    if (leftDepth !== rightDepth) return leftDepth - rightDepth;
+    const byRole = (roleOrder[left.role] ?? 9) - (roleOrder[right.role] ?? 9);
+    return byRole !== 0 ? byRole : left.label.localeCompare(right.label);
+  });
 }
 
 function layEdge(

@@ -10,6 +10,7 @@ import { fetchPayload } from '../lib/api';
 import { loadPersisted, reviewStorageKey, savePersisted } from '../lib/persistence';
 import type {
   Comment,
+  DeltaKind,
   DiffLayout,
   Payload,
   PersistedReview,
@@ -39,6 +40,7 @@ export interface PeekState {
   file?: string;
   line?: number;
   side?: Side;
+  delta?: DeltaKind;
 }
 
 export interface ComposerState {
@@ -77,7 +79,7 @@ export type Action =
   | { type: 'view/set'; view: ViewMode }
   | { type: 'tab/set'; tab: RightTab }
   | { type: 'select'; selected: Selection | null }
-  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side }
+  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side; delta?: DeltaKind }
   | { type: 'peek/close' }
   | { type: 'composer/quote'; quote: Quote }
   | { type: 'composer/clearQuote' }
@@ -180,6 +182,7 @@ function reducer(state: AppState, action: Action): AppState {
           file: action.file,
           line: action.line,
           side: action.side ?? 'after',
+          delta: action.delta,
         },
       };
     case 'peek/close':

@@ -35,7 +35,7 @@ func ConfigFromEnv() Config {
 		Timeout: 120 * time.Second,
 	}
 	if cfg.Model == "" {
-		cfg.Model = "coder02"
+		cfg.Model = "deepseek-v4.1-flash"
 	}
 	return cfg
 }
