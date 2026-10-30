@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { diffLines, type DiffRow } from '../lib/diff';
 import { highlight } from '../lib/highlight';
+import { RowVirtualizer } from '../lib/virtual';
 import type { CodeFile, Quote, Side } from '../types';
 import styles from './DiffView.module.css';
 
@@ -27,10 +35,14 @@ interface SelectionState {
 interface Props {
   file: CodeFile;
   layout: Layout;
+  wrap?: boolean;
   targetLine?: number;
   targetSide?: Side;
   onQuote: (quote: Quote) => void;
 }
+
+const OVERSCAN = 12;
+const ROW_HEIGHT = 20;
 
 function lineContent(text: string, language?: string): string {
   return highlight(text, language) || '&nbsp;';
@@ -80,42 +92,150 @@ function pairRows(rows: DiffRow[]): Pair[] {
   return out;
 }
 
-export function DiffView({ file, layout, targetLine, targetSide, onQuote }: Props) {
+export function DiffView({
+  file,
+  layout,
+  wrap = false,
+  targetLine,
+  targetSide,
+  onQuote,
+}: Props) {
   const rows = useMemo(() => diffLines(file.before ?? '', file.after ?? ''), [file]);
   const pairs = useMemo(() => pairRows(rows), [rows]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const observedRows = useRef<Set<Element>>(new Set());
   const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [measureVersion, setMeasureVersion] = useState(0);
 
-  const codeWidth = useMemo(() => {
-    let max = 0;
-    for (const row of rows) {
-      const left = 'a' in row ? row.a.text.length : 0;
-      const right = 'b' in row ? row.b.text.length : 0;
-      max = Math.max(max, left, right);
+  const rowCount = layout === 'split' ? pairs.length : rows.length;
+  const virtual = useMemo(
+    () => new RowVirtualizer(rowCount, ROW_HEIGHT),
+    [rowCount, file.path, layout, wrap, rows, pairs],
+  );
+
+  // 只渲染滚动视口（含 overscan）内的行；固定行高时全部使用同一个估算值。
+  const contentTop = Math.max(0, scrollTop - headerHeight);
+  const visibleHeight = Math.max(
+    0,
+    viewportHeight - Math.max(0, headerHeight - scrollTop),
+  );
+  const view = useMemo(
+    () => virtual.window(contentTop, visibleHeight, OVERSCAN),
+    [virtual, contentTop, visibleHeight, measureVersion],
+  );
+  const paddingBottom = Math.max(0, view.totalHeight - virtual.offsetOf(view.end));
+
+  const lineIndex = useMemo(() => {
+    const before = new Map<number, number>();
+    const after = new Map<number, number>();
+    if (layout === 'split') {
+      pairs.forEach((pair, index) => {
+        if (pair.left) before.set(pair.left.n, index);
+        if (pair.right) after.set(pair.right.n, index);
+      });
+    } else {
+      rows.forEach((row, index) => {
+        if (row.type === 'del') before.set(row.a.n, index);
+        if (row.type !== 'del') after.set(row.b.n, index);
+      });
     }
-    return Math.max(340, Math.min(1200, Math.ceil(max * 7.2)));
-  }, [rows]);
+    return { before, after };
+  }, [layout, pairs, rows]);
 
-  const vars = {
-    '--split-cols': `46px ${codeWidth}px 46px ${codeWidth}px`,
-    '--unified-cols': `44px 44px 20px ${codeWidth}px`,
-  } as CSSProperties;
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const sync = () => {
+      setScrollTop(element.scrollTop);
+      setViewportHeight(element.clientHeight);
+    };
+    sync();
+    element.addEventListener('scroll', sync, { passive: true });
+    const observer = new ResizeObserver(sync);
+    observer.observe(element);
+    return () => {
+      element.removeEventListener('scroll', sync);
+      observer.disconnect();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const element = headRef.current;
+    if (!element) return;
+    const sync = () => setHeaderHeight(element.offsetHeight);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [layout]);
+
+  useEffect(() => {
+    if (!wrap) return;
+    const pending = new Map<number, number>();
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      let changed = false;
+      for (const [index, height] of pending) {
+        if (virtual.setHeight(index, height)) changed = true;
+      }
+      pending.clear();
+      if (changed) setMeasureVersion((value) => value + 1);
+    };
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const element = entry.target as HTMLElement;
+        const index = Number(element.dataset.rowIndex);
+        if (!Number.isInteger(index)) continue;
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        if (height > 0) pending.set(index, height);
+      }
+      if (!frame) frame = requestAnimationFrame(flush);
+    });
+    observerRef.current = observer;
+    observedRows.current = new Set();
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+      observedRows.current = new Set();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [wrap, virtual]);
+
+  useEffect(() => {
+    const observer = observerRef.current;
+    const container = scrollRef.current;
+    if (!observer || !container) return;
+    const next = new Set<Element>();
+    container.querySelectorAll<HTMLElement>('[data-row-index]').forEach((element) => {
+      next.add(element);
+      if (!observedRows.current.has(element)) observer.observe(element);
+    });
+    for (const element of observedRows.current) {
+      if (!next.has(element)) observer.unobserve(element);
+    }
+    observedRows.current = next;
+  });
 
   useEffect(() => {
     if (!targetLine) return;
     const container = scrollRef.current;
+    if (!container) return;
     const side = targetSide ?? 'after';
-    const target = container?.querySelector(
-      `[data-side="${side}"][data-line="${targetLine}"]`,
-    );
-    if (!container || !target) return;
-    // 只纵向滚动。scrollIntoView 会为了露出目标行而横向平移，
-    // 把 split 视图的 before 半栏推出可视区。
-    const box = container.getBoundingClientRect();
-    const rect = target.getBoundingClientRect();
-    const top = container.scrollTop + rect.top - box.top - container.clientHeight / 2 + rect.height / 2;
+    const index = (side === 'before' ? lineIndex.before : lineIndex.after).get(targetLine);
+    if (index === undefined) return;
+    const header = headRef.current?.offsetHeight ?? headerHeight;
+    const center = virtual.offsetOf(index) + virtual.heightOf(index) / 2;
+    const visible = container.clientHeight - header;
+    const top = header + center - visible / 2;
+    // 只纵向滚动，避免把 split 视图的 before 半栏横向推走。
     container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-  }, [file.path, targetLine, targetSide, layout]);
+  }, [file.path, targetLine, targetSide, layout, lineIndex, virtual, headerHeight]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -172,8 +292,27 @@ export function DiffView({ file, layout, targetLine, targetSide, onQuote }: Prop
   const isTarget = (side: Side, line: number) =>
     Boolean(targetLine && line === targetLine && side === (targetSide ?? 'after'));
 
+  const codeWidth = useMemo(() => {
+    if (wrap) return 0;
+    let max = 0;
+    for (const row of rows) {
+      const left = 'a' in row ? row.a.text.length : 0;
+      const right = 'b' in row ? row.b.text.length : 0;
+      max = Math.max(max, left, right);
+    }
+    return Math.max(340, Math.min(1200, Math.ceil(max * 7.2)));
+  }, [rows, wrap]);
+
+  const vars = {
+    '--split-cols': `46px ${codeWidth}px 46px ${codeWidth}px`,
+    '--unified-cols': `44px 44px 20px ${codeWidth}px`,
+  } as CSSProperties;
+
+  const visiblePairs = pairs.slice(view.start, view.end);
+  const visibleRows = rows.slice(view.start, view.end);
+
   return (
-    <div className={styles.wrapper} onMouseUp={handleMouseUp}>
+    <div className={`${styles.wrapper}${wrap ? ` ${styles.wrap}` : ''}`} onMouseUp={handleMouseUp}>
       {file.status === 'unchanged' && (
         <div className={styles.notice}>文件未变更，下面是两侧相同的内容。</div>
       )}
@@ -181,84 +320,102 @@ export function DiffView({ file, layout, targetLine, targetSide, onQuote }: Prop
       <div className={styles.scroll} ref={scrollRef} style={vars}>
         {layout === 'split' ? (
           <div className={styles.split}>
-            <div className={styles.splitHead}>
+            <div className={styles.splitHead} ref={headRef}>
               <span />
               <span>before</span>
               <span />
               <span>after</span>
             </div>
-            {pairs.map((pair, index) => (
-              <div className={styles.row} key={`${index}-${pair.left?.n ?? 'x'}-${pair.right?.n ?? 'x'}`}>
-                <div className={`${styles.gutter} ${pair.leftType === 'del' ? styles.gutterDel : ''}`}>
-                  {pair.left?.n ?? ''}
-                </div>
-                <div
-                  className={`${styles.cell} ${pair.leftType === 'del' ? styles.del : ''} ${
-                    !pair.left ? (pair.rightType === 'add' ? styles.blankAdd : styles.blank) : ''
-                  }`}
-                >
-                  {pair.left && (
-                    <span
-                      className={`${styles.code} ${isTarget('before', pair.left.n) ? styles.target : ''}`}
-                      data-side="before"
-                      data-line={pair.left.n}
-                      dangerouslySetInnerHTML={{ __html: lineContent(pair.left.text, file.language) }}
-                    />
-                  )}
-                </div>
-                <div className={`${styles.gutter} ${pair.rightType === 'add' ? styles.gutterAdd : ''}`}>
-                  {pair.right?.n ?? ''}
-                </div>
-                <div
-                  className={`${styles.cell} ${pair.rightType === 'add' ? styles.add : ''} ${
-                    !pair.right ? (pair.leftType === 'del' ? styles.blankDel : styles.blank) : ''
-                  }`}
-                >
-                  {pair.right && (
-                    <span
-                      className={`${styles.code} ${isTarget('after', pair.right.n) ? styles.target : ''}`}
-                      data-side="after"
-                      data-line={pair.right.n}
-                      dangerouslySetInnerHTML={{ __html: lineContent(pair.right.text, file.language) }}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
+            <div
+              className={styles.virtual}
+              style={{ paddingTop: view.top, paddingBottom }}
+            >
+              {visiblePairs.map((pair, offset) => {
+                const index = view.start + offset;
+                return (
+                  <div
+                    className={styles.row}
+                    data-row-index={index}
+                    key={`${index}-${pair.left?.n ?? 'x'}-${pair.right?.n ?? 'x'}`}
+                  >
+                    <div className={`${styles.gutter} ${pair.leftType === 'del' ? styles.gutterDel : ''}`}>
+                      {pair.left?.n ?? ''}
+                    </div>
+                    <div
+                      className={`${styles.cell} ${pair.leftType === 'del' ? styles.del : ''} ${
+                        !pair.left ? (pair.rightType === 'add' ? styles.blankAdd : styles.blank) : ''
+                      }`}
+                    >
+                      {pair.left && (
+                        <span
+                          className={`${styles.code} ${isTarget('before', pair.left.n) ? styles.target : ''}`}
+                          data-side="before"
+                          data-line={pair.left.n}
+                          dangerouslySetInnerHTML={{ __html: lineContent(pair.left.text, file.language) }}
+                        />
+                      )}
+                    </div>
+                    <div className={`${styles.gutter} ${pair.rightType === 'add' ? styles.gutterAdd : ''}`}>
+                      {pair.right?.n ?? ''}
+                    </div>
+                    <div
+                      className={`${styles.cell} ${pair.rightType === 'add' ? styles.add : ''} ${
+                        !pair.right ? (pair.leftType === 'del' ? styles.blankDel : styles.blank) : ''
+                      }`}
+                    >
+                      {pair.right && (
+                        <span
+                          className={`${styles.code} ${isTarget('after', pair.right.n) ? styles.target : ''}`}
+                          data-side="after"
+                          data-line={pair.right.n}
+                          dangerouslySetInnerHTML={{ __html: lineContent(pair.right.text, file.language) }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className={styles.unified}>
-            <div className={styles.unifiedHead}>
+            <div className={styles.unifiedHead} ref={headRef}>
               <span>old</span>
               <span>new</span>
               <span />
               <span>code</span>
             </div>
-            {rows.map((row, index) => {
-              const oldLine = row.type === 'add' ? undefined : row.a;
-              const newLine = row.type === 'del' ? undefined : row.b;
-              const side: Side = row.type === 'del' ? 'before' : 'after';
-              const line = row.type === 'del' ? oldLine?.n : newLine?.n;
-              return (
-                <div className={styles.row} key={`${index}-${row.type}`}>
-                  <div className={styles.gutter}>{oldLine?.n ?? ''}</div>
-                  <div className={styles.gutter}>{newLine?.n ?? ''}</div>
-                  <div className={`${styles.sign} ${row.type === 'add' ? styles.signAdd : row.type === 'del' ? styles.signDel : ''}`}>
-                    {row.type === 'add' ? '+' : row.type === 'del' ? '−' : ''}
+            <div
+              className={styles.virtual}
+              style={{ paddingTop: view.top, paddingBottom }}
+            >
+              {visibleRows.map((row, offset) => {
+                const index = view.start + offset;
+                const oldLine = row.type === 'add' ? undefined : row.a;
+                const newLine = row.type === 'del' ? undefined : row.b;
+                const side: Side = row.type === 'del' ? 'before' : 'after';
+                const line = row.type === 'del' ? oldLine?.n : newLine?.n;
+                return (
+                  <div className={styles.row} data-row-index={index} key={`${index}-${row.type}`}>
+                    <div className={styles.gutter}>{oldLine?.n ?? ''}</div>
+                    <div className={styles.gutter}>{newLine?.n ?? ''}</div>
+                    <div className={`${styles.sign} ${row.type === 'add' ? styles.signAdd : row.type === 'del' ? styles.signDel : ''}`}>
+                      {row.type === 'add' ? '+' : row.type === 'del' ? '−' : ''}
+                    </div>
+                    <div className={`${styles.cell} ${row.type === 'add' ? styles.add : row.type === 'del' ? styles.del : ''}`}>
+                      <span
+                        className={`${styles.code} ${line && isTarget(side, line) ? styles.target : ''}`}
+                        data-side={side}
+                        data-line={line ?? 0}
+                        dangerouslySetInnerHTML={{
+                          __html: lineContent(newLine?.text ?? oldLine?.text ?? '', file.language),
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className={`${styles.cell} ${row.type === 'add' ? styles.add : row.type === 'del' ? styles.del : ''}`}>
-                    <span
-                      className={`${styles.code} ${line && isTarget(side, line) ? styles.target : ''}`}
-                      data-side={side}
-                      data-line={line ?? 0}
-                      dangerouslySetInnerHTML={{
-                        __html: lineContent(newLine?.text ?? oldLine?.text ?? '', file.language),
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

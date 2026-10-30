@@ -28,6 +28,11 @@
   font: 11.5px/20px var(--mono);
 }
 
+/* 头部保持在虚拟列表的 padding 之外，sticky 定位不受滚动填充影响。 */
+.virtual {
+  position: relative;
+}
+
 .splitHead,
 .row {
   display: grid;
@@ -148,6 +153,57 @@
 
 .row:hover .gutter {
   color: var(--dim);
+}
+
+@media (max-width: 1100px) {
+  .splitHead,
+  .split .row {
+    grid-template-columns: 46px minmax(0, 1fr) 46px minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .split .cell {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
+/* wrap 模式：取消按最长行计算的固定列宽，让代码在单元格内换行。 */
+.wrap .split,
+.wrap .unified {
+  width: 100%;
+  min-width: 0;
+}
+
+.wrap .splitHead,
+.wrap .split .row {
+  grid-template-columns: 46px minmax(0, 1fr) 46px minmax(0, 1fr);
+  width: 100%;
+}
+
+.wrap .unifiedHead,
+.wrap .unified .row {
+  grid-template-columns: 44px 44px 20px minmax(0, 1fr);
+  width: 100%;
+}
+
+.wrap .cell,
+.wrap .gutter,
+.wrap .sign {
+  height: auto;
+  min-height: 20px;
+}
+
+.wrap .split .cell {
+  overflow: visible;
+}
+
+.wrap .code {
+  height: auto;
+  min-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
 }
 
 .selectionBar {
