@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Commits available for selection */
+        get: operations["getCommits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/review": {
         parameters: {
             query?: never;
@@ -176,6 +193,84 @@ export interface components {
             notes: string[];
             behavior: components["schemas"]["BehaviorGraph"];
             ai: components["schemas"]["AiSummary"];
+            comparison: components["schemas"]["Comparison"];
+            symbols: components["schemas"]["SymbolGraph"];
+        };
+        /** @enum {string} */
+        ComparisonMode: "folder" | "git";
+        Commit: {
+            sha: string;
+            short: string;
+            subject: string;
+            author: string;
+            date: string;
+            parents: string[];
+        };
+        Comparison: {
+            mode: components["schemas"]["ComparisonMode"];
+            beforeLabel: string;
+            afterLabel: string;
+            repo?: string;
+            subdir?: string;
+            baseRef?: string;
+            headRef?: string;
+            commits: components["schemas"]["Commit"][];
+            selected: string[];
+            note: string;
+        };
+        /** @enum {string} */
+        SymbolKind: "function" | "type";
+        /** @enum {string} */
+        SymbolEdgeKind: "call";
+        SymbolNode: {
+            id: string;
+            kind: components["schemas"]["SymbolKind"];
+            name: string;
+            package: string;
+            file: string;
+            /** Format: int32 */
+            line: number;
+            delta: components["schemas"]["DeltaKind"];
+            signature: string;
+            /** Format: int32 */
+            callers: number;
+            /** Format: int32 */
+            callees: number;
+            members: string[];
+            exported: boolean;
+        };
+        SymbolEdge: {
+            id: string;
+            from: string;
+            to: string;
+            kind: components["schemas"]["SymbolEdgeKind"];
+            delta: components["schemas"]["DeltaKind"];
+            /** Format: int32 */
+            line: number;
+            resolved: boolean;
+        };
+        SymbolRef: {
+            name: string;
+            from: string;
+            file: string;
+            /** Format: int32 */
+            line: number;
+        };
+        SymbolStats: {
+            /** Format: int32 */
+            functions: number;
+            /** Format: int32 */
+            types: number;
+            /** Format: int32 */
+            calls: number;
+            /** Format: int32 */
+            unresolved: number;
+        };
+        SymbolGraph: {
+            nodes: components["schemas"]["SymbolNode"][];
+            edges: components["schemas"]["SymbolEdge"][];
+            unresolved: components["schemas"]["SymbolRef"][];
+            stats: components["schemas"]["SymbolStats"];
         };
         AiSummary: {
             /** @enum {string} */
@@ -208,6 +303,16 @@ export interface components {
             review: components["schemas"]["Review"];
             code: components["schemas"]["CodeBundle"];
         };
+        CommitList: {
+            mode: components["schemas"]["ComparisonMode"];
+            repo?: string;
+            subdir?: string;
+            baseRef?: string;
+            headRef?: string;
+            commits: components["schemas"]["Commit"][];
+            selected: string[];
+            note: string;
+        };
         Quote: {
             file: string;
             side: components["schemas"]["Side"];
@@ -222,7 +327,7 @@ export interface components {
             text: string;
             title: string;
             /** @enum {string} */
-            source: "manual" | "signal";
+            source: "manual" | "signal" | "ai";
             signalId: string;
             /** Format: int64 */
             createdAt: number;
@@ -265,6 +370,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Payload"];
+                };
+            };
+        };
+    };
+    getCommits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Commit list for the configured comparison */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitList"];
                 };
             };
         };

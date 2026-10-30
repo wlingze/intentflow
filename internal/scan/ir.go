@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -25,7 +26,23 @@ type IRIndex struct {
 	Root  string
 	Files map[string]*IRFile
 	Funcs map[string]*IRFunc
+	Types map[string]*IRType
 	Names map[string]string // short -> full
+}
+
+// IRType 是 SSA Blueprint 里的一个类型定义。
+//
+// 位置来自 Blueprint.Range，成员与方法名来自 Blueprint 本身。
+// 没有 Range 的 Blueprint（标准库、匿名组合类型）不入索引：
+// 前端不画没有源码位置的节点，也不按名字猜位置。
+type IRType struct {
+	Key     string // type:<file>#<name>
+	Name    string
+	Kind    string // struct | interface | class | object
+	File    string
+	Line    int32
+	Members []string
+	Methods []string
 }
 
 type IRFile struct {
@@ -45,6 +62,9 @@ type IRFunc struct {
 	Branches  []branchInfo
 	EntryKind string
 	Anonymous bool
+	// Hash 是函数体内 SSA 指令源码的指纹。行号变化不改变它，
+	// 所以符号图能区分「只是移动了位置」和「真的改了行为」。
+	Hash string
 }
 
 // AnalyzeSSA 编译一次代码库，返回三层事实与 IR 索引。
@@ -95,11 +115,14 @@ func BuildIRIndex(prog *ssaapi.Program, root, programName string) *IRIndex {
 		Root:  root,
 		Files: map[string]*IRFile{},
 		Funcs: map[string]*IRFunc{},
+		Types: map[string]*IRType{},
 		Names: map[string]string{},
 	}
 	if prog == nil || prog.Program == nil {
 		return index
 	}
+
+	collectTypes(prog, root, programName, index)
 
 	for file := range prog.Program.FileList {
 		rel := relFile(root, programName, file)
@@ -138,6 +161,7 @@ func BuildIRIndex(prog *ssaapi.Program, root, programName string) *IRIndex {
 		info.EntryKind = entryKindSSA(short, info.Params)
 		info.Branches = collectSSABranches(fn, file)
 		collectSSACalls(fn, info)
+		info.Hash = functionHash(fn)
 
 		if fileInfo := index.Files[file]; fileInfo != nil {
 			fileInfo.Functions = append(fileInfo.Functions, short)
@@ -322,6 +346,36 @@ func mergeLayer(dst, src model.FactSet, layer model.Layer) {
 	for _, fact := range src[layer] {
 		dst.Add(fact)
 	}
+}
+
+// functionHash 对函数内每条指令的源码取 FNV-1a 指纹。
+// 只看 SSA 里真实存在的指令，不读语法树；空函数也有稳定哈希。
+func functionHash(fn *ssa.Function) string {
+	h := fnv.New64a()
+	for _, bid := range fn.Blocks {
+		block, ok := fn.GetBasicBlockByID(bid)
+		if !ok || block == nil {
+			continue
+		}
+		for _, iid := range block.Insts {
+			inst, ok := fn.GetInstructionById(iid)
+			if !ok || inst == nil {
+				continue
+			}
+			if lazy, ok := inst.(*ssa.LazyInstruction); ok {
+				inst = lazy.Self()
+			}
+			source := inst.GetOpcode().String()
+			if value, ok := ssa.ToValue(inst); ok && value != nil {
+				if text := value.GetSourceCode(); text != "" {
+					source = text
+				}
+			}
+			_, _ = h.Write([]byte(source))
+			_, _ = h.Write([]byte{0})
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum64())
 }
 
 func collectSSACalls(fn *ssa.Function, info *IRFunc) {

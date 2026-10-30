@@ -27,6 +27,10 @@ type Config struct {
 	DistDir string
 	OutDir  string
 	Payload contract.Payload
+	// Commits 返回可选的提交列表；nil 表示目录模式。
+	Commits func() (contract.CommitList, error)
+	// Rebuild 按选中的提交重建 payload；selected 为空表示全部提交。
+	Rebuild func(selected []string) (contract.Payload, error)
 }
 
 // NewHandler 组装 API 与静态资源。dist 不存在时返回可读错误，
@@ -46,8 +50,29 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /api/payload", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		if cfg.Rebuild != nil && r.URL.Query().Has("commits") {
+			selected := parseSelection(r.URL.Query().Get("commits"))
+			payload, err := cfg.Rebuild(selected)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			_ = json.NewEncoder(w).Encode(payload)
+			return
+		}
 		_, _ = w.Write(body)
 	})
+
+	if cfg.Commits != nil {
+		mux.HandleFunc("GET /api/commits", func(w http.ResponseWriter, r *http.Request) {
+			list, err := cfg.Commits()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, list)
+		})
+	}
 
 	mux.HandleFunc("POST /api/review", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -93,6 +118,24 @@ func Listen(cfg Config) error {
 	}
 	fmt.Printf("review 工作台: http://%s\n", prettyAddr(ln.Addr().String()))
 	return http.Serve(ln, logRequests(handler))
+}
+
+// parseSelection 把逗号分隔的提交 SHA 列表解析成去重切片。
+func parseSelection(raw string) []string {
+	out := []string{}
+	seen := map[string]struct{}{}
+	for _, part := range strings.Split(raw, ",") {
+		sha := strings.TrimSpace(part)
+		if sha == "" {
+			continue
+		}
+		if _, ok := seen[sha]; ok {
+			continue
+		}
+		seen[sha] = struct{}{}
+		out = append(out, sha)
+	}
+	return out
 }
 
 // writeReview 原子写入 review.md，避免中途失败留下半个文件。

@@ -15,9 +15,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/yaklang/intentflow/internal/contract"
 	"github.com/yaklang/intentflow/internal/emit"
+	"github.com/yaklang/intentflow/internal/gitcompare"
 	"github.com/yaklang/intentflow/internal/insight"
 	"github.com/yaklang/intentflow/internal/model"
 	"github.com/yaklang/intentflow/internal/payload"
@@ -78,6 +80,11 @@ type options struct {
 	out         string
 	dump        bool
 	verbose     bool
+	repo        string
+	subdir      string
+	from        string
+	to          string
+	commits     string
 }
 
 func (o *options) register(fs *flag.FlagSet) {
@@ -88,6 +95,11 @@ func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.out, "out", "./intentflow-out", "输出目录")
 	fs.BoolVar(&o.dump, "dump-facts", false, "额外写出两侧全量事实，用于调试")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
+	fs.StringVar(&o.repo, "repo", "", "Git 仓库目录；设置后用提交范围代替目录比较")
+	fs.StringVar(&o.subdir, "subdir", "", "只比较仓库内的这个子树")
+	fs.StringVar(&o.from, "from", "HEAD~1", "提交范围的起点（不含）")
+	fs.StringVar(&o.to, "to", "HEAD", "提交范围的终点")
+	fs.StringVar(&o.commits, "commits", "", "初始选中的提交 SHA，逗号分隔；空表示全部")
 }
 
 func runDiff(args []string) error {
@@ -97,18 +109,35 @@ func runDiff(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	review, err := analyze(opt)
+	var review *model.Review
+	var err error
+	if opt.repo != "" {
+		var built contract.Payload
+		built, err = buildGitReview(opt)
+		if err == nil {
+			review = &built.Review
+		}
+	} else {
+		review, err = analyze(opt)
+	}
 	if err != nil {
 		return err
 	}
-	review.Ai = insight.Analyze(context.Background(), review, nil)
+	if review.Ai.Status == "" {
+		review.Ai = insight.Analyze(context.Background(), review, nil)
+	}
 	jsonPath, err := emit.JSON(review, opt.out)
 	if err != nil {
 		return fmt.Errorf("写出 review.json 失败: %w", err)
 	}
 	printStats(review)
 	fmt.Println("→", jsonPath)
-	fmt.Printf("提示：运行 intentflow serve --before %s --after %s 打开工作台\n", opt.before, opt.after)
+	if opt.repo != "" {
+		fmt.Printf("提示：运行 intentflow serve --repo %s --subdir %s --from %s --to %s 打开工作台\n",
+			opt.repo, opt.subdir, opt.from, opt.to)
+	} else {
+		fmt.Printf("提示：运行 intentflow serve --before %s --after %s 打开工作台\n", opt.before, opt.after)
+	}
 	return nil
 }
 
@@ -120,6 +149,10 @@ func runServe(args []string) error {
 	dist := fs.String("dist", "frontend/dist", "前端构建产物目录")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	if opt.repo != "" {
+		return runServeGit(opt, *addr, *dist)
 	}
 
 	review, err := analyze(opt)
@@ -182,11 +215,29 @@ func analyze(opt options) (*model.Review, error) {
 	if opt.afterLabel != "" {
 		afterLabel = opt.afterLabel
 	}
+	return analyzeRoots(bRoot, aRoot, beforeLabel, afterLabel, opt, nil)
+}
+
+// analyzeRoots 对两个已就绪的目录跑完整分析。目录模式与 Git 模式共用它，
+// 保证两种入口得到同一种结果结构。
+func analyzeRoots(bRoot, aRoot, beforeLabel, afterLabel string, opt options, comparison *model.Comparison) (*model.Review, error) {
 	review := &model.Review{
 		Before:  beforeLabel,
 		After:   afterLabel,
 		Notes:   []string{},
 		Signals: []model.Signal{},
+	}
+	if comparison == nil {
+		review.Comparison = model.Comparison{
+			Mode:        contract.Folder,
+			BeforeLabel: beforeLabel,
+			AfterLabel:  afterLabel,
+			Commits:     []model.Commit{},
+			Selected:    []string{},
+			Note:        "目录比较：没有 Git 历史，提交选择不可用",
+		}
+	} else {
+		review.Comparison = *comparison
 	}
 
 	// ---- 所有层级共用一次 SSA 编译 ----
@@ -233,6 +284,7 @@ func analyze(opt options) (*model.Review, error) {
 	review.Intent = model.Diff(model.LayerIntent, bSet, aSet)
 	review.Signals = scan.Signals(review)
 	review.Behavior = scan.BuildBehavior(bIndex, aIndex, scan.IntentFacts(bSet), review)
+	review.Symbols = scan.BuildSymbolGraph(bIndex, aIndex)
 	return review, nil
 }
 
@@ -261,4 +313,246 @@ func mergeLayer(dst, src model.FactSet, layer model.Layer) {
 	for _, f := range src[layer] {
 		dst.Add(f)
 	}
+}
+
+// ---- Git 比较模式 ----
+
+// gitRequest 是一次「选择提交后重新分析」所需的全部输入。
+type gitRequest struct {
+	opt     options
+	repo    *gitcompare.Repo
+	baseSHA string
+	all     []contract.Commit
+}
+
+// buildGitReview 给 diff 命令用的 Git 入口，复用 serve 的同一条分析路径。
+func buildGitReview(opt options) (contract.Payload, error) {
+	repo, err := gitcompare.Open(opt.repo, opt.subdir)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	baseSHA, err := repo.Resolve(opt.from)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	headSHA, err := repo.Resolve(opt.to)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	all, err := repo.Commits(baseSHA, headSHA)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	if len(all) == 0 {
+		return contract.Payload{}, fmt.Errorf("%s..%s 内没有触及 %q 的提交", opt.from, opt.to, opt.subdir)
+	}
+	return buildGitPayload(gitRequest{opt: opt, repo: repo, baseSHA: baseSHA, all: all}, parseCSV(opt.commits)...)
+}
+
+// gitPayloadCache 缓存 (选中提交集合) -> payload。分析一次约一分钟，
+// 用户来回切换勾选时不能每次都重跑。
+type gitPayloadCache struct {
+	mu    sync.Mutex
+	items map[string]contract.Payload
+}
+
+// runServeGit 启动 Git 提交比较模式的工作台。
+func runServeGit(opt options, addr, dist string) error {
+	repo, err := gitcompare.Open(opt.repo, opt.subdir)
+	if err != nil {
+		return err
+	}
+	baseSHA, err := repo.Resolve(opt.from)
+	if err != nil {
+		return err
+	}
+	headSHA, err := repo.Resolve(opt.to)
+	if err != nil {
+		return err
+	}
+	all, err := repo.Commits(baseSHA, headSHA)
+	if err != nil {
+		return fmt.Errorf("读取提交列表失败: %w", err)
+	}
+	if len(all) == 0 {
+		return fmt.Errorf("%s..%s 内没有触及 %q 的提交", opt.from, opt.to, opt.subdir)
+	}
+
+	req := gitRequest{opt: opt, repo: repo, baseSHA: baseSHA, all: all}
+	selected := parseCSV(opt.commits)
+	payload, err := buildGitPayload(req, selected...)
+	if err != nil {
+		return err
+	}
+	cache := &gitPayloadCache{items: map[string]contract.Payload{cacheKey(selected, all): payload}}
+
+	commits := func() (contract.CommitList, error) {
+		return contract.CommitList{
+			Mode:     contract.Git,
+			Repo:     ptr(repo.Root),
+			Subdir:   ptr(repo.Subdir),
+			BaseRef:  ptr(opt.from),
+			HeadRef:  ptr(opt.to),
+			Commits:  all,
+			Selected: selected,
+			Note:     "勾选提交后只比较这些提交的文件改动",
+		}, nil
+	}
+	rebuild := func(chosen []string) (contract.Payload, error) {
+		key := cacheKey(chosen, all)
+		cache.mu.Lock()
+		if hit, ok := cache.items[key]; ok {
+			cache.mu.Unlock()
+			return hit, nil
+		}
+		cache.mu.Unlock()
+		built, err := buildGitPayload(req, chosen...)
+		if err != nil {
+			return contract.Payload{}, err
+		}
+		cache.mu.Lock()
+		cache.items[key] = built
+		cache.mu.Unlock()
+		return built, nil
+	}
+
+	jsonPath, err := emit.JSON(&payload.Review, opt.out)
+	if err != nil {
+		return fmt.Errorf("写出 review.json 失败: %w", err)
+	}
+	printStats(&payload.Review)
+	fmt.Println("→", jsonPath)
+
+	return serve.Listen(serve.Config{
+		Addr:    addr,
+		DistDir: dist,
+		OutDir:  opt.out,
+		Payload: payload,
+		Commits: commits,
+		Rebuild: rebuild,
+	})
+}
+
+// buildGitPayload 按选中提交物化目录并跑分析。空选择表示全部提交。
+func buildGitPayload(req gitRequest, selected ...string) (contract.Payload, error) {
+	chosen := selectCommits(req.all, selected)
+	if len(chosen) == 0 {
+		return contract.Payload{}, fmt.Errorf("没有选中任何提交")
+	}
+	base := req.baseSHA
+	baseLabel := req.opt.from
+	if chosen[0].Sha != req.all[0].Sha {
+		if len(chosen[0].Parents) == 0 {
+			base = ""
+			baseLabel = "空树"
+		} else {
+			base = chosen[0].Parents[0]
+			baseLabel = shortSHA(base)
+		}
+	} else {
+		baseLabel = req.opt.from
+	}
+	shas := make([]string, 0, len(chosen))
+	for _, commit := range chosen {
+		shas = append(shas, commit.Sha)
+	}
+	afterLabel := shortSHA(chosen[len(chosen)-1].Sha)
+	if len(chosen) == len(req.all) {
+		afterLabel = req.opt.to
+	} else {
+		afterLabel = fmt.Sprintf("%s · %d/%d 提交", shortSHA(chosen[len(chosen)-1].Sha), len(chosen), len(req.all))
+	}
+
+	tmp, err := os.MkdirTemp("", "intentflow-git-*")
+	if err != nil {
+		return contract.Payload{}, fmt.Errorf("创建临时目录失败: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	beforeDir, afterDir, err := req.repo.Materialize(base, shas, tmp)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	note := "只应用所选提交的文件版本；同一文件里未选中提交的改动不会单独进入比较"
+	comparison := &model.Comparison{
+		Mode:        contract.Git,
+		BeforeLabel: baseLabel,
+		AfterLabel:  afterLabel,
+		Repo:        ptr(req.repo.Root),
+		Subdir:      ptr(req.repo.Subdir),
+		BaseRef:     ptr(baseLabel),
+		HeadRef:     ptr(afterLabel),
+		Commits:     req.all,
+		Selected:    shas,
+		Note:        note,
+	}
+
+	if req.opt.verbose {
+		fmt.Printf("· Git 比较 %d 个提交（base=%s）\n", len(chosen), baseLabel)
+	}
+	review, err := analyzeRoots(beforeDir, afterDir, baseLabel, afterLabel, req.opt, comparison)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	code, err := payload.Build(beforeDir, afterDir, review.Before+" → "+review.After)
+	if err != nil {
+		return contract.Payload{}, fmt.Errorf("读取源码失败: %w", err)
+	}
+	review.Ai = insight.Analyze(context.Background(), review, code.Files)
+	return contract.Payload{Review: *review, Code: code}, nil
+}
+
+func selectCommits(all []contract.Commit, selected []string) []contract.Commit {
+	if len(selected) == 0 {
+		return all
+	}
+	// 接受完整 SHA 或唯一前缀，前端传完整 SHA，手敲前缀也能用。
+	matches := func(commit contract.Commit, sha string) bool {
+		sha = strings.TrimSpace(sha)
+		if len(sha) < 4 {
+			return false
+		}
+		return strings.HasPrefix(commit.Sha, sha) || strings.HasPrefix(commit.Short, sha)
+	}
+	chosen := make([]contract.Commit, 0, len(selected))
+	for _, commit := range all {
+		for _, sha := range selected {
+			if matches(commit, sha) {
+				chosen = append(chosen, commit)
+				break
+			}
+		}
+	}
+	return chosen
+}
+
+func cacheKey(selected []string, all []contract.Commit) string {
+	if len(selected) == 0 {
+		return "all"
+	}
+	return strings.Join(selected, ",")
+}
+
+func parseCSV(raw string) []string {
+	out := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func shortSHA(sha string) string {
+	if len(sha) <= 8 {
+		return sha
+	}
+	return sha[:8]
+}
+
+func ptr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

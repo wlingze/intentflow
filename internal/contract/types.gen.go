@@ -12,10 +12,10 @@ const (
 
 // Defines values for BehaviorEdgeKind.
 const (
-	Boundary BehaviorEdgeKind = "boundary"
-	Call     BehaviorEdgeKind = "call"
-	Control  BehaviorEdgeKind = "control"
-	Data     BehaviorEdgeKind = "data"
+	BehaviorEdgeKindBoundary BehaviorEdgeKind = "boundary"
+	BehaviorEdgeKindCall     BehaviorEdgeKind = "call"
+	BehaviorEdgeKindControl  BehaviorEdgeKind = "control"
+	BehaviorEdgeKindData     BehaviorEdgeKind = "data"
 )
 
 // Defines values for BehaviorRole.
@@ -36,8 +36,15 @@ const (
 
 // Defines values for CommentSource.
 const (
+	CommentSourceAi     CommentSource = "ai"
 	CommentSourceManual CommentSource = "manual"
 	CommentSourceSignal CommentSource = "signal"
+)
+
+// Defines values for ComparisonMode.
+const (
+	Folder ComparisonMode = "folder"
+	Git    ComparisonMode = "git"
 )
 
 // Defines values for Confidence.
@@ -75,6 +82,17 @@ const (
 const (
 	After  Side = "after"
 	Before Side = "before"
+)
+
+// Defines values for SymbolEdgeKind.
+const (
+	SymbolEdgeKindCall SymbolEdgeKind = "call"
+)
+
+// Defines values for SymbolKind.
+const (
+	Function SymbolKind = "function"
+	Type     SymbolKind = "type"
 )
 
 // AiRisk defines model for AiRisk.
@@ -217,6 +235,45 @@ type Comment struct {
 // CommentSource defines model for Comment.Source.
 type CommentSource string
 
+// Commit defines model for Commit.
+type Commit struct {
+	Author  string   `json:"author"`
+	Date    string   `json:"date"`
+	Parents []string `json:"parents"`
+	Sha     string   `json:"sha"`
+	Short   string   `json:"short"`
+	Subject string   `json:"subject"`
+}
+
+// CommitList defines model for CommitList.
+type CommitList struct {
+	BaseRef  *string        `json:"baseRef,omitempty"`
+	Commits  []Commit       `json:"commits"`
+	HeadRef  *string        `json:"headRef,omitempty"`
+	Mode     ComparisonMode `json:"mode"`
+	Note     string         `json:"note"`
+	Repo     *string        `json:"repo,omitempty"`
+	Selected []string       `json:"selected"`
+	Subdir   *string        `json:"subdir,omitempty"`
+}
+
+// Comparison defines model for Comparison.
+type Comparison struct {
+	AfterLabel  string         `json:"afterLabel"`
+	BaseRef     *string        `json:"baseRef,omitempty"`
+	BeforeLabel string         `json:"beforeLabel"`
+	Commits     []Commit       `json:"commits"`
+	HeadRef     *string        `json:"headRef,omitempty"`
+	Mode        ComparisonMode `json:"mode"`
+	Note        string         `json:"note"`
+	Repo        *string        `json:"repo,omitempty"`
+	Selected    []string       `json:"selected"`
+	Subdir      *string        `json:"subdir,omitempty"`
+}
+
+// ComparisonMode defines model for ComparisonMode.
+type ComparisonMode string
+
 // Confidence defines model for Confidence.
 type Confidence string
 
@@ -267,15 +324,17 @@ type Quote struct {
 
 // Review defines model for Review.
 type Review struct {
-	After    string        `json:"after"`
-	Ai       AiSummary     `json:"ai"`
-	Before   string        `json:"before"`
-	Behavior BehaviorGraph `json:"behavior"`
-	Intent   Delta         `json:"intent"`
-	Logic    Delta         `json:"logic"`
-	Notes    []string      `json:"notes"`
-	Project  Delta         `json:"project"`
-	Signals  []Signal      `json:"signals"`
+	After      string        `json:"after"`
+	Ai         AiSummary     `json:"ai"`
+	Before     string        `json:"before"`
+	Behavior   BehaviorGraph `json:"behavior"`
+	Comparison Comparison    `json:"comparison"`
+	Intent     Delta         `json:"intent"`
+	Logic      Delta         `json:"logic"`
+	Notes      []string      `json:"notes"`
+	Project    Delta         `json:"project"`
+	Signals    []Signal      `json:"signals"`
+	Symbols    SymbolGraph   `json:"symbols"`
 }
 
 // ReviewRequest defines model for ReviewRequest.
@@ -310,6 +369,63 @@ type Signal struct {
 	Id         string     `json:"id"`
 	Severity   Severity   `json:"severity"`
 	Title      string     `json:"title"`
+}
+
+// SymbolEdge defines model for SymbolEdge.
+type SymbolEdge struct {
+	Delta    DeltaKind      `json:"delta"`
+	From     string         `json:"from"`
+	Id       string         `json:"id"`
+	Kind     SymbolEdgeKind `json:"kind"`
+	Line     int32          `json:"line"`
+	Resolved bool           `json:"resolved"`
+	To       string         `json:"to"`
+}
+
+// SymbolEdgeKind defines model for SymbolEdgeKind.
+type SymbolEdgeKind string
+
+// SymbolGraph defines model for SymbolGraph.
+type SymbolGraph struct {
+	Edges      []SymbolEdge `json:"edges"`
+	Nodes      []SymbolNode `json:"nodes"`
+	Stats      SymbolStats  `json:"stats"`
+	Unresolved []SymbolRef  `json:"unresolved"`
+}
+
+// SymbolKind defines model for SymbolKind.
+type SymbolKind string
+
+// SymbolNode defines model for SymbolNode.
+type SymbolNode struct {
+	Callees   int32      `json:"callees"`
+	Callers   int32      `json:"callers"`
+	Delta     DeltaKind  `json:"delta"`
+	Exported  bool       `json:"exported"`
+	File      string     `json:"file"`
+	Id        string     `json:"id"`
+	Kind      SymbolKind `json:"kind"`
+	Line      int32      `json:"line"`
+	Members   []string   `json:"members"`
+	Name      string     `json:"name"`
+	Package   string     `json:"package"`
+	Signature string     `json:"signature"`
+}
+
+// SymbolRef defines model for SymbolRef.
+type SymbolRef struct {
+	File string `json:"file"`
+	From string `json:"from"`
+	Line int32  `json:"line"`
+	Name string `json:"name"`
+}
+
+// SymbolStats defines model for SymbolStats.
+type SymbolStats struct {
+	Calls      int32 `json:"calls"`
+	Functions  int32 `json:"functions"`
+	Types      int32 `json:"types"`
+	Unresolved int32 `json:"unresolved"`
 }
 
 // PostReviewJSONRequestBody defines body for PostReview for application/json ContentType.

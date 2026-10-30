@@ -23,6 +23,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Payload'
+  /api/commits:
+    get:
+      summary: Commits available for selection
+      operationId: getCommits
+      responses:
+        '200':
+          description: Commit list for the configured comparison
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitList'
   /api/review:
     post:
       summary: Save the reviewer's notes
@@ -232,7 +243,7 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [before, after, project, logic, intent, signals, notes, behavior, ai]
+      required: [before, after, project, logic, intent, signals, notes, behavior, ai, comparison, symbols]
       properties:
         before: { type: string }
         after: { type: string }
@@ -247,6 +258,123 @@ components:
           items: { type: string }
         behavior: { $ref: '#/components/schemas/BehaviorGraph' }
         ai: { $ref: '#/components/schemas/AiSummary' }
+        comparison: { $ref: '#/components/schemas/Comparison' }
+        symbols: { $ref: '#/components/schemas/SymbolGraph' }
+
+    ComparisonMode:
+      type: string
+      enum: [folder, git]
+
+    Commit:
+      type: object
+      additionalProperties: false
+      required: [sha, short, subject, author, date, parents]
+      properties:
+        sha: { type: string }
+        short: { type: string }
+        subject: { type: string }
+        author: { type: string }
+        date: { type: string }
+        parents:
+          type: array
+          items: { type: string }
+
+    Comparison:
+      type: object
+      additionalProperties: false
+      required: [mode, beforeLabel, afterLabel, commits, selected, note]
+      properties:
+        mode: { $ref: '#/components/schemas/ComparisonMode' }
+        beforeLabel: { type: string }
+        afterLabel: { type: string }
+        repo: { type: string }
+        subdir: { type: string }
+        baseRef: { type: string }
+        headRef: { type: string }
+        commits:
+          type: array
+          items: { $ref: '#/components/schemas/Commit' }
+        selected:
+          type: array
+          items: { type: string }
+        note: { type: string }
+
+    SymbolKind:
+      type: string
+      enum: [function, type]
+
+    SymbolEdgeKind:
+      type: string
+      enum: [call]
+
+    SymbolNode:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, package, file, line, delta, signature, callers, callees, members, exported]
+      properties:
+        id: { type: string }
+        kind: { $ref: '#/components/schemas/SymbolKind' }
+        name: { type: string }
+        package: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+        delta: { $ref: '#/components/schemas/DeltaKind' }
+        signature: { type: string }
+        callers: { type: integer, format: int32 }
+        callees: { type: integer, format: int32 }
+        members:
+          type: array
+          items: { type: string }
+        exported: { type: boolean }
+
+    SymbolEdge:
+      type: object
+      additionalProperties: false
+      required: [id, from, to, kind, delta, line, resolved]
+      properties:
+        id: { type: string }
+        from: { type: string }
+        to: { type: string }
+        kind: { $ref: '#/components/schemas/SymbolEdgeKind' }
+        delta: { $ref: '#/components/schemas/DeltaKind' }
+        line: { type: integer, format: int32 }
+        resolved: { type: boolean }
+
+    SymbolRef:
+      type: object
+      additionalProperties: false
+      required: [name, from, file, line]
+      properties:
+        name: { type: string }
+        from: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+
+    SymbolStats:
+      type: object
+      additionalProperties: false
+      required: [functions, types, calls, unresolved]
+      properties:
+        functions: { type: integer, format: int32 }
+        types: { type: integer, format: int32 }
+        calls: { type: integer, format: int32 }
+        unresolved: { type: integer, format: int32 }
+
+    SymbolGraph:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges, unresolved, stats]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolEdge' }
+        unresolved:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolRef' }
+        stats: { $ref: '#/components/schemas/SymbolStats' }
 
     AiSummary:
       type: object
@@ -308,6 +436,24 @@ components:
         review: { $ref: '#/components/schemas/Review' }
         code: { $ref: '#/components/schemas/CodeBundle' }
 
+    CommitList:
+      type: object
+      additionalProperties: false
+      required: [mode, commits, selected, note]
+      properties:
+        mode: { $ref: '#/components/schemas/ComparisonMode' }
+        repo: { type: string }
+        subdir: { type: string }
+        baseRef: { type: string }
+        headRef: { type: string }
+        commits:
+          type: array
+          items: { $ref: '#/components/schemas/Commit' }
+        selected:
+          type: array
+          items: { type: string }
+        note: { type: string }
+
     Quote:
       type: object
       additionalProperties: false
@@ -327,7 +473,7 @@ components:
         id: { type: string }
         text: { type: string }
         title: { type: string }
-        source: { type: string, enum: [manual, signal] }
+        source: { type: string, enum: [manual, signal, ai] }
         signalId: { type: string }
         createdAt: { type: integer, format: int64 }
         quote: { $ref: '#/components/schemas/Quote' }

@@ -77,6 +77,17 @@ type BehaviorStats = contract.BehaviorStats
 type AISummary = contract.AiSummary
 type AIRisk = contract.AiRisk
 
+// 符号图：函数、类型与调用边。行为图之外的全量结构投影。
+type SymbolGraph = contract.SymbolGraph
+type SymbolNode = contract.SymbolNode
+type SymbolEdge = contract.SymbolEdge
+type SymbolRef = contract.SymbolRef
+type SymbolStats = contract.SymbolStats
+
+// Comparison 描述本次比较的来源：两个目录，或 Git 提交范围。
+type Comparison = contract.Comparison
+type Commit = contract.Commit
+
 // 行为视图的节点角色。名称来自 docs/07-behavior-model.md。
 const (
 	RoleTrigger   = contract.Trigger
@@ -87,10 +98,10 @@ const (
 
 // 行为视图的边类别。
 const (
-	EdgeCall     = contract.Call
-	EdgeData     = contract.Data
-	EdgeControl  = contract.Control
-	EdgeBoundary = contract.Boundary
+	EdgeCall     = contract.BehaviorEdgeKindCall
+	EdgeData     = contract.BehaviorEdgeKindData
+	EdgeControl  = contract.BehaviorEdgeKindControl
+	EdgeBoundary = contract.BehaviorEdgeKindBoundary
 )
 
 // 变更标记。
