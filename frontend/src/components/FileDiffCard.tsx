@@ -497,7 +497,7 @@ export const FileDiffCard = memo(function FileDiffCard({
           : <><span className={styles.dir}>{dir}</span><b>{name}</b></>}
       </span>
       <span className={cx(styles.badge, styles[`badge_${file.status}`])}>{STATUS[file.status]}</span>
-      <button type="button" className={styles.locate} aria-label={`在文件列表定位 ${name}`} title="在文件列表定位" onClick={() => dispatch({ type: 'tree/focus', path: file.path })}><IconLocate width={12} height={12} /></button>
+      <button type="button" className={styles.locate} aria-label={`在文件列表定位 ${name}`} title="在文件列表定位" onClick={() => dispatch({ type: 'tree/focus', path: file.path })}><IconLocate width={16} height={16} /></button>
       {hasGaps && <button type="button" className={styles.openAll} title="展开全部折叠行，显示整个文件" onClick={expandAllGaps}>展开全部</button>}
       <span className={styles.stat}><b className={styles.plus}>+{stat.adds}</b><b className={styles.minus}>−{stat.dels}</b></span>
       <label className={styles.viewed} title="标记整个文件已查看；取消会清除该文件的段落标记">
