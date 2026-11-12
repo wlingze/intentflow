@@ -1,0 +1,114 @@
+name: ci
+
+# PR 与 master 的合并门禁。四个 job 全部通过才算绿。
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+          # 项目没有任何 Go 依赖，go.sum 为空，缓存没有收益。
+          cache: false
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./cmd/... ./internal/...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # 版本与 Makefile 的 OAPI_VERSION 一致，避免生成物漂移。
+      # $GITHUB_PATH 只对后续 step 生效，所以必须在单独的 step 里写。
+      - name: Install oapi-codegen
+        run: |
+          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # make schema 同时生成 Go 与 TypeScript 两侧类型，需要 go 与 pnpm 都在 PATH 上。
+      - name: Regenerate from schema/openapi.yaml
+        run: make schema
+
+      - name: Generated types must match the schema
+        run: git diff --exit-code
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check website
+        run: node scripts/check-site.mjs
