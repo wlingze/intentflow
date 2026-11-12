@@ -1,5 +1,0 @@
-ts	phase	decision	why	evidence	result
-2026-10-30T07:46:15Z	frame	Prioritize review, then complete the symbol graph	Large-diff review is the primary user task	docs/09-review-platform.md;9d8f8b1	open
-2026-10-30T09:46:19Z	design	Git selection replays whole-file versions of selected commits	Patch-level replay of a subset is not representable with git apply alone	internal/gitcompare/gitcompare.go;gitcompare_test.go	accepted
-2026-10-30T09:46:19Z	design	Symbol graph reads types from SSA type objects, not Program.Blueprint	Blueprint holds only __GlobalVariables__ in yaklang Go frontend	internal/scan/symbols.go probe /tmp/typesprobe5.log	verified
-2026-10-30T09:46:19Z	verify	A* routing only for subgraphs <=90 edges, curves for the full graph	A* per edge on 1489 edges blocks the main thread	frontend/src/lib/symbolLayout.ts;rp-drill4/5.png	accepted
