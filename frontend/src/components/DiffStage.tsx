@@ -5,10 +5,12 @@ import { FileDiffCard } from './FileDiffCard';
 import { IconBranch } from './Icons';
 import styles from './DiffStage.module.css';
 
+const EMPTY_STAT = { adds: 0, dels: 0 };
+
 export function DiffStage() {
   const { code, viewed, payload, comments, reviewedHunks } = useApp();
   const dispatch = useAppDispatch();
-  const { files, truncated, skipped, digests } = useReviewData();
+  const { files, stats, truncated, skipped, digests } = useReviewData();
   const viewedEntry = (path: string) => `${path}#${digests.get(path) ?? ''}`;
   const base = payload?.review.comparison.beforeLabel ?? payload?.review.before ?? '';
   const after = payload?.review.comparison.afterLabel ?? payload?.review.after ?? '';
@@ -76,16 +78,14 @@ export function DiffStage() {
               layout={code.layout}
               wrap={code.wrap}
               viewed={viewed.includes(viewedEntry(file.path))}
-              comments={comments.filter((comment) => comment.quote?.file === file.path)}
-              reviewedHunks={reviewedHunks.filter((key) => key.startsWith(`${file.path}@`))}
-              onViewed={() => dispatch({ type: 'viewed/toggle', entry: viewedEntry(file.path) })}
-              onHunkToggle={(key) => dispatch({ type: 'hunk/toggle', key })}
-              onHunkReplace={(keys) => dispatch({ type: 'hunk/replace', file: file.path, keys })}
+              digest={digests.get(file.path) ?? ''}
+              stat={stats.get(file.path) ?? EMPTY_STAT}
+              comments={comments}
+              reviewedHunks={reviewedHunks}
               revealToken={code.reveal?.file === file.path ? code.revealToken : undefined}
               targetLine={code.reveal?.file === file.path ? code.line : undefined}
               targetSide={code.reveal?.file === file.path ? code.side : undefined}
               word={code.word}
-              onWord={(word) => dispatch({ type: 'code/word', word: word === code.word ? '' : word })}
             />
           ))}
           {files.length > 0 && (

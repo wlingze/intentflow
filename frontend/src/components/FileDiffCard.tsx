@@ -1,7 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { fileDiff } from '../lib/fileDiff';
 import { diffSections, growExpansion, splitPairs, type DiffLine, type DiffSection, type Expansion, type SplitPair } from '../lib/diffSections';
-import type { DiffRow } from '../lib/diff';
+import type { Hunk } from '../lib/hunks';
+import type { DiffRow, DiffStats } from '../lib/diff';
 import { cx } from '../lib/format';
 import { hashText } from '../lib/hash';
 import { useImagePaste } from '../hooks/useImagePaste';
@@ -24,21 +25,23 @@ interface Props {
   layout: Layout;
   wrap: boolean;
   viewed: boolean;
+  digest: string;
+  stat: DiffStats;
+  /** All comments; the card keeps only the ones quoting this file. */
   comments: Comment[];
+  /** All reviewed hunk keys; the card keeps only its own. */
   reviewedHunks: string[];
-  onViewed: () => void;
-  onHunkToggle: (key: string) => void;
-  onHunkReplace: (keys: string[]) => void;
   targetLine?: number;
   targetSide?: Side;
   defaultOpen?: boolean;
   revealToken?: number;
   word: string;
-  onWord: (word: string) => void;
 }
 type Item = { type: 'gap'; section: DiffSection } | { type: 'header'; text: string; key: number; hash: string } | { type: 'line'; pair?: SplitPair; row?: DiffRow };
 const STATUS = { added: '新增', removed: '删除', modified: '修改', unchanged: '未变', renamed: '重命名' };
 const EMPTY: Record<number, Expansion> = {};
+const EMPTY_ROWS: DiffRow[] = [];
+const EMPTY_HUNKS: Hunk[] = [];
 // Row range picked by dragging. `side` fixes the column in split view; unified
 // has one side per row, so it spans whatever side each row carries.
 interface PickedRange { side: Side; anchor: number; focus: number }
@@ -175,19 +178,20 @@ export const FileDiffCard = memo(function FileDiffCard({
   layout,
   wrap,
   viewed,
+  digest,
+  stat,
   comments,
   reviewedHunks,
-  onViewed,
-  onHunkToggle,
-  onHunkReplace,
   targetLine,
   targetSide = 'after',
   defaultOpen = true,
   revealToken,
   word,
-  onWord,
 }: Props) {
   const dispatch = useAppDispatch();
+  // Cards compute their diff only when opened and close to the viewport; a
+  // 1700-file review otherwise blocks the main thread for seconds.
+  const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(defaultOpen && !viewed);
   const [expanded, setExpanded] = useState<Record<number, Expansion>>(EMPTY);
   const [comment, setComment] = useState<{ side: Side; start: number; end: number; snippet: string } | null>(null);
@@ -209,7 +213,26 @@ export const FileDiffCard = memo(function FileDiffCard({
   useEffect(() => () => selectionCleanup.current(), []);
   pickedRef.current = picked;
   const lastReveal = useRef('');
-  const { rows, hunks, stats } = fileDiff(file);
+  useEffect(() => {
+    if (!open || ready) return;
+    const element = root.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === 'undefined') { setReady(true); return; }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setReady(true);
+    }, { rootMargin: '1200px 0px' });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [open, ready]);
+  const diff = ready ? fileDiff(file) : null;
+  const rows = diff?.rows ?? EMPTY_ROWS;
+  const hunks = diff?.hunks ?? EMPTY_HUNKS;
+  const pathComments = useMemo(() => comments.filter((entry) => entry.quote?.file === file.path), [comments, file.path]);
+  const pathReviewed = useMemo(() => reviewedHunks.filter((key) => key.startsWith(`${file.path}@`)), [reviewedHunks, file.path]);
+  const onViewed = () => dispatch({ type: 'viewed/toggle', entry: `${file.path}#${digest}` });
+  const onHunkToggle = (key: string) => dispatch({ type: 'hunk/toggle', key });
+  const onHunkReplace = (keys: string[]) => dispatch({ type: 'hunk/replace', file: file.path, keys });
+  const onWord = (next: string) => dispatch({ type: 'code/word', word: next === word ? '' : next });
   const sections = useMemo(() => diffSections(rows, hunks, expanded), [rows, hunks, expanded]);
   const items = useMemo(() => {
     const out: Item[] = [];
@@ -229,7 +252,7 @@ export const FileDiffCard = memo(function FileDiffCard({
     return out;
   }, [sections, rows, layout]);
   const hunkKeys = useMemo(() => items.flatMap((item) => item.type === 'header' ? [`${file.path}@${item.key}#${item.hash}`] : []), [items, file.path]);
-  const reviewedSet = useMemo(() => new Set(reviewedHunks), [reviewedHunks]);
+  const reviewedSet = useMemo(() => new Set(pathReviewed), [pathReviewed]);
   const allHunksReviewed = hunkKeys.length > 0 && hunkKeys.every((key) => viewed || reviewedSet.has(key));
   // Every hunk in the file is reviewed -> the whole file counts as viewed.
   useEffect(() => { if (allHunksReviewed && !viewed) onViewed(); }, [allHunksReviewed, viewed, onViewed]);
@@ -246,43 +269,45 @@ export const FileDiffCard = memo(function FileDiffCard({
     return { before, after, code: Math.max(before, after) };
   }, [items]);
 
-  // 定位到行：先展开包含该行的折叠区，再滚动。
+  // 定位到行：先展开包含该行的折叠区，等重排完成后再滚动。
+  const [pendingScroll, setPendingScroll] = useState('');
   useEffect(() => {
-    if (revealToken === undefined || !targetLine) return;
+    if (revealToken === undefined || !open) return;
+    const key = `${file.path}:${revealToken}:${targetSide}:${targetLine}`;
+    if (lastReveal.current === key) return;
+    if (!targetLine) { setPendingScroll(key); return; }
     const index = rows.findIndex((row) => targetSide === 'before' ? row.type !== 'add' && row.a.n === targetLine : row.type !== 'del' && row.b.n === targetLine);
     if (index < 0) return;
     const next = hunks.find((hunk) => hunk.start > index);
     const previous = [...hunks].reverse().find((hunk) => hunk.start + hunk.rows.length <= index);
     const start = previous ? previous.start + previous.rows.length : 0;
     const end = next ? next.start : rows.length;
-    if (start >= end || index < start || index >= end) return;
+    if (start >= end || index < start || index >= end) { setPendingScroll(key); return; }
     const fromTop = index - start;
     const fromBottom = end - index;
     setExpanded((current) => {
       const gap = current[start] ?? { top: 0, bottom: 0 };
-      if (fromTop <= fromBottom) {
-        return { ...current, [start]: { ...gap, top: Math.max(gap.top, fromTop + 4) } };
-      }
+      if (fromTop <= fromBottom) return { ...current, [start]: { ...gap, top: Math.max(gap.top, fromTop + 4) } };
       return { ...current, [start]: { ...gap, bottom: Math.max(gap.bottom, fromBottom + 4) } };
     });
-  }, [revealToken, targetLine, targetSide, rows, hunks]);
+    setPendingScroll(key);
+  }, [revealToken, targetLine, targetSide, rows, hunks, open, file.path]);
 
   useEffect(() => {
-    if (revealToken === undefined || !open) return;
-    const key = `${file.path}:${revealToken}:${targetSide}:${targetLine}`;
-    if (lastReveal.current === key) return;
+    if (!pendingScroll || !ready || !open) return;
     const scroller = content.current?.closest<HTMLElement>('[data-review-scroll]');
-    if (!scroller || !root.current) return;
+    const element = root.current;
+    if (!scroller || !element) return;
     const index = targetLine ? items.findIndex((item) => itemLines(item)[targetSide]?.n === targetLine) : -1;
     if (targetLine && index < 0) return;
-    lastReveal.current = key;
-    const element = root.current;
+    lastReveal.current = pendingScroll;
+    setPendingScroll('');
     // Keep the target below the floating search panel instead of hiding it.
     const panel = document.querySelector<HTMLElement>('[data-search-panel="true"]');
     const offset = panel ? Math.max(100, panel.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + 16) : 100;
     const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (index >= 0 ? virtual.offsetOf(index) - offset : 0);
     scroller.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
-  }, [items, open, targetLine, targetSide, revealToken, virtual, file.path, content]);
+  }, [pendingScroll, ready, open, items, virtual, targetLine, targetSide]);
 
   const expand = (section: DiffSection, end: 'top' | 'bottom') => setExpanded((current) => {
     const next = growExpansion(section, current[section.key] ?? { top: 0, bottom: 0 }, end);
@@ -456,7 +481,7 @@ export const FileDiffCard = memo(function FileDiffCard({
       <span className={cx(styles.badge, styles[`badge_${file.status}`])}>{STATUS[file.status]}</span>
       <button type="button" className={styles.locate} aria-label={`在文件列表定位 ${name}`} title="在文件列表定位" onClick={() => dispatch({ type: 'tree/focus', path: file.path })}><IconLocate width={12} height={12} /></button>
       {hasGaps && <button type="button" className={styles.openAll} title="展开全部折叠行，显示整个文件" onClick={expandAllGaps}>展开全部</button>}
-      <span className={styles.stat}><b className={styles.plus}>+{stats.adds}</b><b className={styles.minus}>−{stats.dels}</b></span>
+      <span className={styles.stat}><b className={styles.plus}>+{stat.adds}</b><b className={styles.minus}>−{stat.dels}</b></span>
       <label className={styles.viewed} title="标记整个文件已查看；取消会清除该文件的段落标记">
         <input type="checkbox" checked={viewed || allHunksReviewed} onChange={() => {
           if (viewed || allHunksReviewed) { if (viewed) onViewed(); onHunkReplace([]); }
@@ -465,7 +490,7 @@ export const FileDiffCard = memo(function FileDiffCard({
         <span>已查看</span>
       </label>
     </header>
-    {open && <div ref={content} className={styles.body} onPointerDown={beginSelection}>
+    {open && ready && <div ref={content} className={styles.body} onPointerDown={beginSelection}>
       {!items.length && <div className={styles.clean}>没有可显示的文本改动。</div>}
       <div aria-hidden style={{ height: view.top }} />
       {items.slice(view.start, view.end).map((item, offset) => {
@@ -511,7 +536,7 @@ export const FileDiffCard = memo(function FileDiffCard({
             {layout === 'split' ? <>{renderGutter('before', lines.before)}{cell(index, 'before', lines.before, changed && lines.before ? 'del' : undefined)}{renderGutter('after', lines.after)}{cell(index, 'after', lines.after, changed && lines.after ? 'add' : undefined)}</> : <>{renderGutter('before', lines.before)}{renderGutter('after', lines.after)}{cell(index, item.row!.type === 'del' ? 'before' : 'after', lines.after ?? lines.before, item.row!.type === 'equal' ? undefined : item.row!.type)}</>}
           </div>
           {(() => {
-            const attached = comments.filter((entry) => entry.quote && entry.quote.end === (entry.quote.side === 'before' ? lines.before?.n : lines.after?.n));
+            const attached = pathComments.filter((entry) => entry.quote && entry.quote.end === (entry.quote.side === 'before' ? lines.before?.n : lines.after?.n));
             return attached.length ? <div className={styles.inlineThread}>{attached.map((entry) => <CommentCard key={entry.id} comment={entry} compact />)}</div> : null;
           })()}
           {commentHere && <form className={styles.inlineComment} onSubmit={(event) => {
