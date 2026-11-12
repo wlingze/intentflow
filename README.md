@@ -194,6 +194,7 @@ make check    # go vet、Go 测试、tsc、Vitest
 make build    # 前端构建 + 静态二进制
 make e2e      # 真实布局下的滚动、行内标记、跳转检查
 make release-check  # 六个平台交叉编译验证
+make site     # 官网本地预览，http://127.0.0.1:8131/
 ```
 
 `make e2e` 需要一个已启动的服务：
@@ -204,6 +205,31 @@ make e2e E2E_URL=http://127.0.0.1:8123
 ```
 
 `schema/openapi.yaml` 是唯一数据契约，两侧类型都由它生成。
+
+## 官网
+
+`website/` 是项目的静态官网，无构建步骤、无包管理器、无第三方运行时请求。
+部署在 <https://wlingze.github.io/intentflow/> 子路径下，所以站内链接与资源
+全部用相对路径（`./assets/...`）。
+
+```bash
+make site         # python3 -m http.server --directory website 0.0.0.0 8131
+make site-check   # node scripts/check-site.mjs
+```
+
+用 `make site` 打开 <http://127.0.0.1:8131/>，不要用 `file://`：语言与主题的
+localStorage 行为在 `file://` 下不一致。
+
+站内中英双语共用同一份 HTML：首次访问按 `navigator.languages` 自动选择，
+选择存 `intentflow.lang`，右上角按钮即时切换、不改 URL、不刷新页面。主题
+默认跟随 `prefers-color-scheme`，选择存 `intentflow.theme`。中英文案只在
+`website/assets/app.js` 的字典里，HTML 里写英文作无脚本兜底。
+
+`make site-check` 校验必需文件、相对路径、只有 GitHub 外链、两种语言 key
+集合一致，以及 HTML 兜底文案与英文字典一致。改官网时先跑它。
+
+`.github/workflows/pages.yml` 在 `master` 上 `website/**` 变更后发布，
+上传前同样跑一遍校验。编辑规则见 [website/README.md](website/README.md)。
 
 ## 目录
 
@@ -219,6 +245,7 @@ internal/version/     版本号、提交、构建时间
 frontend/             React + TypeScript + Vite
 examples/demo-go/     单文件 demo
 docs/                 设计文档
+website/              静态官网（GitHub Pages）
 ```
 
 ## 文档
