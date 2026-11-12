@@ -38,6 +38,18 @@ export function diffSections(rows: DiffRow[], hunks: Hunk[], expanded: Record<nu
   }, []);
 }
 
+/**
+ * Next expansion state after revealing one more step from `end`.
+ * `section` is the gap as currently drawn, so its length is the room that is
+ * left; stored counters already moved `start`, subtracting them again would
+ * stall the gap while lines are still hidden.
+ */
+export function growExpansion(section: DiffSection, previous: Expansion, end: 'top' | 'bottom', step = 5): Expansion | null {
+  const room = section.end - section.start;
+  if (room <= 0) return null;
+  return { ...previous, [end]: previous[end] + Math.min(step, room) };
+}
+
 export interface DiffLine { n: number; text: string }
 export interface SplitPair { left?: DiffLine; right?: DiffLine; changed: boolean }
 export function splitPairs(rows: DiffRow[]): SplitPair[] {

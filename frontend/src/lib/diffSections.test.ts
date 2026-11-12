@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { diffLines } from './diff';
 import { buildHunks } from './hunks';
-import { diffSections, splitPairs } from './diffSections';
+import { diffSections, growExpansion, splitPairs } from './diffSections';
 
 /** Two changes far apart: one middle gap, plus leading and trailing gaps. */
 const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
@@ -69,5 +69,17 @@ describe('splitPairs', () => {
       ['b', 'b'],
       [undefined, 'c'],
     ]);
+  });
+
+  it('keeps revealing until the gap closes', () => {
+    // 交替从两端展开：剩下最后 5 行时，再点一次仍必须能展开。
+    const gap = middleGap()!;
+    const length = gap.end - gap.start;
+    const openAllButFive = { top: Math.floor((length - 5) / 2), bottom: Math.ceil((length - 5) / 2) };
+    const left = middleGap({ [gap.key]: openAllButFive })!;
+    expect(left.end - left.start).toBe(5);
+    const next = growExpansion(left, openAllButFive, 'top');
+    expect(next).not.toBeNull();
+    expect(middleGap({ [gap.key]: next! })).toBeUndefined();
   });
 });

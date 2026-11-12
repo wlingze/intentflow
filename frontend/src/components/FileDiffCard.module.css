@@ -5,6 +5,8 @@
 .toggle { border: 0; background: transparent; color: var(--dim); cursor: pointer; }
 .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font: 12px var(--mono); }
 .dir { color: var(--faint); }
+.oldPath { color: var(--faint); text-decoration: line-through; }
+.arrow { margin: 0 4px; color: var(--faint); }
 .fileIcon { margin-right: -2px; }
 .path b { font-weight: 600; }
 .viewed { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--dim); font: 11px var(--sans); cursor: pointer; user-select: none; }
@@ -16,6 +18,9 @@
 .badge_added { color: var(--green); background: var(--green-soft); }
 .badge_removed { color: var(--red); background: var(--red-soft); }
 .badge_modified { color: var(--amber); background: var(--amber-soft); }
+.badge_renamed { color: var(--blue); background: var(--blue-soft); }
+.openAll { flex: none; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--dim); font: 11px var(--sans); }
+.openAll:hover { border-color: var(--line-strong); color: var(--ink); }
 .stat { margin-left: auto; display: flex; gap: 6px; flex: none; font: 11px var(--mono); }
 .plus { color: var(--green); }.minus { color: var(--red); }
 .body { font: 12px/22px var(--mono); position: relative; }

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { fileDiff } from '../lib/fileDiff';
-import { diffSections, splitPairs, type DiffLine, type DiffSection, type Expansion, type SplitPair } from '../lib/diffSections';
+import { diffSections, growExpansion, splitPairs, type DiffLine, type DiffSection, type Expansion, type SplitPair } from '../lib/diffSections';
 import type { DiffRow } from '../lib/diff';
 import { cx } from '../lib/format';
 import { hashText } from '../lib/hash';
@@ -37,7 +37,7 @@ interface Props {
   onWord: (word: string) => void;
 }
 type Item = { type: 'gap'; section: DiffSection } | { type: 'header'; text: string; key: number; hash: string } | { type: 'line'; pair?: SplitPair; row?: DiffRow };
-const STATUS = { added: '新增', removed: '删除', modified: '修改', unchanged: '未变' };
+const STATUS = { added: '新增', removed: '删除', modified: '修改', unchanged: '未变', renamed: '重命名' };
 const EMPTY: Record<number, Expansion> = {};
 // Row range picked by dragging. `side` fixes the column in split view; unified
 // has one side per row, so it spans whatever side each row carries.
@@ -285,11 +285,24 @@ export const FileDiffCard = memo(function FileDiffCard({
   }, [items, open, targetLine, targetSide, revealToken, virtual, file.path, content]);
 
   const expand = (section: DiffSection, end: 'top' | 'bottom') => setExpanded((current) => {
-    const previous = current[section.key] ?? { top: 0, bottom: 0 };
-    const room = section.end - section.start - previous.top - previous.bottom;
-    if (room <= 0) return current;
-    return { ...current, [section.key]: { ...previous, [end]: previous[end] + Math.min(5, room) } };
+    const next = growExpansion(section, current[section.key] ?? { top: 0, bottom: 0 }, end);
+    return next ? { ...current, [section.key]: next } : current;
   });
+  // 打开整个文件：每个折叠区一次露完，不用连点几十次。
+  const revealWholeGap = (section: DiffSection) => setExpanded((current) => {
+    const previous = current[section.key] ?? { top: 0, bottom: 0 };
+    return { ...current, [section.key]: { top: previous.top + (section.end - section.start), bottom: previous.bottom } };
+  });
+  const expandAllGaps = () => setExpanded((current) => {
+    const next = { ...current };
+    for (const section of sections) {
+      if (section.type !== 'gap') continue;
+      const previous = current[section.key] ?? { top: 0, bottom: 0 };
+      next[section.key] = { top: previous.top + (section.end - section.start), bottom: previous.bottom };
+    }
+    return next;
+  });
+  const hasGaps = sections.some((section) => section.type === 'gap');
   itemsRef.current = items;
   // The diff draws its own selection, so Ctrl+C is served from the line range
   // instead of the browser selection. Clicking outside or Esc clears it.
@@ -435,11 +448,14 @@ export const FileDiffCard = memo(function FileDiffCard({
         {open ? <IconChevronDown width={14} height={14} /> : <IconChevronRight width={14} height={14} />}
       </button>
       <FileIcon name={name} size={14} className={styles.fileIcon} />
-      <span className={styles.path} title={file.path}>
-        <span className={styles.dir}>{dir}</span><b>{name}</b>
+      <span className={styles.path} title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
+        {file.old_path
+          ? <><span className={styles.oldPath}>{file.old_path}</span><span className={styles.arrow}>→</span><b>{name}</b></>
+          : <><span className={styles.dir}>{dir}</span><b>{name}</b></>}
       </span>
       <span className={cx(styles.badge, styles[`badge_${file.status}`])}>{STATUS[file.status]}</span>
       <button type="button" className={styles.locate} aria-label={`在文件列表定位 ${name}`} title="在文件列表定位" onClick={() => dispatch({ type: 'tree/focus', path: file.path })}><IconLocate width={12} height={12} /></button>
+      {hasGaps && <button type="button" className={styles.openAll} title="展开全部折叠行，显示整个文件" onClick={expandAllGaps}>展开全部</button>}
       <span className={styles.stat}><b className={styles.plus}>+{stats.adds}</b><b className={styles.minus}>−{stats.dels}</b></span>
       <label className={styles.viewed} title="标记整个文件已查看；取消会清除该文件的段落标记">
         <input type="checkbox" checked={viewed || allHunksReviewed} onChange={() => {
@@ -454,14 +470,21 @@ export const FileDiffCard = memo(function FileDiffCard({
       <div aria-hidden style={{ height: view.top }} />
       {items.slice(view.start, view.end).map((item, offset) => {
         const index = view.start + offset;
-        if (item.type === 'gap') return <div key={index} data-virtual-row={index} className={styles.gap} title="点击向下露出 5 行" onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) expand(item.section, 'top'); }}>
-          <div className={styles.expanders}>
-            {!item.section.leading && <button type="button" className={styles.expandUp} aria-label="向上展开 5 行" title="向上露出 5 行" onClick={() => expand(item.section, 'bottom')}><IconChevronDown width={12} height={12} /></button>}
-            {!item.section.trailing && <button type="button" className={styles.expandDown} aria-label="向下展开 5 行" title="向下露出 5 行" onClick={() => expand(item.section, 'top')}><IconChevronDown width={12} height={12} /></button>}
-          </div>
-          <button type="button" className={styles.gapLabel} title="向下露出 5 行" onClick={() => expand(item.section, 'top')}>已折叠 {item.section.end - item.section.start} 行</button>
-          <em>每次 5 行</em>
-        </div>;
+        if (item.type === 'gap') {
+          // Chevron direction follows what appears on screen: up reveals lines
+          // above the gap row, down reveals lines below it. Leading/trailing
+          // gaps keep the one side that actually has hidden lines.
+          const open = item.section.leading ? 'bottom' : 'top';
+          const title = item.section.leading ? '向下露出 5 行' : '向上露出 5 行';
+          return <div key={index} data-virtual-row={index} className={styles.gap} title={title} onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) expand(item.section, open); }}>
+            <div className={styles.expanders}>
+              {!item.section.leading && <button type="button" className={styles.expandUp} aria-label="向上展开 5 行" title="向上露出 5 行" onClick={() => expand(item.section, 'top')}><IconChevronDown width={12} height={12} /></button>}
+              {!item.section.trailing && <button type="button" className={styles.expandDown} aria-label="向下展开 5 行" title="向下露出 5 行" onClick={() => expand(item.section, 'bottom')}><IconChevronDown width={12} height={12} /></button>}
+            </div>
+            <button type="button" className={styles.gapLabel} title={`${title}；双击展开整段`} onClick={() => expand(item.section, open)} onDoubleClick={(event) => { event.preventDefault(); revealWholeGap(item.section); }}>已折叠 {item.section.end - item.section.start} 行</button>
+            <em>每次 5 行</em>
+          </div>;
+        }
         if (item.type === 'header') {
           const fullKey = `${file.path}@${item.key}#${item.hash}`;
           const done = viewed || reviewedSet.has(fullKey);
