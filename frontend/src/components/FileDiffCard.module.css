@@ -10,6 +10,8 @@
 .viewed { flex: none; display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--dim); font: 11px var(--sans); cursor: pointer; user-select: none; }
 .viewed:hover { border-color: var(--line-strong); color: var(--ink); }
 .viewed input { width: 13px; height: 13px; accent-color: var(--accent); margin: 0; }
+.locate { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--faint); opacity: 0.8; }
+.locate:hover { opacity: 1; border-color: var(--line); background: var(--panel); color: var(--ink); }
 .badge { flex: none; font-size: 10px; padding: 1px 4px; border-radius: 3px; }
 .badge_added { color: var(--green); background: var(--green-soft); }
 .badge_removed { color: var(--red); background: var(--red-soft); }

@@ -187,3 +187,21 @@ export function IconPanel(props: IconProps) {
     </svg>
   );
 }
+
+export function IconChevrons({ up = false, style, ...props }: IconProps & { up?: boolean }) {
+  return (
+    <svg {...base(props)} style={{ transition: 'transform 0.12s', transform: up ? 'rotate(180deg)' : undefined, ...style }}>
+      <path d="M6 9l6-5 6 5" />
+      <path d="M6 16l6-5 6 5" />
+    </svg>
+  );
+}
+
+export function IconLocate(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
+  );
+}

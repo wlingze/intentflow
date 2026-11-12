@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTree, countFiles, countViewed, flattenTree } from './tree';
+import { allDirs, buildTree, countFiles, countViewed, dirAncestors, flattenTree } from './tree';
 import type { CodeFile, CodeStatus } from '../types';
 
 function file(path: string, status: CodeStatus = 'modified'): CodeFile {
@@ -35,5 +35,18 @@ describe('sidebar order', () => {
   it('ignores unchanged files when onlyChanged is set', () => {
     const files = [file('a.go'), file('b.go', 'unchanged')];
     expect(flattenTree(buildTree(files, true))).toEqual(['a.go']);
+  });
+
+  it('lists ancestor directories shallowest first', () => {
+    expect(dirAncestors('a/b/c.go')).toEqual(['a', 'a/b']);
+    expect(dirAncestors('main.go')).toEqual([]);
+  });
+  it('collects every directory for expand-all', () => {
+    const tree = buildTree([
+      { path: 'a/b/one.go', status: 'added', language: 'go', before: '', after: 'x' },
+      { path: 'a/two.go', status: 'modified', language: 'go', before: 'x', after: 'y' },
+      { path: 'c.go', status: 'added', language: 'go', before: '', after: 'z' },
+    ], true);
+    expect([...allDirs(tree)].sort()).toEqual(['a', 'a/b']);
   });
 });

@@ -56,6 +56,28 @@ export function buildTree(files: CodeFile[], onlyChanged: boolean): TreeNode[] {
   return sortNodes(root.children);
 }
 
+// Ancestor directories of a file path, shallowest first.
+export function dirAncestors(path: string): string[] {
+  const parts = path.split('/');
+  const dirs: string[] = [];
+  for (let index = 1; index < parts.length; index++) dirs.push(parts.slice(0, index).join('/'));
+  return dirs;
+}
+
+// Every directory path in the tree; used by expand/collapse-all.
+export function allDirs(nodes: TreeNode[]): Set<string> {
+  const dirs = new Set<string>();
+  const walk = (list: TreeNode[]) => {
+    for (const node of list) {
+      if (node.type !== 'dir') continue;
+      dirs.add(node.path);
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return dirs;
+}
+
 export function countFiles(node: TreeNode): number {
   if (node.type === 'file') return 1;
   return node.children.reduce((total, child) => total + countFiles(child), 0);

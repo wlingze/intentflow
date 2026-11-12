@@ -14,7 +14,7 @@ import { useDiffWindow } from '../hooks/useDiffWindow';
 import { useAppDispatch } from '../state/AppProvider';
 import type { CodeFile, Comment, Side } from '../types';
 import { CommentCard } from './CommentCard';
-import { IconChevronDown, IconChevronRight } from './Icons';
+import { IconChevronDown, IconChevronRight, IconLocate } from './Icons';
 import { FileIcon } from './FileTypeIcon';
 import styles from './FileDiffCard.module.css';
 
@@ -439,6 +439,7 @@ export const FileDiffCard = memo(function FileDiffCard({
         <span className={styles.dir}>{dir}</span><b>{name}</b>
       </span>
       <span className={cx(styles.badge, styles[`badge_${file.status}`])}>{STATUS[file.status]}</span>
+      <button type="button" className={styles.locate} aria-label={`在文件列表定位 ${name}`} title="在文件列表定位" onClick={() => dispatch({ type: 'tree/focus', path: file.path })}><IconLocate width={12} height={12} /></button>
       <span className={styles.stat}><b className={styles.plus}>+{stats.adds}</b><b className={styles.minus}>−{stats.dels}</b></span>
       <label className={styles.viewed} title="标记整个文件已查看；取消会清除该文件的段落标记">
         <input type="checkbox" checked={viewed || allHunksReviewed} onChange={() => {

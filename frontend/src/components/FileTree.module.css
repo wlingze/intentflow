@@ -40,6 +40,30 @@
   background: var(--accent-soft);
 }
 
+.expandAll {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 19px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.expandAll:hover {
+  border-color: var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+.fileRowFlash {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 .scroll {
   flex: 1;
   min-height: 0;

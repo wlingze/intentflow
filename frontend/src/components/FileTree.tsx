@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { buildTree, countChanged, countFiles, countViewed, type TreeNode } from '../lib/tree';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { allDirs, buildTree, countChanged, countFiles, countViewed, dirAncestors, type TreeNode } from '../lib/tree';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { DiffStats } from '../lib/diff';
-import { IconChevronRight, IconComment, IconFolder } from './Icons';
+import { IconChevronRight, IconChevrons, IconComment, IconFolder } from './Icons';
 import { FileIcon } from './FileTypeIcon';
 import styles from './FileTree.module.css';
 
@@ -29,10 +29,11 @@ interface RowsProps {
   commentCounts: Map<string, number>;
   expanded: Set<string>;
   onToggle: (path: string, open: boolean) => void;
+  flash?: string;
   depth?: number;
 }
 
-function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onToggle, depth = 0 }: RowsProps) {
+function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onToggle, flash = '', depth = 0 }: RowsProps) {
   const dispatch = useAppDispatch();
   // A viewed mark only counts while the file content still matches its digest.
   const isViewed = (path: string) => viewed.includes(`${path}#${digests.get(path) ?? ''}`);
@@ -64,7 +65,7 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
                 {changed > 0 && <span className={styles.count}>{changed}</span>}
                 {allViewed && <span className={styles.check} aria-label="已查看">✓</span>}
               </summary>
-              <FileRows nodes={node.children} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={expanded} onToggle={onToggle} depth={depth + 1} />
+              <FileRows nodes={node.children} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={expanded} onToggle={onToggle} flash={flash} depth={depth + 1} />
             </details>
           );
         }
@@ -77,7 +78,8 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
           <button
             key={node.path}
             type="button"
-            className={`${styles.fileRow} ${done ? styles.fileRowDone : ''}`}
+            className={`${styles.fileRow} ${done ? styles.fileRowDone : ''} ${flash === node.path ? styles.fileRowFlash : ''}`}
+            data-tree-path={node.path}
             style={{ paddingLeft: 22 + depth * 12 }}
             title={node.path}
             onClick={() => dispatch({ type: 'code/reveal', file: node.path })}
@@ -134,28 +136,8 @@ function collectStats(nodes: TreeNode[], stats: Map<string, DiffStats>): { adds:
   return { adds, dels, changed, files };
 }
 
-function dirAncestors(path: string): string[] {
-  const parts = path.split('/');
-  const dirs: string[] = [];
-  for (let index = 1; index < parts.length; index++) dirs.push(parts.slice(0, index).join('/'));
-  return dirs;
-}
-
-function allDirs(nodes: TreeNode[]): Set<string> {
-  const dirs = new Set<string>();
-  const walk = (list: TreeNode[]) => {
-    for (const node of list) {
-      if (node.type !== 'dir') continue;
-      dirs.add(node.path);
-      walk(node.children);
-    }
-  };
-  walk(nodes);
-  return dirs;
-}
-
 export function FileTree() {
-  const { viewed, comments, code } = useApp();
+  const { viewed, comments, code, treeFocus } = useApp();
   const { files, stats, digests } = useReviewData();
   const commentCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -168,6 +150,8 @@ export function FileTree() {
   const [filter, setFilter] = useState('');
   // Directories start collapsed; jumps and filtering open what is needed.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [flash, setFlash] = useState('');
+  const scroller = useRef<HTMLDivElement>(null);
   const tree = useMemo(
     () => buildTree(files.filter((file) => file.path.toLowerCase().includes(filter.toLowerCase())), true),
     [files, filter],
@@ -175,6 +159,14 @@ export function FileTree() {
   const totals = collectStats(buildTree(files, true), stats);
   const visibleDirs = useMemo(() => filter ? allDirs(tree) : null, [filter, tree]);
   const open = visibleDirs ?? expanded;
+  const dirs = useMemo(() => allDirs(tree), [tree]);
+  const allOpen = dirs.size > 0 && [...dirs].every((dir) => expanded.has(dir));
+
+  const toggleAll = () => setExpanded((prev) => {
+    const list = allDirs(tree);
+    const every = list.size > 0 && [...list].every((dir) => prev.has(dir));
+    return every ? new Set<string>() : list;
+  });
 
   const onToggle = (path: string, isOpen: boolean) => setExpanded((prev) => {
     if (prev.has(path) === isOpen) return prev;
@@ -183,6 +175,28 @@ export function FileTree() {
     else next.delete(path);
     return next;
   });
+
+  // 「在文件列表定位」从 diff 卡片跳到左栏：清掉过滤词、展开祖先目录、闪一下行。
+  useEffect(() => {
+    if (!treeFocus) return;
+    setFilter('');
+    const ancestors = dirAncestors(treeFocus.path);
+    setExpanded((prev) => {
+      if (ancestors.every((dir) => prev.has(dir))) return prev;
+      const next = new Set(prev);
+      for (const dir of ancestors) next.add(dir);
+      return next;
+    });
+    setFlash(treeFocus.path);
+    const timer = window.setTimeout(() => setFlash(''), 1600);
+    return () => window.clearTimeout(timer);
+  }, [treeFocus]);
+
+  useEffect(() => {
+    if (!flash) return;
+    const row = scroller.current?.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(flash)}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [flash, tree]);
 
   // Revealing a file from search, the symbol panel or a comment opens its path.
   const reveal = code.reveal?.file ?? '';
@@ -205,6 +219,7 @@ export function FileTree() {
         <div className={styles.sub}>
           <span>{files.length} 个</span>
           <span className={styles.factCount}><b className={styles.plus}>+{totals.adds}</b> <b className={styles.minus}>−{totals.dels}</b></span>
+          {!filter && dirs.size > 0 && <button type="button" className={styles.expandAll} aria-label={allOpen ? '折叠全部目录' : '展开全部目录'} aria-pressed={allOpen} title={allOpen ? '折叠全部目录' : '展开全部目录'} onClick={toggleAll}><IconChevrons width={13} height={13} up={allOpen} /></button>}
         </div>
       </div>
 
@@ -216,10 +231,10 @@ export function FileTree() {
         onChange={(event) => setFilter(event.target.value)}
       />
 
-      <div className={styles.scroll}>
+      <div ref={scroller} className={styles.scroll}>
         {tree.length ? (
           <div className={styles.tree}>
-            <FileRows nodes={tree} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={open} onToggle={onToggle} />
+            <FileRows nodes={tree} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={open} onToggle={onToggle} flash={flash} />
           </div>
         ) : (
           <div className={styles.empty}>没有可显示的文件</div>
