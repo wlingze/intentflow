@@ -33,6 +33,26 @@ export function SubmitMenu() {
   const markdown = () => buildReviewMarkdown(state.payload!.review, reviewDocument(state));
   const json = () => JSON.stringify(reviewDocument(state), null, 2) + '\n';
   const close = () => setOpen(false);
+  // Cmd/Ctrl+Enter submits without the menu: Markdown is the artifact people
+  // paste into a PR. Text fields (the comment composer) keep their own binding.
+  const submit = async () => {
+    const ok = await copyText(markdown());
+    toast(ok ? 'Review Markdown 已复制' : '复制失败', ok ? 'success' : 'error');
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key !== 'Enter' || event.isComposing) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      void submit();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state.payload, state.comments, state.viewed, state.reviewedHunks]);
 
   const copy = async (text: string, label: string) => {
     const ok = await copyText(text);
@@ -54,6 +74,7 @@ export function SubmitMenu() {
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={!!state.revisionLoading}
+        title="提交 Review（⌘↵ 或 Ctrl+↵ 直接复制 Markdown）"
       >
         提交 Review
         <IconChevronDown width={13} height={13} />
