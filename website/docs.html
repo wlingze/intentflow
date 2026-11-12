@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="docs.pageTitle">Docs — intentflow</title>
+  <meta name="description" data-i18n-content="docs.pageDescription" content="Start the intentflow workbench, pick a comparison range, review a diff, export the result, and build from source.">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1a19'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%2384d7c7' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script src="./assets/theme-init.js"></script>
+  <link rel="stylesheet" href="./assets/tokens.css">
+  <link rel="stylesheet" href="./assets/base.css">
+  <link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="nav.skip">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="./index.html">
+        <span class="brand__mark" aria-hidden="true">+/</span>
+        <span>intentflow</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Site">
+        <a href="./index.html#features" data-i18n="nav.features">Capabilities</a>
+        <a href="./index.html#handoff" data-i18n="nav.handoff">Handoff</a>
+        <a href="./index.html#install" data-i18n="nav.install">Install</a>
+        <a href="./index.html#status" data-i18n="nav.status">Status</a>
+        <a href="./docs.html" data-i18n="nav.docs">Docs</a>
+      </nav>
+
+      <div class="header-tools">
+        <button class="tool-btn" type="button" data-lang-toggle data-i18n-label="tools.lang" aria-label="Switch language">English</button>
+        <button class="tool-btn tool-btn--theme" type="button" data-theme-toggle data-i18n-label="tools.themeLight" aria-label="Switch to the light theme">light</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="container">
+      <header class="page-head">
+        <h1 class="page-head__title" data-i18n="docs.head.title">Docs</h1>
+        <p class="page-head__lead" data-i18n="docs.head.lead">Start the workbench, pick a comparison range, review, export. Build and test commands at the end.</p>
+      </header>
+
+      <nav class="toc" aria-label="Contents">
+        <a href="#start" data-i18n="docs.toc.start">Start</a>
+        <a href="#range" data-i18n="docs.toc.range">Ranges</a>
+        <a href="#review" data-i18n="docs.toc.review">Review</a>
+        <a href="#export" data-i18n="docs.toc.export">Export</a>
+        <a href="#data" data-i18n="docs.toc.data">Data</a>
+        <a href="#build" data-i18n="docs.toc.build">Build</a>
+        <a href="#design" data-i18n="docs.toc.design">Design docs</a>
+      </nav>
+
+      <section class="doc-block" id="start">
+        <h2 data-i18n="docs.start.title">1. Start</h2>
+        <p data-i18n="docs.start.body">Run inside the repository you want to review. The terminal prints the address and opens the browser. With --no-open it only prints the address.</p>
+        <div class="codeblock">
+          <div class="codeblock__head">
+            <span>shell</span>
+            <button class="copy-btn" type="button" data-copy="start-cmd" data-i18n="copy.copy">Copy</button>
+          </div>
+          <pre><code data-i18n="docs.start.cmd" id="start-cmd">cd /path/to/your/repo
+intentflow --base main
+intentflow --no-open --base main</code></pre>
+        </div>
+        <p data-i18n="docs.start.note">Without a built binary, run ./scripts/build.sh first, or make serve to start the bundled demo.</p>
+      </section>
+
+      <section class="doc-block" id="range">
+        <h2 data-i18n="docs.range.title">2. Pick a range</h2>
+        <p data-i18n="docs.range.body">Without --base, only main, master, origin/main and origin/master in the current HEAD history are accepted. If none of them is found, the command asks for --base instead of guessing HEAD~1.</p>
+
+        <div class="table-wrap">
+          <table>
+            <caption data-i18n="docs.range.table.caption">Common ranges</caption>
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="docs.range.table.command">Command</th>
+                <th scope="col" data-i18n="docs.range.table.meaning">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><code>intentflow --base main</code></td><td data-i18n="docs.range.all">main to HEAD</td></tr>
+              <tr><td><code>intentflow --base main --head WORKTREE</code></td><td data-i18n="docs.range.worktree">main to the worktree, including untracked files</td></tr>
+              <tr><td><code>intentflow --base v1.0 --head HEAD</code></td><td data-i18n="docs.range.commits">A tag or commit range</td></tr>
+              <tr><td><code>intentflow --before ./a --after ./b</code></td><td data-i18n="docs.range.folders">Two directories</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption data-i18n="docs.params.caption">Flags</caption>
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="docs.params.flag">Flag</th>
+                <th scope="col" data-i18n="docs.params.meaning">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><code>-t, --target</code></td><td data-i18n="params.target">Repository directory, default .</td></tr>
+              <tr><td><code>--base</code></td><td data-i18n="params.base">Baseline; detected among main and master by default</td></tr>
+              <tr><td><code>--head</code></td><td data-i18n="params.head">End point, default HEAD; WORKTREE includes uncommitted changes</td></tr>
+              <tr><td><code>--before, --after</code></td><td data-i18n="params.beforeAfter">Compare two directories</td></tr>
+              <tr><td><code>--host</code></td><td data-i18n="params.host">Listen address, default 0.0.0.0; 127.0.0.1 keeps it local</td></tr>
+              <tr><td><code>--port</code></td><td data-i18n="params.port">Port; 0 lets the system pick a free one</td></tr>
+              <tr><td><code>--out</code></td><td data-i18n="params.out">Directory for review.json written by intentflow diff</td></tr>
+              <tr><td><code>--dist</code></td><td data-i18n="params.dist">Override the embedded frontend, debug only</td></tr>
+              <tr><td><code>--no-open</code></td><td data-i18n="params.noOpen">Do not open the browser</td></tr>
+              <tr><td><code>-v</code></td><td data-i18n="params.verbose">Print progress</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-block" id="review">
+        <h2 data-i18n="docs.review.title">3. Review</h2>
+        <p data-i18n="docs.review.body">Every mark and comment is written to the review document of the current comparison.</p>
+        <ul>
+          <li data-i18n="docs.review.line">Add a line comment from the plus button, or select several lines to comment on a range.</li>
+          <li data-i18n="docs.review.hunk">Mark a hunk viewed from its header. When the file content changes, the old marks drop.</li>
+          <li data-i18n="docs.review.overall">Write one overall comment for the whole comparison.</li>
+          <li data-i18n="docs.review.search">Search every diff file with Ctrl+F, or Cmd+F on macOS.</li>
+        </ul>
+
+        <figure class="frame">
+          <img src="./assets/img/workbench-diff.png" width="3200" height="2000" loading="lazy" data-i18n-alt="docs.review.alt" alt="A diff card in split view with an inline comment about SQL string concatenation.">
+          <figcaption data-i18n="docs.review.caption">A hunk with one inline comment and a suggested fix.</figcaption>
+        </figure>
+      </section>
+
+      <section class="doc-block" id="export">
+        <h2 data-i18n="docs.export.title">4. Export</h2>
+        <p data-i18n="docs.export.body">The submit menu has two rows. Each one can copy to the clipboard or save a file.</p>
+        <ul>
+          <li data-i18n="docs.export.markdown">Markdown: comments with path, side, line numbers and the quoted code.</li>
+          <li data-i18n="docs.export.json">JSON: the full document, for tools that read it.</li>
+          <li data-i18n="docs.export.shortcut">Ctrl+Enter or Cmd+Enter copies Markdown without opening the menu. It stays quiet while the focus is in an input or a dialog.</li>
+        </ul>
+      </section>
+
+      <section class="doc-block" id="data">
+        <h2 data-i18n="docs.data.title">5. Where review data lives</h2>
+        <p data-i18n="docs.data.body">The server keeps no review state. Everything below is written by the browser.</p>
+        <ul>
+          <li data-i18n="data.reviews">Reviews live in browser localStorage, under the key intentflow.review.comparison_id.</li>
+          <li data-i18n="data.images">Comment images are inline data URLs, up to 1.5MB each, stored with the review.</li>
+          <li data-i18n="data.layout">Layout preferences use the intentflow. prefix in localStorage.</li>
+          <li data-i18n="data.server">The server writes no files. Closing it loses nothing.</li>
+        </ul>
+      </section>
+
+      <section class="doc-block" id="build">
+        <h2 data-i18n="docs.build.title">6. Build from source</h2>
+        <p data-i18n="docs.build.body">Build needs Go 1.24 or later, pnpm and git. schema/openapi.yaml is the only data contract; both type files are generated from it.</p>
+        <div class="codeblock">
+          <div class="codeblock__head">
+            <span>make</span>
+            <button class="copy-btn" type="button" data-copy="build-cmd" data-i18n="copy.copy">Copy</button>
+          </div>
+          <pre><code data-i18n="docs.build.cmd" id="build-cmd">make tools          # oapi-codegen and frontend deps, once
+make schema         # schema/openapi.yaml -> Go and TypeScript types
+make check          # go vet, Go tests, tsc, Vitest
+make build          # frontend build and static binary
+make release-check  # cross-compile the six release targets</code></pre>
+        </div>
+      </section>
+
+      <section class="doc-block" id="design">
+        <h2 data-i18n="docs.design.title">7. Design notes</h2>
+        <p data-i18n="docs.design.body">The thesis, the layer model, the contract rules and the review platform notes live in docs/.</p>
+        <ul>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/00-thesis.md">docs/00-thesis.md</a></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/02-layers.md">docs/02-layers.md</a></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/05-frontend.md">docs/05-frontend.md</a></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/07-behavior-model.md">docs/07-behavior-model.md</a></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/08-contract.md">docs/08-contract.md</a></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/10-release.md">docs/10-release.md</a></li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <p data-i18n="footer.tagline">Local diff workbench. Reviews stay in the browser.</p>
+      <nav aria-label="Footer">
+        <a href="./docs.html" data-i18n="footer.docs">Docs</a>
+        <a href="https://github.com/wlingze/intentflow" data-i18n="footer.github">GitHub</a>
+        <a href="https://github.com/wlingze/intentflow/releases" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/wlingze/intentflow/blob/master/LICENSE" data-i18n="footer.license">Apache-2.0</a>
+      </nav>
+      <p data-i18n="footer.note">Static site: no build step, no analytics, no third-party requests.</p>
+    </div>
+  </footer>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>

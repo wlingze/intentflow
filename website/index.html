@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="page.title">intentflow — local diff workbench</title>
+  <meta name="description" data-i18n-content="page.description" content="Read a local Git diff, write review comments, and copy the result to a coding agent as Markdown. One static binary, no server-side storage.">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1a19'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%2384d7c7' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script src="./assets/theme-init.js"></script>
+  <link rel="stylesheet" href="./assets/tokens.css">
+  <link rel="stylesheet" href="./assets/base.css">
+  <link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="nav.skip">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="./index.html">
+        <span class="brand__mark" aria-hidden="true">+/</span>
+        <span>intentflow</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Site">
+        <a href="#features" data-i18n="nav.features">Capabilities</a>
+        <a href="#handoff" data-i18n="nav.handoff">Handoff</a>
+        <a href="#install" data-i18n="nav.install">Install</a>
+        <a href="#status" data-i18n="nav.status">Status</a>
+        <a href="./docs.html" data-i18n="nav.docs">Docs</a>
+      </nav>
+
+      <div class="header-tools">
+        <button class="tool-btn" type="button" data-lang-toggle data-i18n-label="tools.lang" aria-label="Switch language">English</button>
+        <button class="tool-btn tool-btn--theme" type="button" data-theme-toggle data-i18n-label="tools.themeLight" aria-label="Switch to the light theme">light</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="container hero__grid">
+        <div>
+          <span class="eyebrow" data-i18n="hero.eyebrow">Local diff workbench</span>
+          <h1 class="hero__title" data-i18n="hero.title">Review code before you push it.</h1>
+          <p class="hero__lead" data-i18n="hero.lead">Open a local repository and read the diff file by file. Write line comments, then copy the review to your coding agent as Markdown.</p>
+
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
+            <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
+          </div>
+
+          <p class="hero__meta" data-i18n="hero.meta">Single static binary · Go 1.24 build · reviews stay in the browser</p>
+        </div>
+
+        <figure class="hero__shot">
+          <div class="frame">
+            <img src="./assets/img/workbench-overview.png" width="2000" height="1083" fetchpriority="high" data-i18n-alt="hero.alt" alt="The intentflow workbench: file tree on the left, diff cards in the middle, review panel on the right.">
+          </div>
+          <figcaption data-i18n="hero.caption">Workbench: file tree, diff cards, review panel.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="features.eyebrow">Capabilities</span>
+          <h2 class="section__title" data-i18n="features.title">What the workbench does</h2>
+          <p class="section__lead" data-i18n="features.lead">Everything below runs on local files. No push, no pull request, no waiting for CI.</p>
+        </header>
+
+        <div class="facts">
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">01</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.tree.title">File tree</h3>
+              <p class="fact__body" data-i18n="features.tree.body">Fold by directory. File-type icons, comment counts, added and removed lines.</p>
+            </div>
+          </article>
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">02</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.range.title">Comparison range</h3>
+              <p class="fact__body" data-i18n="features.range.body">All changes, the uncommitted worktree, or a single commit.</p>
+            </div>
+          </article>
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">03</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.hunk.title">Hunk review</h3>
+              <p class="fact__body" data-i18n="features.hunk.body">Mark each hunk viewed. Editing the file drops its old marks.</p>
+            </div>
+          </article>
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">04</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.comment.title">Comments</h3>
+              <p class="fact__body" data-i18n="features.comment.body">Line comments, range selections, and one overall comment.</p>
+            </div>
+          </article>
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">05</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.search.title">Global search</h3>
+              <p class="fact__body" data-i18n="features.search.body">Search every diff file. Hits split into added, removed and context.</p>
+            </div>
+          </article>
+          <article class="fact">
+            <span class="fact__index" aria-hidden="true">06</span>
+            <div>
+              <h3 class="fact__title" data-i18n="features.symbol.title">Symbol references</h3>
+              <p class="fact__body" data-i18n="features.symbol.body">Click an identifier to list every reference in the repository, then jump to it.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="handoff">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="handoff.eyebrow">Handoff</span>
+          <h2 class="section__title" data-i18n="handoff.title">Give the review to an agent</h2>
+          <p class="section__lead" data-i18n="handoff.lead">Every comment carries the path, the side, the line number and the quoted code. Ctrl+Enter copies the whole review as Markdown.</p>
+        </header>
+
+        <div class="split">
+          <div class="codeblock">
+            <div class="codeblock__head">
+              <span>review.md</span>
+              <button class="copy-btn" type="button" data-copy="handoff-sample" data-i18n="copy.copy">Copy</button>
+            </div>
+            <pre><code data-i18n="handoff.sample" id="handoff-sample">## Review
+
+### 1. internal/store/store.go · R15
+&gt; query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
+
+User input is concatenated into SQL. Use a parameterised query: WHERE name LIKE ?, and pass the wildcard as a parameter.
+
+### 2. Overall
+This change replaces parameterised queries with string concatenation. I would revert it.</code></pre>
+          </div>
+
+          <div>
+            <p data-i18n="handoff.note">Markdown and JSON are also saved to a file from the same menu.</p>
+            <ul class="notes">
+              <li data-i18n="handoff.shortcut">Ctrl+Enter or Cmd+Enter in the diff area copies Markdown without opening the menu.</li>
+              <li data-i18n="handoff.quote">Quoted code travels with the comment, so the agent sees the exact line.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="install.eyebrow">Install</span>
+          <h2 class="section__title" data-i18n="install.title">Download, unpack, run</h2>
+          <p class="section__lead" data-i18n="install.lead">Six platform archives for v0.1.0. Each one holds a single executable with the frontend embedded.</p>
+        </header>
+
+        <div class="split">
+          <div>
+            <div class="codeblock">
+              <div class="codeblock__head">
+                <span data-i18n="install.unix">Linux / macOS</span>
+                <button class="copy-btn" type="button" data-copy="install-unix" data-i18n="copy.copy">Copy</button>
+              </div>
+              <pre><code data-i18n="install.unixCmd" id="install-unix">tar -xzf intentflow_0.1.0_linux_amd64.tar.gz
+sudo install -m755 intentflow /usr/local/bin/intentflow
+intentflow version</code></pre>
+            </div>
+
+            <div class="codeblock">
+              <div class="codeblock__head">
+                <span data-i18n="install.windows">Windows</span>
+                <button class="copy-btn" type="button" data-copy="install-windows" data-i18n="copy.copy">Copy</button>
+              </div>
+              <pre><code data-i18n="install.windowsCmd" id="install-windows">Expand-Archive intentflow_0.1.0_windows_amd64.zip -DestinationPath .
+.\intentflow.exe version</code></pre>
+            </div>
+
+            <p class="hero__meta" data-i18n="install.note">Runtime needs git only. No Node.js, pnpm or frontend build.</p>
+            <p><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <caption data-i18n="install.table.caption">Platform archives</caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="install.table.platform">Platform</th>
+                  <th scope="col" data-i18n="install.table.file">Archive</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Linux x86-64</td><td><code>intentflow_0.1.0_linux_amd64.tar.gz</code></td></tr>
+                <tr><td>Linux ARM64</td><td><code>intentflow_0.1.0_linux_arm64.tar.gz</code></td></tr>
+                <tr><td>macOS Intel</td><td><code>intentflow_0.1.0_darwin_amd64.tar.gz</code></td></tr>
+                <tr><td>macOS Apple Silicon</td><td><code>intentflow_0.1.0_darwin_arm64.tar.gz</code></td></tr>
+                <tr><td>Windows x86-64</td><td><code>intentflow_0.1.0_windows_amd64.zip</code></td></tr>
+                <tr><td>Windows ARM64</td><td><code>intentflow_0.1.0_windows_arm64.zip</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="data">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="data.eyebrow">Data</span>
+          <h2 class="section__title" data-i18n="data.title">Nothing leaves the machine</h2>
+          <p class="section__lead" data-i18n="data.lead">Reviews are written by the browser, not by the server.</p>
+        </header>
+
+        <ul class="notes">
+          <li data-i18n="data.reviews">Reviews live in browser localStorage, under the key intentflow.review.comparison_id.</li>
+          <li data-i18n="data.images">Comment images are inline data URLs, up to 1.5MB each, stored with the review.</li>
+          <li data-i18n="data.layout">Layout preferences use the intentflow. prefix in localStorage.</li>
+          <li data-i18n="data.server">The server writes no files. Closing it loses nothing.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="status">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="status.eyebrow">Status</span>
+          <h2 class="section__title" data-i18n="status.title">What works today</h2>
+          <p class="section__lead" data-i18n="status.lead">The three-layer semantic diff and the behaviour graph are the target structure, not shipped features.</p>
+        </header>
+
+        <div class="table-wrap">
+          <table>
+            <caption data-i18n="status.table.caption">Stages</caption>
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="status.table.stage">Stage</th>
+                <th scope="col" data-i18n="status.table.content">Content</th>
+                <th scope="col" data-i18n="status.table.state">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td data-i18n="status.stage1">Text diff and a local review store</td>
+                <td><span class="tag tag--ok" data-i18n="status.available">Available</span></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td data-i18n="status.stage2">SSA fact layer: project, logic and intent diff</td>
+                <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td data-i18n="status.stage3">Behaviour graph: trigger, decision, transform, effect</td>
+                <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td data-i18n="status.stage4">LLM narrative layer that only reads facts</td>
+                <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="hero__meta" data-i18n="status.note">The AI and SyntaxFlow tabs are placeholders and report that they are inactive.</p>
+      </div>
+    </section>
+
+    <section class="section" id="shots">
+      <div class="container">
+        <header class="section__head">
+          <span class="eyebrow" data-i18n="shots.eyebrow">Screens</span>
+          <h2 class="section__title" data-i18n="shots.title">Inside the workbench</h2>
+        </header>
+
+        <div class="strip">
+          <figure>
+            <img src="./assets/img/workbench-review.png" width="3200" height="2000" loading="lazy" data-i18n-alt="shots.reviewAlt" alt="The review panel with a file comment and an overall comment.">
+            <figcaption data-i18n="shots.review">Review panel</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/img/workbench-export.png" width="3200" height="2000" loading="lazy" data-i18n-alt="shots.exportAlt" alt="The submit menu with Markdown and JSON export rows.">
+            <figcaption data-i18n="shots.export">Markdown and JSON export</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/img/workbench-narrow.png" width="1920" height="1800" loading="lazy" data-i18n-alt="shots.narrowAlt" alt="The workbench on a narrow window, with the side panels collapsed into drawers.">
+            <figcaption data-i18n="shots.narrow">Narrow window</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <p data-i18n="footer.tagline">Local diff workbench. Reviews stay in the browser.</p>
+      <nav aria-label="Footer">
+        <a href="./docs.html" data-i18n="footer.docs">Docs</a>
+        <a href="https://github.com/wlingze/intentflow" data-i18n="footer.github">GitHub</a>
+        <a href="https://github.com/wlingze/intentflow/releases" data-i18n="footer.releases">Releases</a>
+        <a href="https://github.com/wlingze/intentflow/blob/master/LICENSE" data-i18n="footer.license">Apache-2.0</a>
+      </nav>
+      <p data-i18n="footer.note">Static site: no build step, no analytics, no third-party requests.</p>
+    </div>
+  </footer>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>
