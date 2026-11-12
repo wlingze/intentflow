@@ -154,3 +154,35 @@ func TestSingleCommitAndDotSubdir(t *testing.T) {
 		t.Fatalf("before = %q", base)
 	}
 }
+
+func TestRenamesDetectsMovedAndEditedFile(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "pkg/old.go", "package a\n\nfunc one() {}\n\nfunc two() {}\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "init")
+	run(t, dir, "mv", "pkg/old.go", "pkg/new.go")
+	write(t, dir, "pkg/new.go", "package a\n\nfunc one() {}\n\nfunc two() { /* edit */ }\n")
+	run(t, dir, "add", "-A")
+	run(t, dir, "commit", "-qm", "rename")
+
+	repo, err := Open(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := repo.Resolve("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := repo.Resolve("HEAD^")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renames, err := repo.Renames(base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renames["pkg/old.go"] != "pkg/new.go" {
+		t.Fatalf("renames = %v", renames)
+	}
+}

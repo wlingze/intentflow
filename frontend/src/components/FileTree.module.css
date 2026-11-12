@@ -186,6 +186,11 @@ details[open] > .dirRow > .chevron {
   background: var(--amber-soft);
 }
 
+.renamed {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
 .unchanged {
   color: var(--faint);
 }

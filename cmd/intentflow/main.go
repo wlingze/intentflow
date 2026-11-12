@@ -181,7 +181,7 @@ func newApp(opt options) (*app, error) {
 		if opt.afterLabel != "" {
 			al = opt.afterLabel
 		}
-		code, err := payload.Build(before, after, bl+" → "+al)
+		code, err := payload.Build(before, after, bl+" → "+al, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +312,11 @@ func (a *app) buildRevision(id string) (*revision, error) {
 	comparison := model.Comparison{Mode: contract.Git, BeforeLabel: bl, AfterLabel: al,
 		Repo: ptr(a.repo.Root), Subdir: ptr(a.repo.Subdir), BaseRef: ptr(baseRef), HeadRef: ptr(headRef),
 		Commits: []contract.Commit{}, Selected: []string{}, Note: note}
-	code, err := payload.Build(before, after, bl+" → "+al)
+	renames, err := a.repo.Renames(base, head)
+	if err != nil {
+		return nil, err
+	}
+	code, err := payload.Build(before, after, bl+" → "+al, renames)
 	if err != nil {
 		return nil, err
 	}

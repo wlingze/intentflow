@@ -22,7 +22,9 @@ const (
 )
 
 // Build 读取 before/after 两个目录，返回按路径排序的合并源码包。
-func Build(beforeRoot, afterRoot, label string) (contract.CodeBundle, error) {
+// renames 是 Git 给出的旧路径 → 新路径；没有 Git 信息时（目录比较、
+// 未跟踪文件）仍按内容完全一致配对，把「删除 + 新增」合成一张卡片。
+func Build(beforeRoot, afterRoot, label string, renames map[string]string) (contract.CodeBundle, error) {
 	before, err := readTree(beforeRoot)
 	if err != nil {
 		return contract.CodeBundle{}, err
@@ -32,55 +34,35 @@ func Build(beforeRoot, afterRoot, label string) (contract.CodeBundle, error) {
 		return contract.CodeBundle{}, err
 	}
 
-	paths := make([]string, 0, len(before)+len(after))
-	seen := make(map[string]struct{}, len(before)+len(after))
-	for p := range before {
-		seen[p] = struct{}{}
-		paths = append(paths, p)
-	}
-	for p := range after {
-		if _, ok := seen[p]; ok {
+	merged := mergeEntries(before, after, renames)
+	entries := make([]deltaEntry, 0, len(merged))
+	for _, entry := range merged {
+		// 工作台只读改动文件；未变文件不进入 payload。
+		if entry.oldPath == "" && entry.hasBefore && entry.hasAfter && entry.before == entry.after {
 			continue
 		}
-		paths = append(paths, p)
+		entries = append(entries, entry)
 	}
-	sort.Strings(paths)
-
-	type entry struct {
-		path          string
-		before, after string
-		hasBefore     bool
-		hasAfter      bool
-		size          int
-	}
-	entries := make([]entry, 0, len(paths))
-	for _, p := range paths {
-		b, bOK := before[p]
-		a, aOK := after[p]
-		status := statusOf(b, bOK, a, aOK)
-		// 工作台只读改动文件；未变文件不进入 payload，避免体积上限
-		// 把真正要看的 diff 挤掉。
-		if status == contract.CodeStatusUnchanged {
-			continue
-		}
-		entries = append(entries, entry{
-			path: p, before: b, after: a, hasBefore: bOK, hasAfter: aOK,
-			size: len(b) + len(a),
-		})
-	}
-
 	sizes := make([]int, len(entries))
 	for i := range entries {
-		sizes[i] = entries[i].size
+		sizes[i] = len(entries[i].before) + len(entries[i].after)
 	}
 	keep := allocate(sizes, MaxTotalBytes)
 
 	bundle := contract.CodeBundle{Root: label, Files: make([]contract.CodeFile, 0, len(entries)), Skipped: []string{}}
 	for i, e := range entries {
+		status := statusOf(e.before, e.hasBefore, e.after, e.hasAfter)
+		if e.oldPath != "" {
+			status = contract.CodeStatusRenamed
+		}
 		file := contract.CodeFile{
 			Path:     e.path,
-			Status:   statusOf(e.before, e.hasBefore, e.after, e.hasAfter),
+			Status:   status,
 			Language: languageOf(e.path),
+		}
+		if e.oldPath != "" {
+			old := e.oldPath
+			file.OldPath = &old
 		}
 		if !keep[i] {
 			bundle.Truncated = true
@@ -96,6 +78,97 @@ func Build(beforeRoot, afterRoot, label string) (contract.CodeBundle, error) {
 		bundle.Files = append(bundle.Files, file)
 	}
 	return bundle, nil
+}
+
+type deltaEntry struct {
+	path                string
+	oldPath             string
+	before, after       string
+	hasBefore, hasAfter bool
+}
+
+// mergeEntries 先合并 Git 重命名，再按内容完全一致兜底配对，
+// 剩下的路径按普通新增/删除/修改输出。结果按新路径排序。
+func mergeEntries(before, after map[string]string, renames map[string]string) []deltaEntry {
+	usedBefore := map[string]bool{}
+	usedAfter := map[string]bool{}
+	entries := make([]deltaEntry, 0, len(before)+len(after))
+
+	// 1. Git 明确给出的重命名对。
+	oldPaths := make([]string, 0, len(renames))
+	for old := range renames {
+		oldPaths = append(oldPaths, old)
+	}
+	sort.Strings(oldPaths)
+	for _, old := range oldPaths {
+		newPath := renames[old]
+		b, bOK := before[old]
+		a, aOK := after[newPath]
+		if !bOK || !aOK || usedBefore[old] || usedAfter[newPath] {
+			continue
+		}
+		entries = append(entries, deltaEntry{path: newPath, oldPath: old, before: b, after: a, hasBefore: true, hasAfter: true})
+		usedBefore[old] = true
+		usedAfter[newPath] = true
+	}
+
+	// 2. 内容完全一致时自己配对，覆盖目录比较与未跟踪文件。
+	added := make([]string, 0)
+	for path := range after {
+		if _, ok := before[path]; !ok && !usedAfter[path] {
+			added = append(added, path)
+		}
+	}
+	sort.Strings(added)
+	byContent := make(map[string][]string, len(added))
+	for _, path := range added {
+		byContent[after[path]] = append(byContent[after[path]], path)
+	}
+	removed := make([]string, 0)
+	for path := range before {
+		if _, ok := after[path]; !ok && !usedBefore[path] {
+			removed = append(removed, path)
+		}
+	}
+	sort.Strings(removed)
+	for _, old := range removed {
+		content := before[old]
+		if content == "" {
+			continue
+		}
+		list := byContent[content]
+		if len(list) == 0 {
+			continue
+		}
+		newPath := list[0]
+		byContent[content] = list[1:]
+		entries = append(entries, deltaEntry{path: newPath, oldPath: old, before: content, after: after[newPath], hasBefore: true, hasAfter: true})
+		usedBefore[old] = true
+		usedAfter[newPath] = true
+	}
+
+	// 3. 其余路径按普通增删改输出。
+	paths := make([]string, 0, len(before)+len(after))
+	for path := range before {
+		paths = append(paths, path)
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if usedBefore[path] || usedAfter[path] {
+			continue
+		}
+		b, bOK := before[path]
+		a, aOK := after[path]
+		entries = append(entries, deltaEntry{path: path, before: b, after: a, hasBefore: bOK, hasAfter: aOK})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
+	return entries
 }
 
 // allocate 按体积从小到大分配正文预算。目录顺序下，大文件在前会吃掉

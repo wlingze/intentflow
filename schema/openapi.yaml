@@ -148,7 +148,7 @@ components:
       enum: [added, removed, modified, unchanged]
     CodeStatus:
       type: string
-      enum: [added, removed, modified, unchanged]
+      enum: [added, removed, modified, unchanged, renamed]
     BehaviorRole:
       type: string
       enum: [trigger, decision, transform, effect]
@@ -588,6 +588,7 @@ components:
       required: [path, status, language, before, after]
       properties:
         path: { type: string }
+        old_path: { type: string }
         status: { $ref: '#/components/schemas/CodeStatus' }
         language: { type: string }
         before: { type: string }

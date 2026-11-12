@@ -153,7 +153,7 @@ export interface components {
         /** @enum {string} */
         DeltaKind: "added" | "removed" | "modified" | "unchanged";
         /** @enum {string} */
-        CodeStatus: "added" | "removed" | "modified" | "unchanged";
+        CodeStatus: "added" | "removed" | "modified" | "unchanged" | "renamed";
         /** @enum {string} */
         BehaviorRole: "trigger" | "decision" | "transform" | "effect";
         /** @enum {string} */
@@ -437,6 +437,7 @@ export interface components {
         };
         CodeFile: {
             path: string;
+            old_path?: string;
             status: components["schemas"]["CodeStatus"];
             language: string;
             before: string;

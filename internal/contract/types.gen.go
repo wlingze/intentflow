@@ -32,6 +32,7 @@ const (
 	CodeStatusAdded     CodeStatus = "added"
 	CodeStatusModified  CodeStatus = "modified"
 	CodeStatusRemoved   CodeStatus = "removed"
+	CodeStatusRenamed   CodeStatus = "renamed"
 	CodeStatusUnchanged CodeStatus = "unchanged"
 )
 
@@ -246,6 +247,7 @@ type CodeFile struct {
 	After    string     `json:"after"`
 	Before   string     `json:"before"`
 	Language string     `json:"language"`
+	OldPath  *string    `json:"old_path,omitempty"`
 	Path     string     `json:"path"`
 	Status   CodeStatus `json:"status"`
 }

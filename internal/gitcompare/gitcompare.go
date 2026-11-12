@@ -165,6 +165,38 @@ func (r *Repo) Show(sha string) (contract.Commit, error) {
 	}, nil
 }
 
+// Renames 返回 base..head 之间的重命名对，键为旧路径，值为新路径。
+// 路径相对 Subdir，子树外的改动被丢弃。head 为空表示工作区。
+func (r *Repo) Renames(base, head string) (map[string]string, error) {
+	if strings.TrimSpace(base) == "" {
+		return nil, nil
+	}
+	args := []string{"diff", "-M", "--name-status", "--no-color", base}
+	if head != "" && !strings.EqualFold(head, "WORKTREE") {
+		args = append(args, head)
+	}
+	if r.Subdir != "" {
+		args = append(args, "--", r.Subdir)
+	}
+	out, err := git(r.Root, args...)
+	if err != nil {
+		return nil, err
+	}
+	renames := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		parts := strings.Split(line, "\t")
+		if len(parts) < 3 || !strings.HasPrefix(parts[0], "R") {
+			continue
+		}
+		oldRel, oldOK := r.rel(parts[1])
+		newRel, newOK := r.rel(parts[2])
+		if oldOK && newOK {
+			renames[oldRel] = newRel
+		}
+	}
+	return renames, nil
+}
+
 // StatusFiles 返回工作区里未提交的文件，路径相对 Subdir。
 func (r *Repo) StatusFiles() ([]string, error) {
 	out, err := git(r.Root, "status", "--porcelain", "-uall")

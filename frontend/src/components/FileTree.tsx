@@ -11,6 +11,7 @@ const STATUS_CLASS: Record<string, string> = {
   added: styles.added,
   removed: styles.removed,
   modified: styles.modified,
+  renamed: styles.renamed,
   unchanged: styles.unchanged,
 };
 
@@ -18,6 +19,7 @@ const STATUS_LETTER: Record<string, string> = {
   added: 'A',
   removed: 'D',
   modified: 'M',
+  renamed: 'R',
   unchanged: '',
 };
 
@@ -81,7 +83,7 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
             className={`${styles.fileRow} ${done ? styles.fileRowDone : ''} ${flash === node.path ? styles.fileRowFlash : ''}`}
             data-tree-path={node.path}
             style={{ paddingLeft: 22 + depth * 12 }}
-            title={node.path}
+            title={node.file.old_path ? `${node.file.old_path} → ${node.path}` : node.path}
             onClick={() => dispatch({ type: 'code/reveal', file: node.path })}
           >
             <FileIcon name={node.name} size={14} className={styles.fileIcon} />

@@ -37,10 +37,13 @@ Payload
 ### CodeFile
 
 ```text
-path / status / language / before / after
+path / old_path? / status / language / before / after
 ```
 
-`status` 为 `added | removed | modified | unchanged`。文本文件上限 2MB，
+`status` 为 `added | removed | modified | unchanged | renamed`。`renamed` 时
+`old_path` 是改名前路径，`before` 与 `after` 分别是旧、新内容。
+重命名优先取 `git diff -M`；目录比较与未跟踪文件按内容完全一致配对。
+文本文件上限 2MB，
 整次 payload 正文上限 24MB；预算按文件体积从小到大分配，避免大文件挤掉小文件。
 超限文件保留路径和状态，正文为空，`code.truncated` 为 true。
 
