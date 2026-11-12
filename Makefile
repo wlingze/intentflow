@@ -6,8 +6,9 @@ DEMO_BEFORE ?= examples/demo-go/before
 DEMO_AFTER ?= examples/demo-go/after
 DEMO_OUT ?= examples/demo-go/out
 ADDR ?= 127.0.0.1:8123
+E2E_URL ?= http://127.0.0.1:8123
 
-.PHONY: tools schema frontend build check demo serve clean
+.PHONY: tools schema frontend build check e2e demo serve clean
 
 # 一次性安装生成器。oapi-codegen 固定在 v2.4.1，避免生成物漂移。
 tools:
@@ -30,6 +31,11 @@ check:
 	$(GO) test ./cmd/... ./internal/...
 	cd frontend && $(PNPM) typecheck
 	cd frontend && $(PNPM) test
+
+# 渲染层检查：真实布局下的滚动、行内标记、文件树色调与跳转。
+# 需要已启动的服务与全局 playwright：NODE_PATH=~/.local/lib/node_modules/@playwright/cli/node_modules
+e2e:
+	NODE_PATH=$$HOME/.local/lib/node_modules/@playwright/cli/node_modules node scripts/e2e/render.mjs $(E2E_URL)
 
 # 生成 demo 的 review.json（行为图也在这里）。
 demo:

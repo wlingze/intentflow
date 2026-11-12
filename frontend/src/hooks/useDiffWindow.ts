@@ -2,11 +2,17 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { RowVirtualizer, type VirtualWindow } from '../lib/virtual';
 
 /** Virtual rows in the shared document scroller, not a nested scrolling pane. */
-export function useDiffWindow(count: number, identity: unknown, estimatedHeight = 22) {
+/**
+ * Virtual window over rows drawn in the shared document scroller.
+ * `active` must turn true together with the element mount: the layout effect
+ * reads the element, so it has to re-run once the body really exists.
+ */
+export function useDiffWindow(count: number, identity: unknown, active: boolean, estimatedHeight = 22, estimateAt?: (index: number) => number) {
   const ref = useRef<HTMLDivElement>(null);
-  const virtual = useMemo(() => new RowVirtualizer(count, estimatedHeight), [count, identity, estimatedHeight]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- estimateAt reads the same items identity
+  const virtual = useMemo(() => new RowVirtualizer(count, estimatedHeight, estimateAt), [count, identity, estimatedHeight]);
   const [revision, setRevision] = useState(0);
-  const [range, setRange] = useState<VirtualWindow>({ start: 0, end: 0, top: 0, totalHeight: count * estimatedHeight });
+  const [range, setRange] = useState<VirtualWindow>(() => ({ start: 0, end: 0, top: 0, totalHeight: virtual.totalHeight }));
   const refresh = useRef<() => void>(() => {});
 
   useLayoutEffect(() => {
@@ -15,6 +21,7 @@ export function useDiffWindow(count: number, identity: unknown, estimatedHeight 
     if (!element || !scroller) return;
     let frame = 0;
     let near = true;
+    let listening = false;
     const sync = () => {
       frame = 0;
       const parent = scroller.getBoundingClientRect();
@@ -25,15 +32,23 @@ export function useDiffWindow(count: number, identity: unknown, estimatedHeight 
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(sync); };
     refresh.current = schedule;
-    const observer = new IntersectionObserver(([entry]) => { near = entry.isIntersecting; schedule(); }, { root: scroller, rootMargin: '500px' });
+    // Only cards near the viewport listen to scroll; a 1300-file review would
+    // otherwise run one handler per card on every frame.
+    const onScroll = () => { if (near) schedule(); };
+    const listen = (value: boolean) => {
+      if (value === listening) return;
+      listening = value;
+      if (value) scroller.addEventListener('scroll', onScroll, { passive: true });
+      else scroller.removeEventListener('scroll', onScroll);
+    };
+    const observer = new IntersectionObserver(([entry]) => { near = entry.isIntersecting; listen(near); schedule(); }, { root: scroller, rootMargin: '900px' });
     observer.observe(element);
     const resize = new ResizeObserver(schedule);
     resize.observe(scroller);
-    const onScroll = () => { if (near) schedule(); };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    sync();
-    return () => { observer.disconnect(); resize.disconnect(); scroller.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
-  }, [virtual]);
+    listen(true);
+    schedule();
+    return () => { observer.disconnect(); resize.disconnect(); listen(false); cancelAnimationFrame(frame); };
+  }, [virtual, active]);
 
   useEffect(() => {
     const element = ref.current;

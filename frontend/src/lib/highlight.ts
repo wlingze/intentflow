@@ -30,11 +30,73 @@ function markText(text: string, word: string): string {
   return out + escapeHtml(text.slice(last));
 }
 
+export interface EmphasisRange { start: number; end: number }
+
+const GO_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|`[^`]*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+const WORD_TOKEN = /[\p{L}\p{N}_$]+/gu;
+
+function tokenClass(text: string): string {
+  if (text.startsWith('//') || text.startsWith('/*')) return 'tok-comment';
+  if (text.startsWith('"') || text.startsWith('`')) return 'tok-string';
+  if (KEYWORDS.has(text)) return 'tok-keyword';
+  if (LITERALS.has(text)) return 'tok-literal';
+  if (/^\d/.test(text)) return 'tok-number';
+  return '';
+}
+
+function paint(text: string, flags: (index: number) => { token: string; changed: boolean; word: boolean }): string {
+  let out = '';
+  let index = 0;
+  while (index < text.length) {
+    const current = flags(index);
+    let end = index + 1;
+    while (end < text.length) {
+      const next = flags(end);
+      if (next.token !== current.token || next.changed !== current.changed || next.word !== current.word) break;
+      end++;
+    }
+    let chunk = escapeHtml(text.slice(index, end));
+    if (current.word) chunk = `<mark>${chunk}</mark>`;
+    if (current.changed) chunk = `<span class="chg">${chunk}</span>`;
+    if (current.token) chunk = `<span class="${current.token}">${chunk}</span>`;
+    out += chunk;
+    index = end;
+  }
+  return out;
+}
+
+/** Same shading, plus the exact characters that changed inside a line. */
+function highlightChanged(code: string, language: string | undefined, word: string, emphasis: EmphasisRange[]): string {
+  const tokens: string[] = new Array(code.length).fill('');
+  if (language === 'go') {
+    for (const match of code.matchAll(GO_TOKEN)) {
+      const start = match.index ?? 0;
+      const cls = tokenClass(match[0]);
+      if (!cls) continue;
+      for (let i = start; i < start + match[0].length; i++) tokens[i] = cls;
+    }
+  }
+  const changed: boolean[] = new Array(code.length).fill(false);
+  for (const range of emphasis) {
+    for (let i = Math.max(0, range.start); i < Math.min(code.length, range.end); i++) changed[i] = true;
+  }
+  const marked: boolean[] = new Array(code.length).fill(false);
+  if (word) {
+    for (const match of code.matchAll(WORD_TOKEN)) {
+      if (match[0] !== word) continue;
+      const start = match.index ?? 0;
+      for (let i = start; i < start + match[0].length; i++) marked[i] = true;
+    }
+  }
+  return paint(code, (index) => ({ token: tokens[index], changed: changed[index], word: marked[index] }));
+}
+
 /**
  * 轻量 Go 高亮。只做词法级着色，不追求完整语法树。
  * 输入先分词再转义，避免把代码注入 HTML。
  */
-export function highlight(code: string, language?: string, word = ''): string {
+export function highlight(code: string, language?: string, word = '', emphasis: EmphasisRange[] = []): string {
+  if (emphasis.length) return highlightChanged(code, language, word, emphasis);
   if (language !== 'go') return markText(code, word);
 
   const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|`[^`]*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;

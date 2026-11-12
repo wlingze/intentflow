@@ -106,3 +106,16 @@ export function flattenTree(nodes: TreeNode[]): string[] {
   walk(nodes);
   return out;
 }
+
+/**
+ * Row tone for one file in the tree.
+ * `active` wins over `onScreen`: the file the user just opened is blue, the
+ * other files currently rendered in the diff pane are grey.
+ */
+export type FileRowTone = 'active' | 'onScreen' | '';
+
+export function fileRowTone(path: string, active: string, onScreen: Iterable<string>): FileRowTone {
+  if (path === active) return 'active';
+  for (const entry of onScreen) if (entry === path) return 'onScreen';
+  return '';
+}

@@ -255,6 +255,18 @@ pre {
 }
 
 /* 代码高亮 token 由 innerHTML 注入，必须是全局样式。 */
+/* 行内改动：同一对增删行里真正变化的字符。 */
+.chg {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--green) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 34%, transparent);
+}
+
+.del .chg {
+  background: color-mix(in srgb, var(--red) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 34%, transparent);
+}
+
 .tok-keyword {
   color: #cf222e;
 }

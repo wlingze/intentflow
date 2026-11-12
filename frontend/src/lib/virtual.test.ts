@@ -110,3 +110,20 @@ describe('RowVirtualizer', () => {
     expect(virtualizer.heightOf(50)).toBe(60);
   });
 });
+
+describe('RowVirtualizer per-index estimates', () => {
+  it('uses the caller estimate for unmeasured rows', () => {
+    const heights = [22, 26, 32];
+    const virtual = new RowVirtualizer(3, 20, (index) => heights[index]);
+    expect(virtual.totalHeight).toBe(80);
+    expect(virtual.offsetOf(2)).toBe(48);
+  });
+
+  it('keeps measured heights after they replace the estimate', () => {
+    const virtual = new RowVirtualizer(2, 20, (index) => (index === 0 ? 22 : 32));
+    expect(virtual.setHeight(0, 30)).toBe(true);
+    expect(virtual.heightOf(0)).toBe(30);
+    expect(virtual.heightOf(1)).toBe(32);
+    expect(virtual.totalHeight).toBe(62);
+  });
+});

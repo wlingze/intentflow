@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { allDirs, buildTree, countChanged, countFiles, countViewed, dirAncestors, type TreeNode } from '../lib/tree';
+import { allDirs, buildTree, countChanged, countFiles, countViewed, dirAncestors, fileRowTone, type TreeNode } from '../lib/tree';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { DiffStats } from '../lib/diff';
@@ -32,10 +32,14 @@ interface RowsProps {
   expanded: Set<string>;
   onToggle: (path: string, open: boolean) => void;
   flash?: string;
+  /** Files being rendered in the diff pane right now. */
+  onScreen: string[];
+  /** File the user opened from the tree, search or symbol panel. */
+  active: string;
   depth?: number;
 }
 
-function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onToggle, flash = '', depth = 0 }: RowsProps) {
+function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onToggle, flash = '', onScreen, active, depth = 0 }: RowsProps) {
   const dispatch = useAppDispatch();
   // A viewed mark only counts while the file content still matches its digest.
   const isViewed = (path: string) => viewed.includes(`${path}#${digests.get(path) ?? ''}`);
@@ -67,7 +71,7 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
                 {changed > 0 && <span className={styles.count}>{changed}</span>}
                 {allViewed && <span className={styles.check} aria-label="已查看">✓</span>}
               </summary>
-              <FileRows nodes={node.children} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={expanded} onToggle={onToggle} flash={flash} depth={depth + 1} />
+              <FileRows nodes={node.children} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={expanded} onToggle={onToggle} flash={flash} onScreen={onScreen} active={active} depth={depth + 1} />
             </details>
           );
         }
@@ -76,12 +80,14 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
         const status = node.file.status;
         const comments = commentCounts.get(node.path) ?? 0;
         const done = isViewed(node.path);
+        const tone = fileRowTone(node.path, active, onScreen);
         return (
           <button
             key={node.path}
             type="button"
-            className={`${styles.fileRow} ${done ? styles.fileRowDone : ''} ${flash === node.path ? styles.fileRowFlash : ''}`}
+            className={`${styles.fileRow} ${done ? styles.fileRowDone : ''} ${flash === node.path ? styles.fileRowFlash : ''} ${tone === 'onScreen' ? styles.fileRowOnScreen : ''} ${tone === 'active' ? styles.fileRowActive : ''}`}
             data-tree-path={node.path}
+            data-tone={tone || undefined}
             style={{ paddingLeft: 22 + depth * 12 }}
             title={node.file.old_path ? `${node.file.old_path} → ${node.path}` : node.path}
             onClick={() => dispatch({ type: 'code/reveal', file: node.path })}
@@ -236,7 +242,7 @@ export function FileTree() {
       <div ref={scroller} className={styles.scroll}>
         {tree.length ? (
           <div className={styles.tree}>
-            <FileRows nodes={tree} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={open} onToggle={onToggle} flash={flash} />
+            <FileRows nodes={tree} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={open} onToggle={onToggle} flash={flash} onScreen={code.visible} active={code.reveal?.file ?? ''} />
           </div>
         ) : (
           <div className={styles.empty}>没有可显示的文件</div>

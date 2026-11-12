@@ -61,7 +61,7 @@ export class RowVirtualizer {
   private offsets: Float64Array;
   private dirty = true;
 
-  constructor(count: number, estimate = DEFAULT_ROW_HEIGHT) {
+  constructor(count: number, estimate = DEFAULT_ROW_HEIGHT, private readonly estimateAt?: (index: number) => number) {
     this.count = Math.max(0, Math.floor(count));
     this.estimate = estimate > 0 ? estimate : DEFAULT_ROW_HEIGHT;
     this.heights = new Float64Array(this.count);
@@ -73,7 +73,7 @@ export class RowVirtualizer {
     if (index < 0 || index >= this.count || !Number.isFinite(height)) return false;
     const next = Math.max(1, height);
     const previous = this.heights[index];
-    const effective = previous > 0 ? previous : this.estimate;
+    const effective = previous > 0 ? previous : this.estimateOf(index);
     this.heights[index] = next;
     if (Math.abs(effective - next) < 0.5) return false;
     this.dirty = true;
@@ -84,6 +84,12 @@ export class RowVirtualizer {
     this.build();
     const clamped = Math.min(Math.max(index, 0), this.count);
     return this.offsets[clamped];
+  }
+
+  /** Unmeasured rows fall back to a caller-provided estimate when available. */
+  private estimateOf(index: number): number {
+    const value = this.estimateAt?.(index);
+    return value && value > 0 ? value : this.estimate;
   }
 
   heightOf(index: number): number {
@@ -112,7 +118,7 @@ export class RowVirtualizer {
     let total = 0;
     this.offsets[0] = 0;
     for (let index = 0; index < this.count; index++) {
-      const height = this.heights[index] || this.estimate;
+      const height = this.heights[index] || this.estimateOf(index);
       total += height;
       this.offsets[index + 1] = total;
     }

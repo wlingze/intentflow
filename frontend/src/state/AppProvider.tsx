@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
 import { fetchPayload, fetchRevisions, saveReviewSession } from '../lib/api';
+import { sameList } from '../lib/visibleFiles';
 import { loadPrefs, savePrefs } from '../lib/prefs';
 import type { Comment, DiffLayout, Payload, ReviewSession, RevisionList, Side } from '../types';
 
@@ -11,6 +12,10 @@ export interface CodeState {
   layout: DiffLayout;
   wrap: boolean;
   word: string;
+  /** Files whose card is on screen right now; the tree greys them. */
+  visible: string[];
+  /** Files close enough to the viewport that their rows are mounted. */
+  mounted: string[];
 }
 export interface ToastState { id: number; message: string; kind: 'info' | 'success' | 'error' }
 export interface AppState {
@@ -61,6 +66,7 @@ export type Action =
   | { type: 'code/layout'; layout: DiffLayout }
   | { type: 'code/wrap'; wrap: boolean }
   | { type: 'code/word'; word: string }
+  | { type: 'code/visible'; files: string[]; mounted: string[] }
   | { type: 'tree/focus'; path: string }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
   | { type: 'toast/clear'; id: number };
@@ -71,7 +77,7 @@ const initialState: AppState = {
   panels: { files: prefs.files, right: prefs.right }, rightTab: 'review', drawer: null,
   comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
   saveStatus: 'saved', saveError: '',
-  code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '' }, treeFocus: null, toast: null, toastSeq: 0,
+  code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '', visible: [], mounted: [] }, treeFocus: null, toast: null, toastSeq: 0,
 };
 
 export function reviewDocument(state: AppState): ReviewSession {
@@ -113,7 +119,7 @@ function reducer(state: AppState, action: Action): AppState {
         revisionLoading: null, comments: doc.comments,
         viewed: doc.viewed.filter((entry) => entry.includes('#')),
         reviewedHunks: (doc.reviewed_hunks ?? []).filter((entry) => entry.includes('#')),
-        editVersion: 0, savedVersion: 0, saveStatus: 'saved', saveError: '', code: { ...state.code, reveal: null, line: undefined },
+        editVersion: 0, savedVersion: 0, saveStatus: 'saved', saveError: '', code: { ...state.code, reveal: null, line: undefined, visible: [], mounted: [] },
       };
     }
     case 'payload/error': return { ...state, loading: false, error: action.error };
@@ -158,6 +164,10 @@ function reducer(state: AppState, action: Action): AppState {
     case 'code/layout': return { ...state, code: { ...state.code, layout: action.layout } };
     case 'code/wrap': return { ...state, code: { ...state.code, wrap: action.wrap } };
     case 'code/word': return { ...state, code: { ...state.code, word: action.word } };
+    case 'code/visible': {
+      if (sameList(state.code.visible, action.files) && sameList(state.code.mounted, action.mounted)) return state;
+      return { ...state, code: { ...state.code, visible: action.files, mounted: action.mounted } };
+    }
     case 'tree/focus': return { ...state, treeFocus: { path: action.path, token: (state.treeFocus?.token ?? 0) + 1 } };
     case 'toast/show': return { ...state, toast: { id: state.toastSeq + 1, message: action.message, kind: action.kind ?? 'info' }, toastSeq: state.toastSeq + 1 };
     case 'toast/clear': return state.toast?.id === action.id ? { ...state, toast: null } : state;

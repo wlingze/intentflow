@@ -1,7 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { fileDiff } from '../lib/fileDiff';
 import { diffSections, growExpansion, splitPairs, type DiffLine, type DiffSection, type Expansion, type SplitPair } from '../lib/diffSections';
-import type { Hunk } from '../lib/hunks';
+import { inlineMarks } from '../lib/inlineDiff';
+import { estimateItem } from '../lib/cardHeights';
 import type { DiffRow, DiffStats } from '../lib/diff';
 import { cx } from '../lib/format';
 import { hashText } from '../lib/hash';
@@ -33,15 +34,16 @@ interface Props {
   reviewedHunks: string[];
   targetLine?: number;
   targetSide?: Side;
+  /** Rows are mounted only for cards near the viewport; the rest keep a spacer. */
+  mounted: boolean;
   defaultOpen?: boolean;
   revealToken?: number;
   word: string;
 }
 type Item = { type: 'gap'; section: DiffSection } | { type: 'header'; text: string; key: number; hash: string } | { type: 'line'; pair?: SplitPair; row?: DiffRow };
+const NO_MARKS = { before: new Map<number, never[]>(), after: new Map<number, never[]>() } as unknown as ReturnType<typeof inlineMarks>;
 const STATUS = { added: '新增', removed: '删除', modified: '修改', unchanged: '未变', renamed: '重命名' };
 const EMPTY: Record<number, Expansion> = {};
-const EMPTY_ROWS: DiffRow[] = [];
-const EMPTY_HUNKS: Hunk[] = [];
 // Row range picked by dragging. `side` fixes the column in split view; unified
 // has one side per row, so it spans whatever side each row carries.
 interface PickedRange { side: Side; anchor: number; focus: number }
@@ -184,14 +186,12 @@ export const FileDiffCard = memo(function FileDiffCard({
   reviewedHunks,
   targetLine,
   targetSide = 'after',
+  mounted = false,
   defaultOpen = true,
   revealToken,
   word,
 }: Props) {
   const dispatch = useAppDispatch();
-  // Cards compute their diff only when opened and close to the viewport; a
-  // 1700-file review otherwise blocks the main thread for seconds.
-  const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(defaultOpen && !viewed);
   const [expanded, setExpanded] = useState<Record<number, Expansion>>(EMPTY);
   const [comment, setComment] = useState<{ side: Side; start: number; end: number; snippet: string } | null>(null);
@@ -213,26 +213,14 @@ export const FileDiffCard = memo(function FileDiffCard({
   useEffect(() => () => selectionCleanup.current(), []);
   pickedRef.current = picked;
   const lastReveal = useRef('');
-  useEffect(() => {
-    if (!open) return;
-    const element = root.current;
-    if (!element) return;
-    if (typeof IntersectionObserver === 'undefined') { setReady(true); return; }
-    // Two thresholds: render early (1200px) and drop the body again once the
-    // card is far away (6000px), so a long review keeps a bounded DOM.
-    const near = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setReady(true);
-    }, { rootMargin: '1200px 0px' });
-    const far = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) setReady(false);
-    }, { rootMargin: '6000px 0px' });
-    near.observe(element);
-    far.observe(element);
-    return () => { near.disconnect(); far.disconnect(); };
-  }, [open]);
-  const diff = ready ? fileDiff(file) : null;
-  const rows = diff?.rows ?? EMPTY_ROWS;
-  const hunks = diff?.hunks ?? EMPTY_HUNKS;
+  // The diff is cheap (about 0.07ms per file over a 1374-file review) and the
+  // body only paints the rows near the viewport, so every card keeps its real
+  // height. Collapsing a body on scroll would move everything below it.
+  const showBody = open && mounted;
+  const diff = fileDiff(file);
+  const rows = diff.rows;
+  const hunks = diff.hunks;
+
   const pathComments = useMemo(() => comments.filter((entry) => entry.quote?.file === file.path), [comments, file.path]);
   const pathReviewed = useMemo(() => reviewedHunks.filter((key) => key.startsWith(`${file.path}@`)), [reviewedHunks, file.path]);
   const onViewed = () => dispatch({ type: 'viewed/toggle', entry: `${file.path}#${digest}` });
@@ -240,6 +228,9 @@ export const FileDiffCard = memo(function FileDiffCard({
   const onHunkReplace = (keys: string[]) => dispatch({ type: 'hunk/replace', file: file.path, keys });
   const onWord = (next: string) => dispatch({ type: 'code/word', word: next === word ? '' : next });
   const sections = useMemo(() => diffSections(rows, hunks, expanded), [rows, hunks, expanded]);
+  // 行内改动：同一对增删行里真实变化的词，与 GitHub 一致。只在卡片真正
+  // 挂载时计算，首屏不为一千多个文件付这笔钱。
+  const marks = useMemo(() => (showBody ? inlineMarks(splitPairs(rows)) : NO_MARKS), [rows, showBody]);
   const items = useMemo(() => {
     const out: Item[] = [];
     for (const section of sections) {
@@ -263,7 +254,18 @@ export const FileDiffCard = memo(function FileDiffCard({
   // Every hunk in the file is reviewed -> the whole file counts as viewed.
   useEffect(() => { if (allHunksReviewed && !viewed) onViewed(); }, [allHunksReviewed, viewed, onViewed]);
   const identity = useMemo(() => ({ items, wrap }), [items, wrap]);
-  const { ref: content, virtual, range: view } = useDiffWindow(open ? items.length : 0, identity);
+  // Exact height of the whole body: non-wrapped rows have fixed heights, so
+  // the spacer matches the real body pixel for pixel.
+  const totalHeight = useMemo(() => items.reduce((sum, item) => {
+    const lines = itemLines(item);
+    return sum + estimateItem(item, wrap, 900, lines.after?.text ?? lines.before?.text ?? '');
+  }, 0), [items, wrap]);
+  const estimateAt = useMemo(() => (index: number) => {
+    const item = items[index];
+    const lines = itemLines(item);
+    return estimateItem(item, wrap, 900, lines.after?.text ?? lines.before?.text ?? '');
+  }, [items, wrap]);
+  const { ref: content, virtual, range: view } = useDiffWindow(showBody ? items.length : 0, identity, showBody, 22, estimateAt);
   const columns = useMemo(() => {
     let before = 0; let after = 0;
     for (const item of items) {
@@ -300,7 +302,7 @@ export const FileDiffCard = memo(function FileDiffCard({
   }, [revealToken, targetLine, targetSide, rows, hunks, open, file.path]);
 
   useEffect(() => {
-    if (!pendingScroll || !ready || !open) return;
+    if (!pendingScroll || !showBody) return;
     const scroller = content.current?.closest<HTMLElement>('[data-review-scroll]');
     const element = root.current;
     if (!scroller || !element) return;
@@ -325,7 +327,7 @@ export const FileDiffCard = memo(function FileDiffCard({
       else if (Math.abs(delta) >= scroller.clientHeight) { scroller.scrollTop += delta; requestAnimationFrame(settle); }
     };
     requestAnimationFrame(settle);
-  }, [pendingScroll, ready, open, items, virtual, targetLine, targetSide]);
+  }, [pendingScroll, showBody, items, virtual, targetLine, targetSide]);
 
   const expand = (section: DiffSection, end: 'top' | 'bottom') => setExpanded((current) => {
     const next = growExpansion(section, current[section.key] ?? { top: 0, bottom: 0 }, end);
@@ -478,7 +480,7 @@ export const FileDiffCard = memo(function FileDiffCard({
       if (pickedRef.current) { setPicked(null); clearCodeSelection(); }
       const selected = wordAtPoint(event, source, line.text);
       if (selected !== null) onWord(selected);
-    }}><span className={styles.sign} aria-hidden>{change === 'add' ? '+' : change === 'del' ? '−' : ' '}</span><span className={styles.source} data-source dangerouslySetInnerHTML={{ __html: highlight(line.text, file.language, word) || '&nbsp;' }} /></span>}
+    }}><span className={styles.sign} aria-hidden>{change === 'add' ? '+' : change === 'del' ? '−' : ' '}</span><span className={styles.source} data-source dangerouslySetInnerHTML={{ __html: highlight(line.text, file.language, word, marks[side].get(line.n)) || '&nbsp;' }} /></span>}
   </div>;
 
   const slash = file.path.lastIndexOf('/');
@@ -508,7 +510,8 @@ export const FileDiffCard = memo(function FileDiffCard({
         <span>已查看</span>
       </label>
     </header>
-    {open && ready && <div ref={content} className={styles.body} onPointerDown={beginSelection}>
+    {open && !mounted && <div className={styles.body} style={{ height: totalHeight }} aria-hidden />}
+    {showBody && <div ref={content} className={styles.body} onPointerDown={beginSelection}>
       {!items.length && <div className={styles.clean}>没有可显示的文本改动。</div>}
       <div aria-hidden style={{ height: view.top }} />
       {items.slice(view.start, view.end).map((item, offset) => {

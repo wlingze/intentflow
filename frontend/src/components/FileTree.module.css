@@ -150,6 +150,12 @@ details[open] > .dirRow > .chevron {
   color: var(--ink);
 }
 
+/* 正在 diff 面板里显示的文件：灰色。点开的那一个：蓝色。 */
+.fileRowOnScreen, .fileRowOnScreen:hover { background: var(--panel-2); }
+.fileRowOnScreen .fileName, .fileRowOnScreen .fileIcon { color: var(--dim); }
+.fileRowActive, .fileRowActive:hover { background: var(--blue-soft); box-shadow: inset 2px 0 var(--blue); }
+.fileRowActive .fileName, .fileRowActive .fileIcon { color: var(--blue); }
+
 .fileIcon {
   flex: none;
 }

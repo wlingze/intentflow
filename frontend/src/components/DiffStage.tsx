@@ -3,6 +3,7 @@ import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import { FileDiffCard } from './FileDiffCard';
 import { IconBranch } from './Icons';
+import { sortedPaths } from '../lib/visibleFiles';
 import styles from './DiffStage.module.css';
 
 const EMPTY_STAT = { adds: 0, dels: 0 };
@@ -15,6 +16,60 @@ export function DiffStage() {
   const base = payload?.review.comparison.beforeLabel ?? payload?.review.before ?? '';
   const after = payload?.review.comparison.afterLabel ?? payload?.review.after ?? '';
   const scroller = useRef<HTMLDivElement>(null);
+  const visible = useRef<string[]>([]);
+
+  // 一个观察器管全部卡片：屏内文件给文件树用（灰色），近处文件挂载正文。
+  // 每张卡片各自建观察器时，上千文件会让回调迟到十几秒。
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || typeof IntersectionObserver === 'undefined') return;
+    const onScreen = new Set<string>();
+    const near = new Set<string>();
+    let frame = 0;
+    let lastVisible = '';
+    let lastMounted = '';
+    const flush = () => {
+      frame = 0;
+      const visibleList = sortedPaths(onScreen);
+      const mountedList = sortedPaths(near);
+      const visibleKey = visibleList.join('\n');
+      const mountedKey = mountedList.join('\n');
+      if (visibleKey === lastVisible && mountedKey === lastMounted) return;
+      lastVisible = visibleKey;
+      lastMounted = mountedKey;
+      visible.current = visibleList;
+      dispatch({ type: 'code/visible', files: visibleList, mounted: mountedList });
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(flush); };
+    const onScreenObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const path = (entry.target as HTMLElement).dataset.file;
+        if (!path) continue;
+        if (entry.isIntersecting) onScreen.add(path);
+        else onScreen.delete(path);
+      }
+      schedule();
+    }, { root, threshold: 0 });
+    const nearObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const path = (entry.target as HTMLElement).dataset.file;
+        if (!path) continue;
+        if (entry.isIntersecting) near.add(path);
+        else near.delete(path);
+      }
+      schedule();
+    }, { root, rootMargin: '2000px 0px' });
+    for (const element of root.querySelectorAll<HTMLElement>('[data-file]')) {
+      onScreenObserver.observe(element);
+      nearObserver.observe(element);
+    }
+    return () => {
+      onScreenObserver.disconnect();
+      nearObserver.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      visible.current = [];
+    };
+  }, [files, dispatch]);
 
   // 文件树点击：把目标卡片滚到顶部。行级定位由卡片自己处理。
   useEffect(() => {
@@ -82,6 +137,7 @@ export function DiffStage() {
               stat={stats.get(file.path) ?? EMPTY_STAT}
               comments={comments}
               reviewedHunks={reviewedHunks}
+              mounted={code.mounted.includes(file.path)}
               revealToken={code.reveal?.file === file.path ? code.revealToken : undefined}
               targetLine={code.reveal?.file === file.path ? code.line : undefined}
               targetSide={code.reveal?.file === file.path ? code.side : undefined}

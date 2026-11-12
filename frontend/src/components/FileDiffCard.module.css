@@ -1,4 +1,4 @@
-.card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: clip; scroll-margin-top: 12px; content-visibility: auto; contain-intrinsic-size: auto 480px; }
+.card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: clip; scroll-margin-top: 12px; }
 .isViewed { border-color: var(--line); }
 .isViewed .head { opacity: 0.72; }
 .head { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); min-height: 38px; }
