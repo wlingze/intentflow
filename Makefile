@@ -10,7 +10,7 @@ E2E_URL ?= http://127.0.0.1:8123
 # e2e 需要 Playwright。NODE_PATH 指向全局安装的包，没有就退回本地解析。
 PLAYWRIGHT_PATH ?= $(HOME)/.local/lib/node_modules/@playwright/cli/node_modules
 
-.PHONY: tools schema frontend build check e2e demo serve release-check clean
+.PHONY: tools schema frontend build check e2e demo serve release-check site site-check clean
 
 # 一次性安装生成器。oapi-codegen 固定在 v2.4.1，避免生成物漂移。
 tools:
@@ -57,6 +57,14 @@ release-check:
 	    -o /tmp/intentflow-$$os-$$arch ./cmd/intentflow || exit 1; \
 	  echo "ok $$os/$$arch"; \
 	done
+
+# 官网本地预览。纯静态文件，不需要构建。
+site:
+	python3 -m http.server --directory website 0.0.0.0 8131
+
+# 官网校验：文件齐全、双语文案 key 对齐、相对路径、无第三方资源。
+site-check:
+	node scripts/check-site.mjs
 
 # 不提供 rm -rf：需要清理时请手动确认路径后删除。
 clean:
