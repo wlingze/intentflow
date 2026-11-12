@@ -24,3 +24,9 @@
   .kind { display: none; }
   .hit { grid-template-columns: 30px minmax(0, 1fr); }
 }
+
+.panel .group { padding: 4px 10px 3px; font-size: 10px; }
+.panel .hit { grid-template-columns: 28px 34px minmax(0, 1fr); gap: 6px; padding: 3px 10px 3px 8px; }
+.panel .line { font-size: 9.5px; }
+.panel .kind { font-size: 9.5px; }
+.panel .code { font-size: 10.5px; line-height: 1.5; }

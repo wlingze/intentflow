@@ -4,12 +4,10 @@ import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import { cx } from '../lib/format';
 import { codeSelection } from '../lib/codeSelection';
-import { loadExact, saveExact } from '../lib/exactPref';
+import { loadMatch, saveMatch } from '../lib/exactPref';
 import { SearchHitList } from './SearchHitList';
 import { IconClose, IconSearch } from './Icons';
 import styles from './SearchPanel.module.css';
-
-const EXACT_KEY = 'intentflow.search-exact';
 
 interface Props {
   open: boolean;
@@ -87,15 +85,24 @@ export function SearchPanel({ open, onOpen, onClose }: Props) {
   const { files } = useReviewData();
   const [query, setQuery] = useState('');
   const deferred = useDeferredValue(query);
-  const [exact, setExact] = useState(() => loadExact(EXACT_KEY, false));
-  const toggleExact = () => setExact((value) => { saveExact(EXACT_KEY, !value); return !value; });
+  const [match, setMatch] = useState(() => loadMatch('search'));
+  const toggleCase = () => setMatch((current) => {
+    const next = { ...current, caseSensitive: !current.caseSensitive };
+    saveMatch('search', next);
+    return next;
+  });
+  const toggleWord = () => setMatch((current) => {
+    const next = { ...current, wholeWord: !current.wholeWord };
+    saveMatch('search', next);
+    return next;
+  });
   const [active, setActive] = useState(0);
   const [limit, setLimit] = useState(200);
   const input = useRef<HTMLInputElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const lastJumped = useRef(-1);
-  const results = useMemo(() => searchDiff(files, deferred, { exact }), [files, deferred, exact]);
+  const results = useMemo(() => searchDiff(files, deferred, match), [files, deferred, match]);
   const visible = results.slice(0, limit);
 
   const reveal = (hit: SearchHit) => dispatch({ type: 'code/reveal', file: hit.path, line: hit.line, side: hit.side });
@@ -147,7 +154,7 @@ export function SearchPanel({ open, onOpen, onClose }: Props) {
   useEffect(() => {
     if (open) selectNearest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deferred, files, exact]);
+  }, [deferred, files, match]);
 
   useEffect(() => {
     setActive((current) => results.length ? Math.min(current, results.length - 1) : 0);
@@ -217,7 +224,8 @@ export function SearchPanel({ open, onOpen, onClose }: Props) {
         aria-label="搜索全部 diff"
         spellCheck={false}
       />
-      <button type="button" className={cx(styles.exact, exact && styles.exactOn)} aria-pressed={exact} aria-label="精确搜索" title={exact ? '精确搜索：完整单词、区分大小写（点击关闭）' : '精确搜索：完整单词、区分大小写'} onClick={toggleExact}>Aa</button>
+      <button type="button" className={cx(styles.exact, match.caseSensitive && styles.exactOn)} aria-pressed={match.caseSensitive} aria-label="区分大小写" title="区分大小写" onClick={toggleCase}>Aa</button>
+      <button type="button" className={cx(styles.exact, match.wholeWord && styles.exactOn)} aria-pressed={match.wholeWord} aria-label="完整匹配" title="完整匹配（整词）" onClick={toggleWord}>{'\\b'}</button>
       <span className={styles.count}>{results.length ? `${Math.min(active + 1, results.length)} / ${results.length}` : '0'}</span>
       <button type="button" className={styles.icon} aria-label="上一个匹配" title="上一个匹配 (Shift+Enter)" disabled={!results.length} onClick={() => select(active - 1)}>↑</button>
       <button type="button" className={styles.icon} aria-label="下一个匹配" title="下一个匹配 (Enter)" disabled={!results.length} onClick={() => select(active + 1)}>↓</button>

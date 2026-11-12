@@ -28,15 +28,16 @@ describe('global diff search', () => {
   });
 
   it('matches whole words only in exact mode', () => {
-    expect(searchDiff([file], 'name', { exact: true })).toEqual([]);
-    expect(searchDiff([file], 'newName', { exact: true })).toHaveLength(1);
-    expect(searchDiff([file], 'newname', { exact: true })).toEqual([]);
+    expect(searchDiff([file], 'name', { wholeWord: true })).toEqual([]);
+    expect(searchDiff([file], 'newName', { wholeWord: true })).toHaveLength(1);
+    expect(searchDiff([file], 'newname', { wholeWord: true, caseSensitive: true })).toEqual([]);
+    expect(searchDiff([file], 'newname', { wholeWord: true })).toHaveLength(1);
     expect(searchDiff([file], 'newname')).toHaveLength(1);
   });
   it('keeps punctuation and operator queries exact', () => {
     const ops: CodeFile = { ...file, before: 'a := 1\nb := 2\n', after: 'a := 1\nb == 2\n' };
-    expect(searchDiff([ops], ':=', { exact: true })).toHaveLength(2);
-    expect(searchDiff([ops], ':=', { exact: true }).map((hit) => hit.line)).toEqual([1, 2]);
-    expect(searchDiff([ops], '= ', { exact: true })).toHaveLength(0);
+    expect(searchDiff([ops], ':=', { wholeWord: true })).toHaveLength(2);
+    expect(searchDiff([ops], ':=', { wholeWord: true }).map((hit) => hit.line)).toEqual([1, 2]);
+    expect(searchDiff([ops], '= ', { wholeWord: true })).toHaveLength(0);
   });
 });

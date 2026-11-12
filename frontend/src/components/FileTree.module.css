@@ -68,7 +68,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 0 12px;
+  padding: 3px 0 8px;
 }
 
 .tree {
@@ -83,13 +83,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
+  height: 25px;
   font-weight: 500;
-  padding-right: 12px;
+  padding-right: 10px;
   cursor: pointer;
   list-style: none;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 12.5px;
 }
 
 .dirRow::-webkit-details-marker {
@@ -133,16 +133,16 @@ details[open] > .dirRow > .chevron {
 .fileRow {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  height: 34px;
+  height: 25px;
   font-weight: 500;
-  padding-right: 12px;
+  padding-right: 10px;
   border: 0;
   background: transparent;
   color: var(--ink);
   text-align: left;
-  font-size: 14px;
+  font-size: 12.5px;
 }
 
 .fileRow:hover {
