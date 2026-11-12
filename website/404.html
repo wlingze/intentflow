@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="notfound.pageTitle">Page not found — intentflow</title>
+  <meta name="description" content="This path has no page. The intentflow index and the docs are one click away.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1a19'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%2384d7c7' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <!-- Self-contained on purpose: GitHub Pages answers any missing path with
+       this file while the address bar keeps the deep URL, so ./assets/... would
+       resolve against the wrong depth. Styles and the two strings are inline;
+       links are absolute. -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --paper: #191a1b;
+      --ink: #f2f4f5;
+      --ink-2: #b6bcc0;
+      --accent: #84d7c7;
+      --rule: #3a3f43;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --paper: #fbfaf7;
+        --ink: #2a2c30;
+        --ink-2: #4c5258;
+        --accent: #1f6f7d;
+        --rule: #d8d4cb;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 14px;
+      padding: 24px;
+      text-align: center;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+        "PingFang SC", system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 15px;
+      color: var(--accent);
+    }
+    .code {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(3rem, 8vw, 6rem);
+      line-height: 1;
+      color: var(--accent);
+    }
+    h1 { margin: 0; font-size: 1.375rem; letter-spacing: -0.01em; }
+    p { margin: 0; max-width: 44ch; color: var(--ink-2); }
+    nav { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 6px; }
+    a {
+      padding: 9px 16px;
+      border: 1px solid var(--ink);
+      border-radius: 4px;
+      color: inherit;
+      font-size: 0.9375rem;
+      text-decoration: none;
+    }
+    a:hover, a:focus-visible { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <span class="mark" aria-hidden="true">+/</span>
+  <p class="code">404</p>
+  <h1 data-i18n="notfound.title">Page not found</h1>
+  <p data-i18n="notfound.lead">This path has no page. The index and the docs are one click away.</p>
+  <nav>
+    <a href="https://wlingze.github.io/intentflow/" data-i18n="notfound.home">Index</a>
+    <a href="https://github.com/wlingze/intentflow">GitHub</a>
+  </nav>
+
+  <script>
+    /* Kept inline and local: this file has no shared assets to load from.
+       Same shape as the dictionaries in app.js so scripts/check-site.mjs can
+       compare both languages the same way. */
+    const messages404 = {
+      en: {
+        'notfound.pageTitle': 'Page not found — intentflow',
+        'notfound.title': 'Page not found',
+        'notfound.lead': 'This path has no page. The index and the docs are one click away.',
+        'notfound.home': 'Index',
+      },
+      zh: {
+        'notfound.pageTitle': '页面不存在 — intentflow',
+        'notfound.title': '页面不存在',
+        'notfound.lead': '这个路径没有对应页面。首页与文档就在旁边。',
+        'notfound.home': '首页',
+      },
+    };
+
+    const tags = navigator.languages && navigator.languages.length
+      ? navigator.languages
+      : [navigator.language || ''];
+    const lang = tags.some((tag) => String(tag).toLowerCase().indexOf('zh') === 0) ? 'zh' : 'en';
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach((node) => {
+      const value = messages404[lang][node.getAttribute('data-i18n')];
+      if (typeof value === 'string') node.textContent = value;
+    });
+    document.title = messages404[lang]['notfound.pageTitle'];
+  </script>
+</body>
+</html>
