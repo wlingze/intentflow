@@ -1,177 +1,139 @@
-# 数据契约：一份 OpenAPI，生成 Go 与 TypeScript
+# 数据契约
 
-> 目标：JSON 结构只在一个地方定义。Go 服务端、TypeScript 前端、离线 review.json 都使用生成出来的类型，不再各自手写一套。
+`schema/openapi.yaml` 是唯一事实来源。Go 和 TypeScript 类型都由它生成，不手写第二套。
 
-## 1. 为什么选 OpenAPI，而不是 protobuf
-
-| 方案 | 优点 | 代价 |
-| --- | --- | --- |
-| protobuf | 强类型、可扩展 gRPC、二进制 | 需要 proto 插件；JSON 走 protojson 命名规则；HTTP 语义要另写 |
-| OpenAPI | 直接描述 HTTP JSON；工具成熟；可读 | 不适合二进制/流式 |
-| 手写 TS + Go | 无生成步骤 | 一定漂移 |
-
-intentflow 的接口是**本机 HTTP + JSON**，不是 gRPC。OpenAPI 能同时描述：
-
-- 路径：`GET /api/payload`、`POST /api/review`
-- 请求/响应 body
-- 枚举与必填字段
-- 前端可以直接 `openapi-typescript` 生成类型
-
-所以选 OpenAPI 3.0.3。未来如果要 gRPC，可以从同一份模型迁到 proto，而不是现在引入两套。
-
-## 2. 文件
-
-```
-schema/openapi.yaml              唯一事实来源
-oapi-codegen.yaml                Go 生成配置
-internal/contract/types.gen.go   生成：Go 结构体（勿手改）
-frontend/src/api/schema.gen.ts   生成：TypeScript 类型（勿手改）
-```
-
-生成命令：
+## 1. 生成
 
 ```bash
-# Go
-/home/wlz/go/bin/oapi-codegen -config oapi-codegen.yaml schema/openapi.yaml
-
-# TypeScript
-cd frontend
-pnpm exec openapi-typescript ../schema/openapi.yaml -o src/api/schema.gen.ts
+make schema
 ```
 
-`make schema` 已串联两条命令；不要手改生成物。
+- Go：`internal/contract/types.gen.go`（oapi-codegen）
+- TypeScript：`frontend/src/api/schema.gen.ts`（openapi-typescript）
 
-## 3. 类型层次
+不要手改生成物。
+
+## 2. Payload
+
+`GET /api/payload` 返回一次比较的完整快照。
 
 ```text
 Payload
-├── Review
+├── review : Review
 │   ├── before / after
-│   ├── project / logic / intent : Delta<Fact>
-│   ├── signals : Signal[]
-│   ├── notes : string[]
-│   ├── behavior : BehaviorGraph
-│   └── ai : AiSummary
-└── CodeBundle
-    └── files : CodeFile[]
-
-BehaviorGraph
-├── nodes : BehaviorNode[]
-├── edges : BehaviorEdge[]          // id/from/to/kind/label/scenario
-├── scenarios : BehaviorScenario[]
-├── lanes : BehaviorLane[]        // 图例：角色 + 数量
-├── entry : string
-├── stageCount : int
-└── stats : BehaviorStats
-
-ReviewRequest
-├── markdown : string
-└── data : ReviewState
-    ├── comments : Comment[]
-    ├── dismissed : string[]
-    └── kept : string[]
-
-AiSummary
-├── status : ok | unavailable | error
-├── model : string
-├── summary : string
-├── risks : AiRisk[]
-├── focus : string[]
-└── generated_at : string
+│   ├── comparison : Comparison
+│   └── notes : string[]
+├── code : CodeBundle
+│   ├── root
+│   ├── files : CodeFile[]        # 只含改动文件
+│   ├── truncated : bool
+│   └── skipped : string[]
+└── session : ReviewSession       # 当前范围的评审草稿
 ```
 
-### 3.1 必填策略
+`Review` 仍保留早期语义分析的占位字段（`scan`、`findings`、`ai` 等）。当前版本固定为
+`scan.status = skipped`，`findings = []`，前端不读取。
 
-除 `Comment.quote` 外，所有 schema 字段都标成 `required`。原因：
+### CodeFile
 
-- oapi-codegen 对非 required 字段生成指针，扫描器代码会被 `*string` 污染。
-- 空字符串/空数组足以表达「没有」，前端用 `status` 区分新增/删除文件。
-- JSON 输出稳定，agent 不需要处理缺字段。
-
-`Comment.quote` 是唯一可选字段：评论可以不引用代码。生成 Go 时是 `*Quote`，生成 TS 时是 `quote?: Quote`。
-
-代价：`CodeFile.before/after` 在文件新增/删除时是空串，不是 `null`。前端必须看 `status`，不能看字段是否存在。
-
-### 3.2 枚举
-
-| 枚举 | 值 |
-| --- | --- |
-| `Confidence` | `EXTRACTED` / `DERIVED` / `INFERRED` / `ASSERTED` / `UNKNOWN` |
-| `Layer` | `project` / `logic` / `intent` |
-| `Severity` | `info` / `warn` / `high` |
-| `DeltaKind` | `added` / `removed` / `modified` / `unchanged` |
-| `CodeStatus` | 同上 |
-| `BehaviorRole` | `trigger` / `decision` / `transform` / `effect` |
-| `BehaviorEdgeKind` | `call` / `data` / `control` / `boundary` |
-| `Side` | `before` / `after` |
-
-## 4. Go 侧怎么用
-
-`internal/model` 不再手写 JSON 结构，而是给生成类型起领域别名：
-
-```go
-type Fact = contract.Fact
-type Delta = contract.Delta
-type Review = contract.Review
-type BehaviorGraph = contract.BehaviorGraph
+```text
+path / status / language / before / after
 ```
 
-这样扫描器、diff、signals、behavior 全部直接使用生成类型。只有 `FactSet`、`Identity`、`Diff` 这些领域函数留在 `model`。
+`status` 为 `added | removed | modified | unchanged`。文本文件上限 2MB，
+整次 payload 正文上限 24MB；预算按文件体积从小到大分配，避免大文件挤掉小文件。
+超限文件保留路径和状态，正文为空，`code.truncated` 为 true。
 
-服务端：
+### Comparison
 
-```go
-var req contract.ReviewRequest
-if err := json.Unmarshal(raw, &req); err != nil { ... }
+```text
+mode : folder | git
+beforeLabel / afterLabel
+repo? / subdir? / baseRef? / headRef?
+commits : Commit[]
+selected : string[]
+note
 ```
 
-响应：
+目录比较只有 folder；Git 比较带仓库、子目录和 ref。
 
-```go
-payload := contract.Payload{Review: review, Code: code}
+## 3. Revision
+
+`GET /api/revisions` 返回顶部下拉框的选项。
+
+```text
+RevisionList
+├── base / head / current
+├── dirty : bool
+└── revisions : Revision[]
+    ├── id          # range | worktree | commit:<sha>
+    ├── kind
+    ├── label / sha / short / subject / author / date
+    └── files : int
 ```
 
-`internal/payload` 直接返回 `contract.CodeBundle`，不再定义第二套 `CodeFile`。
+`GET /api/payload?revision=<id>` 切换范围。切换前若当前评审有未保存修改，前端先保存。
 
-## 5. TypeScript 侧怎么用
+## 4. ReviewSession
 
-`frontend/src/types.ts` 只做重导出：
+一个“仓库 + 分支 + 子目录”对应一个 session。`session_id` 是该组合的稳定摘要；
+`comparison_id` 额外包含 base/head/revision 和 diff 内容摘要。
 
-```ts
-import type { components } from './api/schema.gen';
-
-export type Fact = components['schemas']['Fact'];
-export type Payload = components['schemas']['Payload'];
-export type BehaviorNode = components['schemas']['BehaviorNode'];
+```text
+ReviewSession
+├── version : 1
+├── context : ReviewContext
+│   ├── session_id / comparison_id
+│   ├── repository / branch / subdir
+│   ├── base / head / revision
+│   └── diff_digest
+├── comments : Comment[]
+├── viewed : string[]             # <file>#<file digest>
+├── reviewed_hunks : string[]     # <file>@<row>#<hunk digest>
+└── updated_at : string
 ```
 
-组件不手写 JSON 字段。改 schema 后跑生成，类型错误会直接暴露。
+`Comment` 包含 `id/text/title/source/signalId/createdAt/quote/resolved/images`。
+`quote` 是 `file/side/start/end/snippet`，可以省略：没有 `quote` 的条目是不绑定行号的意见。
+新评论的图片以 Markdown 图片写进 `text`，URL 指向 `/api/review/assets/...`。
+`images` 字段保留给旧数据，新评论固定为空数组。
 
-前端自己的视图状态（缩放、选中、抽屉）不在契约里，放在 `state/`。
+## 5. 接口
 
-## 6. `review.json` 与 `review.md`
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/payload` | 当前比较快照；`?revision=` 切换 |
+| GET | `/api/revisions` | 比较范围列表 |
+| GET | `/api/review/drafts` | 当前分支 session 的其他草稿 |
+| POST | `/api/review/drafts/{comparison_id}` | 恢复该草稿；`relax` 时降级失效行号 |
+| PUT | `/api/review/state` | 保存或导入评审；上下文不符返回 409 |
+| POST | `/api/review/assets` | 上传图片，返回 `{name, url}` |
+| GET | `/api/review/assets/{name}` | 读取图片，长缓存 |
+| POST | `/api/review` | 把评审 JSON 写到 `--out` |
 
-- `review.json`：`Review` 类型。`diff` 与 `serve` 都写。
-- `review.md`：人/agent 读的 Markdown。`POST /api/review` 写入。
-- `review-state.json`：`ReviewState` 类型，保存评论/忽略/保留。写入失败不影响主流程。
+`PUT /api/review/state` 使用严格 JSON 解码：未知字段、尾随内容、超过 16MB 都拒绝。
+写入使用临时文件 + rename，权限 0600。
 
-`review.json` 不包含源码；源码只在 `Payload.code` 里。这样 agent 读事实时不会被大段代码淹没。
+`POST /api/review/assets` 上限 8MB，只接受 png、jpg、gif、webp，格式由内容嗅探决定，
+不看扩展名或请求头。文件名是内容的 SHA-256，重复上传不产生新文件。
+`GET` 只接受 `^[a-f0-9]{64}\.(png|jpe?g|gif|webp)$`，避免路径穿越。
 
-## 7. 兼容规则
+## 6. 必填策略
 
-改 schema 时：
+`ReviewSession` 和 `ReviewContext` 的字段均为必填，空数组表示“没有”。
+`Comment.quote` 可选，因为评论可以不绑定行号；`resolved` 缺省为 false。
 
-1. 新增字段必须 required，给默认值（空串/空数组/0）。
-2. 删除字段前先在前端/Go 搜索使用点。
-3. 枚举只能追加，不能改已有值。
-4. 不改字段语义；要改就加新字段。
-5. 生成后跑 `go build ./...` 与 `pnpm typecheck`。
+## 7. 兼容
 
-版本号在 `info.version`。当前 `0.2.0`。
+已删除的 `/api/scan`、`/api/commits` 不再注册，返回 404。旧 `--mode scan|review`
+明确报错。当前阶段没有扫描、SSA、AI 或数据库依赖。
 
-## 8. 当前验证
+`Review` 里的 `scan/findings/ai/symbols/behavior` 字段保留，供第二阶段接回事实层。
+现在固定为 `skipped` 和空数组，前端不读取。
 
-- `oapi-codegen v2.4.1` 生成 Go，无额外运行时依赖。
-- `openapi-typescript 7.13.0` 生成 TS。
-- `internal/model` 使用生成类型后，`go build ./...` 通过。
-- 前端类型重导出后，`pnpm typecheck` 通过（见实现提交）。
+## 8. 导出文件
+
+- `--out/review.json`：`POST /api/review` 写出的评审 JSON，与 `.intentflow` 里的文件同构。
+- `.intentflow/sessions/<session>/<comparison>.json`：自动保存的草稿。
+- `.intentflow/assets/<sha256>.<ext>`：评论图片。
+- 手动导出的 Markdown 引用图片时写 `assets/<name>`。

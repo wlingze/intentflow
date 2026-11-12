@@ -56,7 +56,31 @@ export function buildTree(files: CodeFile[], onlyChanged: boolean): TreeNode[] {
   return sortNodes(root.children);
 }
 
+export function countFiles(node: TreeNode): number {
+  if (node.type === 'file') return 1;
+  return node.children.reduce((total, child) => total + countFiles(child), 0);
+}
+
+// countViewed reports how many files under the node are already reviewed.
+export function countViewed(node: TreeNode, done: (path: string) => boolean): number {
+  if (node.type === 'file') return done(node.path) ? 1 : 0;
+  return node.children.reduce((total, child) => total + countViewed(child, done), 0);
+}
+
 export function countChanged(node: TreeNode): number {
   if (node.type === 'file') return node.file.status === 'unchanged' ? 0 : 1;
   return node.children.reduce((total, child) => total + countChanged(child), 0);
+}
+
+// flattenTree returns file paths in the exact order the sidebar renders them.
+export function flattenTree(nodes: TreeNode[]): string[] {
+  const out: string[] = [];
+  const walk = (list: TreeNode[]) => {
+    for (const node of list) {
+      if (node.type === 'dir') walk(node.children);
+      else out.push(node.path);
+    }
+  };
+  walk(nodes);
+  return out;
 }

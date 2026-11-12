@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/yaklang/intentflow/internal/contract"
@@ -43,7 +44,23 @@ func Open(dir, subdir string) (*Repo, error) {
 		root = abs
 	}
 	sub := strings.Trim(strings.TrimSpace(subdir), "/")
+	if sub == "." {
+		sub = ""
+	}
 	return &Repo{Root: root, Subdir: sub}, nil
+}
+
+// Branch returns an explicit identity even in detached-HEAD checkouts.
+func (r *Repo) Branch() (string, error) {
+	out, err := git(r.Root, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err == nil && strings.TrimSpace(out) != "" {
+		return strings.TrimSpace(out), nil
+	}
+	sha, err := r.Resolve("HEAD")
+	if err != nil {
+		return "", err
+	}
+	return "detached:" + sha, nil
 }
 
 // Resolve 把一个 ref 解析成完整 commit SHA。
@@ -58,12 +75,39 @@ func (r *Repo) Resolve(ref string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// IsAncestor 判断 ancestor 是否在 descendant 的历史里。
+func (r *Repo) IsAncestor(ancestor, descendant string) bool {
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	_, err := git(r.Root, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}
+
+// Distance 返回 descendant 比 ancestor 多出的提交数。anchors 必须是祖先。
+func (r *Repo) Distance(ancestor, descendant string) (int, error) {
+	out, err := git(r.Root, "rev-list", "--count", ancestor+".."+descendant)
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("解析提交距离失败: %w", err)
+	}
+	return n, nil
+}
+
 // Commits 列出 base..head 范围内、触及 Subdir 的提交，按时间正序。
 func (r *Repo) Commits(base, head string) ([]contract.Commit, error) {
 	args := []string{
 		"log", "--reverse", "--no-color",
 		"--format=%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s",
-		base + ".." + head,
+	}
+	// An empty base means "from the root": git reads "..HEAD" as an empty range.
+	if base == "" {
+		args = append(args, head)
+	} else {
+		args = append(args, base+".."+head)
 	}
 	if r.Subdir != "" {
 		args = append(args, "--", r.Subdir)
@@ -95,6 +139,86 @@ func (r *Repo) Commits(base, head string) ([]contract.Commit, error) {
 		})
 	}
 	return commits, nil
+}
+
+// Show 读取单个提交的元数据，用于提交选择器。
+func (r *Repo) Show(sha string) (contract.Commit, error) {
+	out, err := git(r.Root, "show", "-s", "--no-color", "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s", sha)
+	if err != nil {
+		return contract.Commit{}, err
+	}
+	parts := strings.SplitN(strings.TrimSpace(out), "\x1f", 6)
+	if len(parts) < 6 {
+		return contract.Commit{}, fmt.Errorf("无法解析提交 %s", sha)
+	}
+	parents := []string{}
+	if fields := strings.Fields(parts[4]); len(fields) > 0 {
+		parents = fields
+	}
+	return contract.Commit{
+		Sha:     parts[0],
+		Short:   parts[1],
+		Author:  parts[2],
+		Date:    parts[3],
+		Parents: parents,
+		Subject: parts[5],
+	}, nil
+}
+
+// StatusFiles 返回工作区里未提交的文件，路径相对 Subdir。
+func (r *Repo) StatusFiles() ([]string, error) {
+	out, err := git(r.Root, "status", "--porcelain", "-uall")
+	if err != nil {
+		return nil, err
+	}
+	files := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if len(line) < 4 {
+			continue
+		}
+		p := strings.TrimSpace(line[3:])
+		if i := strings.Index(p, " -> "); i >= 0 {
+			p = p[i+4:]
+		}
+		p = strings.Trim(p, `"`)
+		if r.Subdir != "" {
+			prefix := r.Subdir + "/"
+			if p == r.Subdir {
+				p = ""
+			} else if strings.HasPrefix(p, prefix) {
+				p = strings.TrimPrefix(p, prefix)
+			} else {
+				continue
+			}
+		}
+		if p != "" && !strings.Contains("/"+p+"/", "/.intentflow/") {
+			files = append(files, p)
+		}
+	}
+	return files, nil
+}
+
+// HasParent 判断提交是否有第一父提交。
+func (r *Repo) HasParent(sha string) bool {
+	_, err := r.Resolve(sha + "^1")
+	return err == nil
+}
+
+// ArchiveRef 把 ref 下的子树导出到 dst。用于「基线提交 → 当前工作区」比较。
+func (r *Repo) ArchiveRef(ref, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	return r.archive(ref, dst)
+}
+
+// Worktree 返回工作区中参与比较的目录。
+func (r *Repo) Worktree() string {
+	if r.Subdir == "" {
+		return r.Root
+	}
+	return filepath.Join(r.Root, filepath.FromSlash(r.Subdir))
 }
 
 // Materialize 生成两份目录，返回 before、after 路径。调用方负责删除 tempRoot。

@@ -1,372 +1,164 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useReducer,
-  type Dispatch,
-  type ReactNode,
-} from 'react';
-import { fetchPayload } from '../lib/api';
-import { loadPersisted, reviewStorageKey, savePersisted } from '../lib/persistence';
+import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
+import { fetchPayload, fetchRevisions, saveReviewSession } from '../lib/api';
 import { loadPrefs, savePrefs } from '../lib/prefs';
-import type {
-  Comment,
-  DeltaKind,
-  DiffLayout,
-  Payload,
-  PersistedReview,
-  Quote,
-  Selection,
-  Side,
-  ViewMode,
-  CodeMode,
-} from '../types';
-
-export type RightTab = 'ai' | 'signals' | 'review';
+import type { Comment, DiffLayout, Payload, ReviewSession, RevisionList, Side } from '../types';
 
 export interface CodeState {
-  files: string[];
-  active: string | null;
-  mode: CodeMode;
+  reveal: { file: string; token: number } | null;
+  revealToken: number;
+  line?: number;
+  side?: Side;
   layout: DiffLayout;
   wrap: boolean;
-  line?: number;
-  side?: Side;
-  search: string;
+  word: string;
 }
-
-export interface PanelState {
-  files: boolean;
-  graph: boolean;
-}
-
-export interface PeekState {
-  open: boolean;
-  nodeId?: string;
-  edgeId?: string;
-  file?: string;
-  line?: number;
-  side?: Side;
-  delta?: DeltaKind;
-  function?: string;
-}
-
-export interface ComposerState {
-  quote: Quote | null;
-  text: string;
-  focusToken: number;
-}
-
-export interface ToastState {
-  id: number;
-  message: string;
-  kind: 'info' | 'success' | 'error';
-}
-
+export interface ToastState { id: number; message: string; kind: 'info' | 'success' | 'error' }
 export interface AppState {
   payload: Payload | null;
   loading: boolean;
   error: string | null;
-  view: ViewMode;
-  rightTab: RightTab;
-  panels: PanelState;
+  revisions: RevisionList | null;
+  revisionId: string;
+  revisionLoading: string | null;
+  panels: { files: boolean; right: boolean };
+  rightTab: 'ai' | 'signals' | 'review';
   drawer: 'left' | 'right' | null;
-  selected: Selection | null;
-  peek: PeekState;
   comments: Comment[];
-  dismissed: string[];
-  kept: string[];
-  composer: ComposerState;
+  viewed: string[];
+  reviewedHunks: string[];
+  editVersion: number;
+  savedVersion: number;
+  saveStatus: 'saved' | 'saving' | 'error';
+  saveError: string;
   code: CodeState;
-  onlyChanged: boolean;
   toast: ToastState | null;
   toastSeq: number;
 }
-
 export type Action =
-  | { type: 'payload/loaded'; payload: Payload; persisted: PersistedReview | null }
+  | { type: 'payload/loaded'; payload: Payload; id?: string }
   | { type: 'payload/error'; error: string }
-  | { type: 'view/set'; view: ViewMode }
-  | { type: 'tab/set'; tab: RightTab }
-  | { type: 'panel/toggle'; panel: keyof PanelState }
+  | { type: 'revisions/loaded'; revisions: RevisionList }
+  | { type: 'revision/loading'; id: string }
+  | { type: 'revision/error'; error: string }
+  | { type: 'panel/toggle'; panel: 'files' | 'right' }
+  | { type: 'tab/set'; tab: AppState['rightTab'] }
   | { type: 'drawer/set'; drawer: 'left' | 'right' | null }
-  | { type: 'payload/refresh'; payload: Payload }
-  | { type: 'select'; selected: Selection | null }
-  | { type: 'peek/open'; nodeId?: string; edgeId?: string; file?: string; line?: number; side?: Side; delta?: DeltaKind; function?: string }
-  | { type: 'peek/close' }
-  | { type: 'composer/quote'; quote: Quote }
-  | { type: 'composer/clearQuote' }
-  | { type: 'composer/text'; text: string }
   | { type: 'comment/add'; comment: Comment }
+  | { type: 'comment/images'; id: string; images: string[] }
   | { type: 'comment/update'; id: string; text: string }
   | { type: 'comment/delete'; id: string }
-  | { type: 'signal/dismiss'; id: string }
-  | { type: 'signal/undismiss'; id: string }
-  | { type: 'signal/keep'; id: string; comment?: Comment }
-  | { type: 'code/open'; file?: string; line?: number; side?: Side; mode?: CodeMode }
-  | { type: 'code/close' }
-  | { type: 'code/file'; file: string }
-  | { type: 'code/closeFile'; file: string }
-  | { type: 'code/mode'; mode: CodeMode }
+  | { type: 'comment/resolve'; id: string; resolved: boolean }
+  | { type: 'viewed/toggle'; entry: string }
+  | { type: 'viewed/all'; value: boolean; entries: string[] }
+  | { type: 'hunk/toggle'; key: string }
+  | { type: 'hunk/replace'; file: string; keys: string[] }
+  | { type: 'review/saving'; comparison: string }
+  | { type: 'review/saved'; comparison: string; version: number; updatedAt: string }
+  | { type: 'review/error'; comparison: string; error: string }
+  | { type: 'review/imported'; document: ReviewSession }
+  | { type: 'code/reveal'; file: string; line?: number; side?: Side }
   | { type: 'code/layout'; layout: DiffLayout }
   | { type: 'code/wrap'; wrap: boolean }
-  | { type: 'code/search'; search: string }
-  | { type: 'code/target'; file?: string; line: number; side?: Side }
-  | { type: 'onlyChanged'; value: boolean }
+  | { type: 'code/word'; word: string }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
   | { type: 'toast/clear'; id: number };
 
-const initialPrefs = loadPrefs();
-
+const prefs = loadPrefs();
 const initialState: AppState = {
-  payload: null,
-  loading: true,
-  error: null,
-  view: 'code',
-  rightTab: 'ai',
-  panels: { files: initialPrefs.files, graph: initialPrefs.graph },
-  drawer: null,
-  selected: null,
-  peek: { open: false },
-  comments: [],
-  dismissed: [],
-  kept: [],
-  composer: { quote: null, text: '', focusToken: 0 },
-  code: {
-    files: [],
-    active: null,
-    mode: 'diff',
-    layout: 'split',
-    wrap: initialPrefs.wrap,
-    search: '',
-  },
-  onlyChanged: true,
-  toast: null,
-  toastSeq: 0,
+  payload: null, loading: true, error: null, revisions: null, revisionId: '', revisionLoading: null,
+  panels: { files: prefs.files, right: prefs.right }, rightTab: 'review', drawer: null,
+  comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
+  saveStatus: 'saved', saveError: '',
+  code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '' }, toast: null, toastSeq: 0,
 };
 
-function addUnique(list: string[], value: string, max = 12): string[] {
-  const next = list.filter((item) => item !== value);
-  next.push(value);
-  return next.slice(-max);
+export function reviewDocument(state: AppState): ReviewSession {
+  if (!state.payload) throw new Error('未加载比较范围');
+  // Build only known fields: older JSON may still carry summary/decision, and
+  // the PUT decoder rejects unknown keys.
+  const session = state.payload.session;
+  return {
+    version: session.version,
+    context: session.context,
+    comments: state.comments,
+    viewed: state.viewed,
+    reviewed_hunks: state.reviewedHunks,
+    updated_at: session.updated_at,
+  };
 }
 
-// Git 模式下 afterLabel 会随选择变化；用仓库+子树做 key，
-// 否则换一个提交集合就看不到之前写的意见。
-function storageKey(payload: Payload): string {
-  const comparison = payload.review.comparison;
-  if (comparison?.mode === 'git') {
-    return `intentflow.review:git:${comparison.repo ?? ''}:${comparison.subdir ?? ''}`;
+export async function saveCurrentReview(state: AppState, dispatch: Dispatch<Action>): Promise<ReviewSession> {
+  const doc = reviewDocument(state);
+  const comparison = doc.context.comparison_id;
+  dispatch({ type: 'review/saving', comparison });
+  try {
+    const saved = await saveReviewSession(doc);
+    dispatch({ type: 'review/saved', comparison, version: state.editVersion, updatedAt: saved.updated_at });
+    return saved;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    dispatch({ type: 'review/error', comparison, error: message });
+    throw error;
   }
-  return reviewStorageKey(payload.review.before, payload.review.after);
-}
-
-function pickDefaultFile(payload: Payload): string | null {
-  return (
-    payload.code.files.find((file) => file.status !== 'unchanged')?.path ??
-    payload.code.files[0]?.path ??
-    null
-  );
 }
 
 function reducer(state: AppState, action: Action): AppState {
+  const changed = (next: Partial<AppState>): AppState => ({ ...state, ...next, editVersion: state.editVersion + 1 });
   switch (action.type) {
     case 'payload/loaded': {
-      const active = pickDefaultFile(action.payload);
-      return {
-        ...state,
-        payload: action.payload,
-        loading: false,
-        error: null,
-        comments: action.persisted?.comments ?? [],
-        dismissed: action.persisted?.dismissed ?? [],
-        kept: action.persisted?.kept ?? [],
-        rightTab: action.payload.review.ai?.status === 'ok' ? 'ai' : 'signals',
-        view: 'code',
-        code: {
-          ...state.code,
-          active,
-          files: active ? [active] : [],
-        },
+      const doc = action.payload.session;
+      return { ...state, payload: action.payload, loading: false, error: null, revisionId: action.id ?? doc.context.revision,
+        revisionLoading: null, comments: doc.comments,
+        viewed: doc.viewed.filter((entry) => entry.includes('#')),
+        reviewedHunks: (doc.reviewed_hunks ?? []).filter((entry) => entry.includes('#')),
+        editVersion: 0, savedVersion: 0, saveStatus: 'saved', saveError: '', code: { ...state.code, reveal: null, line: undefined },
       };
     }
-    case 'payload/error':
-      return { ...state, loading: false, error: action.error };
-    case 'view/set':
-      return {
-        ...state,
-        view: action.view,
-        peek: action.view === 'code' ? { open: false } : state.peek,
-      };
-    case 'tab/set':
-      return { ...state, rightTab: action.tab };
-    case 'panel/toggle':
-      return { ...state, panels: { ...state.panels, [action.panel]: !state.panels[action.panel] } };
-    case 'drawer/set':
-      return { ...state, drawer: action.drawer };
-    case 'payload/refresh': {
-      const active = pickDefaultFile(action.payload);
-      return {
-        ...state,
-        payload: action.payload,
-        loading: false,
-        error: null,
-        code: { ...state.code, active, files: active ? [active] : [], line: undefined },
-      };
+    case 'payload/error': return { ...state, loading: false, error: action.error };
+    case 'revisions/loaded': return { ...state, revisions: action.revisions };
+    case 'revision/loading': return { ...state, revisionLoading: action.id };
+    case 'revision/error': return { ...state, revisionLoading: null };
+    case 'panel/toggle': return { ...state, panels: { ...state.panels, [action.panel]: !state.panels[action.panel] } };
+    case 'tab/set': return { ...state, rightTab: action.tab };
+    case 'drawer/set': return { ...state, drawer: action.drawer };
+    case 'comment/add': return changed({ comments: [...state.comments, action.comment] });
+    case 'comment/update': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, text: action.text } : c) });
+    case 'comment/images': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, images: action.images } : c) });
+    case 'comment/resolve': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, resolved: action.resolved } : c) });
+    case 'comment/delete': return changed({ comments: state.comments.filter((c) => c.id !== action.id) });
+    case 'viewed/toggle': {
+      const path = action.entry.split('#')[0];
+      const rest = state.viewed.filter((entry) => !entry.startsWith(`${path}#`));
+      return changed({ viewed: state.viewed.includes(action.entry) ? rest : [...rest, action.entry] });
     }
-    case 'select':
-      return { ...state, selected: action.selected };
-    case 'peek/open':
-      return {
-        ...state,
-        peek: {
-          open: true,
-          nodeId: action.nodeId,
-          edgeId: action.edgeId,
-          file: action.file,
-          line: action.line,
-          side: action.side ?? 'after',
-          delta: action.delta,
-          function: action.function,
-        },
-      };
-    case 'peek/close':
-      return { ...state, peek: { open: false } };
-    case 'composer/quote':
-      return {
-        ...state,
-        composer: {
-          ...state.composer,
-          quote: action.quote,
-          focusToken: state.composer.focusToken + 1,
-        },
-      };
-    case 'composer/clearQuote':
-      return { ...state, composer: { ...state.composer, quote: null } };
-    case 'composer/text':
-      return { ...state, composer: { ...state.composer, text: action.text } };
-    case 'comment/add':
-      return {
-        ...state,
-        comments: [action.comment, ...state.comments],
-        rightTab: 'review',
-        composer: { ...state.composer, quote: null, text: '' },
-      };
-    case 'comment/update':
-      return {
-        ...state,
-        comments: state.comments.map((comment) =>
-          comment.id === action.id ? { ...comment, text: action.text } : comment,
-        ),
-      };
-    case 'comment/delete':
-      return { ...state, comments: state.comments.filter((comment) => comment.id !== action.id) };
-    case 'signal/dismiss':
-      return {
-        ...state,
-        dismissed: state.dismissed.includes(action.id)
-          ? state.dismissed
-          : [...state.dismissed, action.id],
-        kept: state.kept.filter((id) => id !== action.id),
-      };
-    case 'signal/undismiss':
-      return { ...state, dismissed: state.dismissed.filter((id) => id !== action.id) };
-    case 'signal/keep': {
-      const comments = action.comment ? [action.comment, ...state.comments] : state.comments;
-      return {
-        ...state,
-        comments,
-        kept: state.kept.includes(action.id) ? state.kept : [...state.kept, action.id],
-        dismissed: state.dismissed.filter((id) => id !== action.id),
-        rightTab: 'review',
-      };
+    case 'viewed/all': return changed({ viewed: action.value ? action.entries : [], reviewedHunks: action.value ? state.reviewedHunks : [] });
+    case 'hunk/toggle': {
+      const next = state.reviewedHunks.includes(action.key) ? state.reviewedHunks.filter((key) => key !== action.key) : [...state.reviewedHunks, action.key];
+      return changed({ reviewedHunks: next });
     }
-    case 'code/open': {
-      const fallback =
-        action.file ??
-        state.code.active ??
-        (state.payload ? pickDefaultFile(state.payload) : null);
-      if (!fallback) return state;
-      return {
-        ...state,
-        view: 'code',
-        peek: { open: false },
-        code: {
-          ...state.code,
-          active: fallback,
-          files: addUnique(state.code.files, fallback),
-          mode: action.mode ?? 'diff',
-          line: action.line,
-          side: action.side,
-        },
-      };
+    case 'hunk/replace': {
+      const others = state.reviewedHunks.filter((key) => !key.startsWith(`${action.file}@`));
+      return changed({ reviewedHunks: [...others, ...action.keys] });
     }
-    case 'code/close':
-      return { ...state, view: 'code', peek: { open: false } };
-    case 'code/file':
-      return {
-        ...state,
-        view: 'code',
-        code: {
-          ...state.code,
-          active: action.file,
-          files: addUnique(state.code.files, action.file),
-          line: undefined,
-        },
-      };
-    case 'code/closeFile': {
-      const files = state.code.files.filter((file) => file !== action.file);
-      const active =
-        state.code.active === action.file ? files[files.length - 1] ?? null : state.code.active;
-      return {
-        ...state,
-        code: {
-          ...state.code,
-          files,
-          active,
-          line: state.code.active === action.file ? undefined : state.code.line,
-        },
-      };
-    }
-    case 'code/mode':
-      return { ...state, code: { ...state.code, mode: action.mode } };
-    case 'code/layout':
-      return { ...state, code: { ...state.code, layout: action.layout } };
-    case 'code/wrap':
-      return { ...state, code: { ...state.code, wrap: action.wrap } };
-    case 'code/search':
-      return { ...state, code: { ...state.code, search: action.search } };
-    case 'code/target': {
-      const file = action.file ?? state.code.active;
-      if (!file) return state;
-      return {
-        ...state,
-        view: 'code',
-        peek: { open: false },
-        code: {
-          ...state.code,
-          active: file,
-          files: addUnique(state.code.files, file),
-          mode: 'diff',
-          line: action.line,
-          side: action.side ?? 'after',
-        },
-      };
-    }
-    case 'onlyChanged':
-      return { ...state, onlyChanged: action.value };
-    case 'toast/show': {
-      const id = state.toastSeq + 1;
-      return {
-        ...state,
-        toastSeq: id,
-        toast: { id, message: action.message, kind: action.kind ?? 'info' },
-      };
-    }
-    case 'toast/clear':
-      return state.toast?.id === action.id ? { ...state, toast: null } : state;
-    default:
-      return state;
+    case 'review/saving': return action.comparison !== state.payload?.session.context.comparison_id ? state : { ...state, saveStatus: 'saving', saveError: '' };
+    case 'review/saved': return action.comparison !== state.payload?.session.context.comparison_id ? state : {
+      ...state, savedVersion: Math.max(state.savedVersion, action.version), saveStatus: 'saved', saveError: '',
+      payload: { ...state.payload, session: { ...state.payload.session, updated_at: action.updatedAt } },
+    };
+    case 'review/error': return action.comparison !== state.payload?.session.context.comparison_id ? state : { ...state, saveStatus: 'error', saveError: action.error };
+    case 'review/imported': return !state.payload ? state : { ...state, payload: { ...state.payload, session: action.document },
+      comments: action.document.comments,
+      viewed: action.document.viewed.filter((entry) => entry.includes('#')),
+      reviewedHunks: (action.document.reviewed_hunks ?? []).filter((entry) => entry.includes('#')),
+      editVersion: 0, savedVersion: 0, saveStatus: 'saved', saveError: '',
+    };
+    case 'code/reveal': return { ...state, drawer: null, code: { ...state.code, reveal: { file: action.file, token: state.code.revealToken + 1 }, revealToken: state.code.revealToken + 1, line: action.line, side: action.side ?? 'after' } };
+    case 'code/layout': return { ...state, code: { ...state.code, layout: action.layout } };
+    case 'code/wrap': return { ...state, code: { ...state.code, wrap: action.wrap } };
+    case 'code/word': return { ...state, code: { ...state.code, word: action.word } };
+    case 'toast/show': return { ...state, toast: { id: state.toastSeq + 1, message: action.message, kind: action.kind ?? 'info' }, toastSeq: state.toastSeq + 1 };
+    case 'toast/clear': return state.toast?.id === action.id ? { ...state, toast: null } : state;
+    default: return state;
   }
 }
 
@@ -375,59 +167,34 @@ const DispatchContext = createContext<Dispatch<Action> | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-
   useEffect(() => {
     let cancelled = false;
-    fetchPayload()
-      .then((payload) => {
-        if (cancelled) return;
-        const persisted = loadPersisted(storageKey(payload));
-        dispatch({ type: 'payload/loaded', payload, persisted });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        dispatch({ type: 'payload/error', error: error instanceof Error ? error.message : String(error) });
-      });
-    return () => {
-      cancelled = true;
-    };
+    fetchPayload().then((payload) => { if (!cancelled) dispatch({ type: 'payload/loaded', payload }); })
+      .catch((error: unknown) => { if (!cancelled) dispatch({ type: 'payload/error', error: error instanceof Error ? error.message : String(error) }); });
+    fetchRevisions().then((revisions) => { if (!cancelled) dispatch({ type: 'revisions/loaded', revisions }); }).catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    savePrefs({ ...state.panels, wrap: state.code.wrap });
-  }, [state.panels, state.code.wrap]);
+    if (!state.payload || state.editVersion <= state.savedVersion || state.revisionLoading || state.saveStatus === 'error' || state.saveStatus === 'saving') return;
+    const timer = window.setTimeout(() => { void saveCurrentReview(state, dispatch).catch(() => undefined); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [state.payload?.session.context.comparison_id, state.editVersion, state.savedVersion, state.revisionLoading, state.saveStatus]);
 
   useEffect(() => {
-    if (!state.payload) return;
-    savePersisted(storageKey(state.payload), {
-      comments: state.comments,
-      dismissed: state.dismissed,
-      kept: state.kept,
-    });
-  }, [state.payload, state.comments, state.dismissed, state.kept]);
-
+    if (state.editVersion <= state.savedVersion) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [state.editVersion, state.savedVersion]);
+  useEffect(() => { savePrefs({ ...state.panels, wrap: state.code.wrap }); }, [state.panels, state.code.wrap]);
   useEffect(() => {
     if (!state.toast) return;
     const id = state.toast.id;
-    const timer = window.setTimeout(() => dispatch({ type: 'toast/clear', id }), 3200);
+    const timer = window.setTimeout(() => dispatch({ type: 'toast/clear', id }), 4500);
     return () => window.clearTimeout(timer);
   }, [state.toast]);
-
-  return (
-    <StateContext.Provider value={state}>
-      <DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider>
-    </StateContext.Provider>
-  );
+  return <StateContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></StateContext.Provider>;
 }
-
-export function useApp(): AppState {
-  const state = useContext(StateContext);
-  if (!state) throw new Error('useApp 必须在 AppProvider 内使用');
-  return state;
-}
-
-export function useAppDispatch(): Dispatch<Action> {
-  const dispatch = useContext(DispatchContext);
-  if (!dispatch) throw new Error('useAppDispatch 必须在 AppProvider 内使用');
-  return dispatch;
-}
+export function useApp(): AppState { const state = useContext(StateContext); if (!state) throw new Error('useApp 必须在 AppProvider 内使用'); return state; }
+export function useAppDispatch(): Dispatch<Action> { const dispatch = useContext(DispatchContext); if (!dispatch) throw new Error('useAppDispatch 必须在 AppProvider 内使用'); return dispatch; }

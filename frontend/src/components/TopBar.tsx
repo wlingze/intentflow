@@ -1,123 +1,38 @@
 import { useApp, useAppDispatch } from '../state/AppProvider';
-import { shortPath } from '../lib/format';
-import type { ThemePref } from '../hooks/useTheme';
-import { CommitPicker } from './CommitPicker';
+import { RevisionPicker } from './RevisionPicker';
+import { useReviewData } from '../state/selectors';
 import { SubmitMenu } from './SubmitMenu';
-import { ThemeSwitch } from './ThemeSwitch';
-import { IconBranch, IconCode, IconFiles, IconPanel } from './Icons';
+import { IconBranch, IconFiles, IconPanel, IconSearch } from './Icons';
 import styles from './TopBar.module.css';
 
-interface Props {
-  pref: ThemePref;
-  onPrefChange: (pref: ThemePref) => void;
-}
-
-export function TopBar({ pref, onPrefChange }: Props) {
-  const { payload, comments, view, drawer } = useApp();
+export function TopBar({ onSearch }: { onSearch: () => void }) {
+  const { payload, drawer, panels, viewed } = useApp();
   const dispatch = useAppDispatch();
-  const review = payload?.review;
-  const comparison = review?.comparison;
-  const facts = review
-    ? [review.project, review.logic, review.intent].reduce(
-        (sum, delta) => sum + delta.added.length + delta.removed.length,
-        0,
-      )
-    : 0;
-  const signals = review?.signals?.length ?? 0;
-  const risks = review?.ai?.status === 'ok' ? review.ai.risks.length : 0;
-
-  return (
-    <header className={styles.top}>
-      <div className={styles.brand}>
-        <span className={styles.mark}>if</span>
-        <span className={styles.name}>intentflow</span>
-        <span className={styles.kicker}>semantic review</span>
+  const { files, stats } = useReviewData();
+  const ctx = payload?.session.context;
+  const adds = [...stats.values()].reduce((sum, stat) => sum + stat.adds, 0);
+  const dels = [...stats.values()].reduce((sum, stat) => sum + stat.dels, 0);
+  return <header className={styles.top}>
+    <span className={styles.mark} title="intentflow">if</span>
+    <div className={styles.identity}>
+      <div className={styles.repo} title={ctx?.repository}>{ctx?.repository.split('/').filter(Boolean).slice(-2).join('/') || 'intentflow'}</div>
+      <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>本地 PR</span></div>
+    </div>
+    <RevisionPicker />
+    <div className={styles.stats}><span>{viewed.length}/{files.length} 已查看</span><b className={styles.plus}>+{adds}</b><b className={styles.minus}>−{dels}</b></div>
+    <div className={styles.actions}>
+      <div className={styles.searchWrap}>
+        <button type="button" aria-label="搜索全部 diff" title="搜索全部 diff (Ctrl+F)" onClick={onSearch}><IconSearch width={16} height={16} /></button>
       </div>
-
-      {review && (
-        <div className={styles.compare} title={`${review.before} → ${review.after}`}>
-          <span className={styles.branch}>
-            <IconBranch width={11} height={11} />
-            <code>{shortPath(comparison?.beforeLabel || review.before, 22)}</code>
-          </span>
-          <span className={styles.arrow}>→</span>
-          <span className={styles.branch}>
-            <code>{shortPath(comparison?.afterLabel || review.after, 26)}</code>
-          </span>
-          <CommitPicker />
-        </div>
-      )}
-
-      <div className={styles.spacer} />
-
+      <div className={styles.wideOnly} role="group" aria-label="面板开关">
+        <button type="button" aria-label="文件导航" aria-pressed={panels.files} title="文件导航" onClick={() => dispatch({ type: 'panel/toggle', panel: 'files' })}><IconFiles width={16} height={16} /></button>
+        <button type="button" aria-label="评审信息" aria-pressed={panels.right} title="评审信息" onClick={() => dispatch({ type: 'panel/toggle', panel: 'right' })}><IconPanel width={16} height={16} /></button>
+      </div>
       <div className={styles.narrowOnly} role="group" aria-label="窄屏面板">
-        <button
-          type="button"
-          aria-pressed={drawer === 'left'}
-          onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'left' ? null : 'left' })}
-          title="文件与行为图"
-        >
-          <IconFiles width={12} height={12} />
-        </button>
-        <button
-          type="button"
-          aria-pressed={drawer === 'right'}
-          onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'right' ? null : 'right' })}
-          title="分析与 Review"
-        >
-          <IconPanel width={12} height={12} />
-        </button>
+        <button type="button" aria-label="文件导航" aria-pressed={drawer === 'left'} onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'left' ? null : 'left' })}><IconFiles width={16} height={16} /></button>
+        <button type="button" aria-label="评审信息" aria-pressed={drawer === 'right'} onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'right' ? null : 'right' })}><IconPanel width={16} height={16} /></button>
       </div>
-
-      <div className={styles.views} role="group" aria-label="工作台视图">
-        <button
-          type="button"
-          aria-pressed={view === 'code'}
-          className={view === 'code' ? styles.viewActive : ''}
-          onClick={() => dispatch({ type: 'view/set', view: 'code' })}
-        >
-          <IconCode width={12} height={12} />
-          代码
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === 'graph'}
-          className={view === 'graph' ? styles.viewActive : ''}
-          onClick={() => dispatch({ type: 'view/set', view: 'graph' })}
-        >
-          <IconBranch width={12} height={12} />
-          全文图
-        </button>
-      </div>
-
-      {review && (
-        <div className={styles.stats} aria-label="改动统计">
-          <span className={styles.stat}>
-            <b className={styles.plus}>+{review.intent.added.length}</b>
-            <b className={styles.minus}>−{review.intent.removed.length}</b>
-            <em>意图</em>
-          </span>
-          <span className={styles.stat}>
-            <b>{facts}</b>
-            <em>事实</em>
-          </span>
-          <span className={styles.stat}>
-            <b>{signals}</b>
-            <em>告警</em>
-          </span>
-          <span className={styles.stat}>
-            <b>{risks}</b>
-            <em>AI</em>
-          </span>
-          <span className={styles.stat}>
-            <b>{comments.length}</b>
-            <em>评论</em>
-          </span>
-        </div>
-      )}
-
-      <ThemeSwitch pref={pref} onChange={onPrefChange} />
       <SubmitMenu />
-    </header>
-  );
+    </div>
+  </header>;
 }

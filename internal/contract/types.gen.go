@@ -5,9 +5,10 @@ package contract
 
 // Defines values for AiSummaryStatus.
 const (
-	Error       AiSummaryStatus = "error"
-	Ok          AiSummaryStatus = "ok"
-	Unavailable AiSummaryStatus = "unavailable"
+	AiSummaryStatusError       AiSummaryStatus = "error"
+	AiSummaryStatusOk          AiSummaryStatus = "ok"
+	AiSummaryStatusPending     AiSummaryStatus = "pending"
+	AiSummaryStatusUnavailable AiSummaryStatus = "unavailable"
 )
 
 // Defines values for BehaviorEdgeKind.
@@ -71,6 +72,29 @@ const (
 	Project Layer = "project"
 )
 
+// Defines values for RevisionKind.
+const (
+	RevisionKindCommit   RevisionKind = "commit"
+	RevisionKindRange    RevisionKind = "range"
+	RevisionKindWorktree RevisionKind = "worktree"
+)
+
+// Defines values for ScanMode.
+const (
+	ScanModeDiff   ScanMode = "diff"
+	ScanModeReview ScanMode = "review"
+	ScanModeScan   ScanMode = "scan"
+)
+
+// Defines values for ScanStatus.
+const (
+	ScanStatusError   ScanStatus = "error"
+	ScanStatusOk      ScanStatus = "ok"
+	ScanStatusPending ScanStatus = "pending"
+	ScanStatusRunning ScanStatus = "running"
+	ScanStatusSkipped ScanStatus = "skipped"
+)
+
 // Defines values for Severity.
 const (
 	High Severity = "high"
@@ -95,6 +119,13 @@ const (
 	Type     SymbolKind = "type"
 )
 
+// AiModule defines model for AiModule.
+type AiModule struct {
+	Change string   `json:"change"`
+	Files  []string `json:"files"`
+	Name   string   `json:"name"`
+}
+
 // AiRisk defines model for AiRisk.
 type AiRisk struct {
 	Detail   string   `json:"detail"`
@@ -107,6 +138,7 @@ type AiSummary struct {
 	Focus       []string        `json:"focus"`
 	GeneratedAt string          `json:"generated_at"`
 	Model       string          `json:"model"`
+	Modules     []AiModule      `json:"modules"`
 	Risks       []AiRisk        `json:"risks"`
 	Status      AiSummaryStatus `json:"status"`
 	Summary     string          `json:"summary"`
@@ -225,7 +257,9 @@ type CodeStatus string
 type Comment struct {
 	CreatedAt int64         `json:"createdAt"`
 	Id        string        `json:"id"`
+	Images    []string      `json:"images"`
 	Quote     *Quote        `json:"quote,omitempty"`
+	Resolved  *bool         `json:"resolved,omitempty"`
 	SignalId  string        `json:"signalId"`
 	Source    CommentSource `json:"source"`
 	Text      string        `json:"text"`
@@ -304,13 +338,28 @@ type Fact struct {
 	Title      string     `json:"title"`
 }
 
+// Finding defines model for Finding.
+type Finding struct {
+	Category      string `json:"category"`
+	CategoryTitle string `json:"category_title"`
+	Engine        string `json:"engine"`
+	File          string `json:"file"`
+	Id            string `json:"id"`
+	Line          int32  `json:"line"`
+	Rule          string `json:"rule"`
+	Severity      string `json:"severity"`
+	Snippet       string `json:"snippet"`
+	Title         string `json:"title"`
+}
+
 // Layer defines model for Layer.
 type Layer string
 
 // Payload defines model for Payload.
 type Payload struct {
-	Code   CodeBundle `json:"code"`
-	Review Review     `json:"review"`
+	Code    CodeBundle    `json:"code"`
+	Review  Review        `json:"review"`
+	Session ReviewSession `json:"session"`
 }
 
 // Quote defines model for Quote.
@@ -322,6 +371,17 @@ type Quote struct {
 	Start   int32  `json:"start"`
 }
 
+// RestoreRequest defines model for RestoreRequest.
+type RestoreRequest struct {
+	Relax bool `json:"relax"`
+}
+
+// RestoreResult defines model for RestoreResult.
+type RestoreResult struct {
+	Adjusted int           `json:"adjusted"`
+	Document ReviewSession `json:"document"`
+}
+
 // Review defines model for Review.
 type Review struct {
 	After      string        `json:"after"`
@@ -329,23 +389,73 @@ type Review struct {
 	Before     string        `json:"before"`
 	Behavior   BehaviorGraph `json:"behavior"`
 	Comparison Comparison    `json:"comparison"`
+	Findings   []Finding     `json:"findings"`
 	Intent     Delta         `json:"intent"`
 	Logic      Delta         `json:"logic"`
 	Notes      []string      `json:"notes"`
 	Project    Delta         `json:"project"`
+	Scan       ScanState     `json:"scan"`
 	Signals    []Signal      `json:"signals"`
 	Symbols    SymbolGraph   `json:"symbols"`
 }
 
+// ReviewAsset defines model for ReviewAsset.
+type ReviewAsset struct {
+	Name string `json:"name"`
+	Url  string `json:"url"`
+}
+
+// ReviewContext defines model for ReviewContext.
+type ReviewContext struct {
+	Base         string `json:"base"`
+	Branch       string `json:"branch"`
+	ComparisonId string `json:"comparison_id"`
+	DiffDigest   string `json:"diff_digest"`
+	Head         string `json:"head"`
+	Repository   string `json:"repository"`
+	Revision     string `json:"revision"`
+	SessionId    string `json:"session_id"`
+	Subdir       string `json:"subdir"`
+}
+
+// ReviewDraft defines model for ReviewDraft.
+type ReviewDraft struct {
+	Base         string `json:"base"`
+	Comments     int    `json:"comments"`
+	ComparisonId string `json:"comparison_id"`
+	Head         string `json:"head"`
+	Revision     string `json:"revision"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+// ReviewDraftList defines model for ReviewDraftList.
+type ReviewDraftList struct {
+	Drafts    []ReviewDraft `json:"drafts"`
+	SessionId string        `json:"session_id"`
+}
+
 // ReviewRequest defines model for ReviewRequest.
 type ReviewRequest struct {
-	Data     ReviewState `json:"data"`
-	Markdown string      `json:"markdown"`
+	Document ReviewSession `json:"document"`
 }
 
 // ReviewResponse defines model for ReviewResponse.
 type ReviewResponse struct {
 	Path string `json:"path"`
+}
+
+// ReviewSession defines model for ReviewSession.
+type ReviewSession struct {
+	Comments []Comment     `json:"comments"`
+	Context  ReviewContext `json:"context"`
+
+	// ReviewedHunks Reviewed hunks, formatted as <file path>@<row index>#<hunk digest>.
+	ReviewedHunks []string `json:"reviewed_hunks"`
+	UpdatedAt     string   `json:"updated_at"`
+	Version       int32    `json:"version"`
+
+	// Viewed Reviewed files, formatted as <file path>#<content digest>.
+	Viewed []string `json:"viewed"`
 }
 
 // ReviewState defines model for ReviewState.
@@ -354,6 +464,56 @@ type ReviewState struct {
 	Dismissed []string  `json:"dismissed"`
 	Kept      []string  `json:"kept"`
 }
+
+// Revision defines model for Revision.
+type Revision struct {
+	Author  string       `json:"author"`
+	Date    string       `json:"date"`
+	Files   int32        `json:"files"`
+	Id      string       `json:"id"`
+	Kind    RevisionKind `json:"kind"`
+	Label   string       `json:"label"`
+	Sha     string       `json:"sha"`
+	Short   string       `json:"short"`
+	Subject string       `json:"subject"`
+}
+
+// RevisionKind defines model for RevisionKind.
+type RevisionKind string
+
+// RevisionList defines model for RevisionList.
+type RevisionList struct {
+	Base      string     `json:"base"`
+	Current   string     `json:"current"`
+	Dirty     bool       `json:"dirty"`
+	Head      string     `json:"head"`
+	Revisions []Revision `json:"revisions"`
+}
+
+// ScanMode defines model for ScanMode.
+type ScanMode string
+
+// ScanResponse defines model for ScanResponse.
+type ScanResponse struct {
+	Ai       AiSummary `json:"ai"`
+	Findings []Finding `json:"findings"`
+	Scan     ScanState `json:"scan"`
+}
+
+// ScanState defines model for ScanState.
+type ScanState struct {
+	Files      int32      `json:"files"`
+	Findings   int32      `json:"findings"`
+	FinishedAt string     `json:"finished_at"`
+	Message    string     `json:"message"`
+	Mode       ScanMode   `json:"mode"`
+	Rules      int32      `json:"rules"`
+	StartedAt  string     `json:"started_at"`
+	Status     ScanStatus `json:"status"`
+}
+
+// ScanStatus defines model for ScanStatus.
+type ScanStatus string
 
 // Severity defines model for Severity.
 type Severity string
@@ -428,5 +588,17 @@ type SymbolStats struct {
 	Unresolved int32 `json:"unresolved"`
 }
 
+// GetPayloadParams defines parameters for GetPayload.
+type GetPayloadParams struct {
+	// Revision Revision id from /api/revisions (range, worktree, or commit:<sha>).
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
+}
+
 // PostReviewJSONRequestBody defines body for PostReview for application/json ContentType.
 type PostReviewJSONRequestBody = ReviewRequest
+
+// RestoreReviewDraftJSONRequestBody defines body for RestoreReviewDraft for application/json ContentType.
+type RestoreReviewDraftJSONRequestBody = RestoreRequest
+
+// SaveReviewSessionJSONRequestBody defines body for SaveReviewSession for application/json ContentType.
+type SaveReviewSessionJSONRequestBody = ReviewSession

@@ -1,71 +1,100 @@
-# Review-first workbench acceptance contract
+# 本地 PR Review：持久化与验收约定
 
-## Goal
+## 产品范围
 
-Turn intentflow into a review-first workbench. Large code diffs and reliable review actions take priority over the graph. SSA and SyntaxFlow remain the only sources of semantic facts.
+intentflow 的第一阶段是可用的本地 PR 评审：文件树、diff、行内评论、
+正文内图片、评论修改/解决、按 hunk 的已查看标记。
 
-## Baseline
+语义分析、SSA、扫描和行为图属于后续阶段，见 [README](../README.md) 的路线表。
+当前构建不做这些，也不连接数据库或 GitHub。被评审源码只作为文本读取。
 
-- Baseline commit: `9d8f8b1`.
-- Production preview: `http://127.0.0.1:8124`.
-- `frontend/src/lib/diff.ts` uses a quadratic LCS matrix and a position-based fallback above 4,000,000 cells. The fallback can mark the rest of a file changed after one inserted line.
-- `DiffView.tsx` maps every row to DOM and highlights every rendered line.
-- `App.module.css` hides both navigation and review panels below 940px without a replacement control.
-- `App.tsx` unmounts the other view during graph/code switching.
-- The server currently serves one immutable folder comparison. There is no commit endpoint or Git comparison metadata.
-- Screenshots and the baseline browser snapshot are in `/tmp/intentflow-review-upgrade/`.
+## Session 与比较范围
 
-## Acceptance checks
+一个 `repository + branch + subdir` 对应一个稳定 session，相当于本地 PR。
 
-1. Code is the default view. File navigation is above behavior navigation. Each navigation section can collapse independently.
-2. Split and unified views show correct old/new line numbers. A sparse insertion in a 20,000-line fixture does not mark all later lines changed.
-3. Large diff rendering is bounded by the viewport. Scrolling, file switching, line navigation, and quoting work on virtualized rows.
-4. Word wrap is a user setting. Both sides remain reachable in a narrow split view. Hidden sidebars have visible open controls.
-5. AI risks and SyntaxFlow findings are separate items. Each supports ignore, restore, add-to-review, and navigation to real evidence. Repeated add-to-review does not duplicate a finding. Comment editing, deletion, reload, and review export retain their meaning.
-6. Branch labels name the actual comparison. Commit selection changes the displayed source comparison using actual Git data. Non-selected intervening commits must not silently enter the selected comparison. Folder-only input must say that commit metadata is unavailable.
-7. The symbol graph includes SSA functions and type definitions, not only functions on source-to-sink paths. Every parsed call remains represented, including parallel calls, recursion, and cycles. Unresolved references are explicit rather than fabricated.
-8. File groups enclose their own nodes. Within each group, call edges determine the layout, not source order. Compound layout must work with new JSON inputs.
-9. Selecting a function or type opens a lower graph. Shared behavior nodes are merged by identity. Selecting an inner node opens its source evidence.
-10. Added items are green. Removed items are red with dashed borders or edges. Modified items are yellow. Theme changes retain readable labels and clear arrowheads.
-11. Geometry checks reject overlapping nodes and edges through unrelated nodes. The router minimizes edge crossings and reports remaining crossings. Arbitrary non-planar graphs cannot satisfy an unconditional zero-crossing guarantee while showing every edge.
-12. Unit tests, Go tests, typecheck, build, actual desktop and narrow browser interactions must pass. An independent review checks the final diff and this decision trail.
+- 仓库路径参与身份：不同仓库的同名分支隔离。
+- 分支参与身份：即使两个分支指向同一个提交，评审也隔离。
+- detached HEAD 使用 `detached:<完整 SHA>`，不误用别的分支名。
+- 同一 session 下，range、worktree、每个 commit 各存草稿。
+- 草稿列表接口只返回当前 session 的其他比较范围；跨分支不泄漏。
+- 恢复其他草稿时，失效行号降级为不绑定行号的意见；路径不存在的已查看条目被丢弃。
+- 文件或 hunk 内容摘要不匹配的已查看标记不显示，即使旧草稿里还保留着。
 
-## Verification policy
+每份草稿记录 `base/head/revision/diff_digest`。仅当这些值和当前比较一致，
+才自动恢复或套用。工作区文本改变时，比较摘要改变；旧草稿不删除，但不会
+套用到新代码行号上。
 
-Use a committed deterministic fixture and browser check rather than screenshots alone. Capture timing only after confirming correct displayed output and zero errors. This host has high concurrent load, so timing alone cannot prove a speedup. Report production-build median and range from at least five samples if claiming a timing improvement. Prefer bounded DOM and correct line mapping as stable gates.
+## JSON 数据
 
-## Throughput checkpoint
+```json
+{
+  "version": 1,
+  "context": {
+    "session_id": "由仓库和分支生成",
+    "comparison_id": "当前范围的身份",
+    "repository": "/path/to/repo",
+    "branch": "feature/example",
+    "subdir": "",
+    "base": "完整基线 SHA",
+    "head": "完整终点 SHA 或 WORKTREE",
+    "revision": "range",
+    "diff_digest": "正文摘要"
+  },
+  "comments": [],
+  "viewed": [],
+  "reviewed_hunks": [],
+  "updated_at": ""
+}
+```
 
-- Blocking first steps: inspect state, Git inputs, SSA type/call data, and build regression fixtures before implementation.
-- Independent workstreams: code rendering, backend comparison/semantic contract, and graph layout can be isolated after shared types are settled.
-- Shared mutable state: OpenAPI and generated files have one owner. App state and review integration have one owner. Other workers use isolated worktrees and report commits for manual integration.
-- Smallest safe decomposition: one backend owner, one diff renderer owner, and one graph owner. The parent owns review integration, verification tooling, browser acceptance, and documentation.
+默认保存到**启动目录**的 `.intentflow/sessions/`。也可通过 `--review-dir` 指向
+`~/.cache/intentflow` 等其他目录。文件名和子目录使用身份摘要，不直接使用
+分支名，避免 `feature/foo` 被当作任意文件路径。
 
-## Visual direction
+目录比较以两份目录路径作为身份，并标注“目录比较”，没有伪造的 Git 分支。
 
-Use the existing Archify-inspired canvas, typography, and theme tokens rather than a new brand. The review workspace uses neutral surfaces and compact toolbars. Delta colors carry meaning. File groups are large low-contrast boundary frames, not columns of sequential cards. A narrow screen trades sidebar width for a user-opened drawer, never for disappearing features.
+## 保存与恢复
 
-## Implementation status (2026-10-30)
+1. 修改评论或已查看标记后，前端等待 400ms 后保存。
+2. 所有保存请求排队，保证旧请求不会覆盖新状态。
+3. 服务端校验上下文、评论 id、代码行号和已查看路径。
+4. 服务端在同目录写临时文件，再 rename 替换 JSON；文件权限 0600。
+5. 再次打开同一分支和比较范围时，从 JSON 恢复全部评审状态。
 
-### Verified
+浏览器 localStorage 只存 UI 偏好，不存评审正文。端口变化、浏览器重启不会
+导致评论丢失。页面还有未保存修改时，关闭或刷新会触发浏览器确认。
 
-- `frontend/src/lib/diff.ts`: prefix/suffix trim + patience anchors + bounded Myers. 20,000 lines with one insertion reports 1 add / 0 dels; 50 scattered edits report exactly 50/50. 15 unit tests pass.
-- `DiffView` renders only the viewport window (fixed 20 px rows, measured rows when wrap is on). Quote selection, `[data-line]` attributes, target scrolling and highlighting are preserved.
-- Split and unified layouts both show old/new line numbers. Split is always two equal flexible columns; long lines scroll inside their own cell so the other side never leaves the viewport.
-- Word wrap is a user toggle in the code toolbar, persisted in `localStorage` (`intentflow.prefs`).
-- Below 940 px the left and right panels become opaque drawers with a backdrop, opened from the top bar. Nothing disappears without a control.
-- Code is the default view. The left column stacks 文件 / 符号图 / 行为导航, each collapsible; symbols carry functions and SSA types grouped by file.
-- AI risks and SyntaxFlow signals are separate itemized cards. Each has 定位 / 忽略（可撤销）/ 加入 Review. Repeated add is disabled; ids are stable (`ai:<index>:<title slug>`).
-- Git mode: `--repo --subdir --from --to`. `/api/commits` lists commits; `/api/payload?commits=…` rebuilds from the selected commits only. Verified on `feature-ssa2llvm-support_ci_and_mustpass_test`: 6 commits → 10 files; selecting 2 → 5 files and 53 facts, and the labels change to `5bf91600 → 2b73d555 · 2/6 提交`.
-- Symbol graph from SSA only: 1977 functions, 360 types, 1472 resolved call edges on the ssa2llvm subtree. Type positions come from SSA type objects (declaration lines verified against source). Unresolved calls are listed, never fabricated.
-- Drill-down: clicking a function opens a 1-hop graph with shared nodes merged; file groups stay visible; 定位 opens the exact source line.
-- Delta colors: added green, removed red with dashed borders, modified yellow.
+## 导出与错误处理
 
-### Known limitations (not hidden)
+- JSON 导出包含完整上下文和评审状态。
+- Markdown 导出是人类可读版本；两种格式都能复制或保存文件。
+- `PUT /api/review/state` 仍校验版本和上下文；不匹配返回 409，原有评审不变。
+- 无效行号、未知文件、重复评论 id、空评论正文都拒绝。
+- JSON 损坏时保留原文件，并报告具体路径和错误；不以空草稿覆盖旧记录。
+- 保存失败时页面显示错误。用户可重试或导出 JSON，不显示虚假的“已保存”。
 
-- Arbitrary non-planar call graphs cannot guarantee zero edge crossings while showing every edge. The view shows live crossing and card-occlusion counts (`交叉 N · 穿卡 M`). Drill-down scopes use an A* grid router; the full graph uses curves because routing 1,400+ edges interactively is too slow.
-- Default scope is 仅改动. 改动+邻居 and 全部 are explicit choices; edges outside the chosen scope are counted (`范围内边 k/N`), not silently dropped.
-- Rebuilding a commit selection re-runs the full SSA analysis (minutes on large subtrees). Results are cached per selection in memory.
-- Commit selection applies whole-file versions from the selected commits. A non-selected commit that edited the same file does not appear as its own change; this is stated in `Comparison.note`.
-- Dir-only comparisons report `mode: folder` and the picker explains that commit metadata is unavailable.
-- AI risk actions were verified with a fixture payload because the LLM gateway returned 401 during this round.
+## 视觉与交互
+
+- 固定白色页面和 GitHub 灰阶。
+- 左侧文件字号 14px、字重 500，目录可折叠。
+- 右侧 Review 全高贴右边，可拖动调整；键盘方向键也可调整。
+- 每个 Tab 按 4 列渲染；增删符号不改变制表位。
+- 长代码有持续可见的拖动滚动块，分栏两侧独立滚动。
+- 引用代码块可横向滚动，不用省略号遮住代码。
+
+## 验收
+
+- 默认启动和 `--mode diff` 都没有 SSA、扫描请求或数据库访问。
+- `go list -deps ./cmd/intentflow` 不包含 Yaklang、SQLite、Gorm。
+- 不绑定行号的意见不带 `quote`，也能保存、恢复和导出。
+- `Ctrl+F` 搜索覆盖所有 diff 文件；点击结果能展开折叠文件并定位到行。
+- 图片粘贴进正文后 URL 出现在评论 text 里；相同图片不会重复落盘。
+- 主程序构建为静态单文件，页面和 assets 不依赖运行目录。
+- 新增、修改、解决、删除评论后，都能保存并恢复。
+- 每个 hunk 的「已查看」保存为 `<file>@<row>#<digest>`；文件级为 `<file>#<digest>`。
+- 代码内容变化后，旧标记的摘要不匹配，自动忽略；全部 hunk 标记后文件折叠并算作已查看。
+- 取消文件级已查看会清空该文件的 hunk 标记。
+- 仓库、分支、base/head、revision、正文任一项不同，服务端拒绝保存。
+- 同名分支跨仓库隔离；同提交不同分支隔离。
+- 旧草稿保留在 session 目录；不迁移或改写到其他比较范围。
+- `.intentflow` 不污染工作区文件列表，也不触发默认工作区选择。

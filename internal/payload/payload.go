@@ -17,8 +17,8 @@ import (
 // 单文件与整包上限。超过上限的文件只保留状态，不带正文，
 // 避免一次 review 把几十 MB 的 vendor 目录塞进浏览器。
 const (
-	MaxFileBytes  = 512 * 1024
-	MaxTotalBytes = 6 * 1024 * 1024
+	MaxFileBytes  = 2 * 1024 * 1024
+	MaxTotalBytes = 24 * 1024 * 1024
 )
 
 // Build 读取 before/after 两个目录，返回按路径排序的合并源码包。
@@ -46,36 +46,78 @@ func Build(beforeRoot, afterRoot, label string) (contract.CodeBundle, error) {
 	}
 	sort.Strings(paths)
 
-	bundle := contract.CodeBundle{Root: label, Files: make([]contract.CodeFile, 0, len(paths)), Skipped: []string{}}
-	var total int
+	type entry struct {
+		path          string
+		before, after string
+		hasBefore     bool
+		hasAfter      bool
+		size          int
+	}
+	entries := make([]entry, 0, len(paths))
 	for _, p := range paths {
 		b, bOK := before[p]
 		a, aOK := after[p]
-
-		file := contract.CodeFile{
-			Path:     p,
-			Status:   statusOf(b, bOK, a, aOK),
-			Language: languageOf(p),
-		}
-
-		size := len(b) + len(a)
-		if total+size > MaxTotalBytes {
-			bundle.Truncated = true
-			bundle.Skipped = append(bundle.Skipped, p)
-			bundle.Files = append(bundle.Files, file)
+		status := statusOf(b, bOK, a, aOK)
+		// 工作台只读改动文件；未变文件不进入 payload，避免体积上限
+		// 把真正要看的 diff 挤掉。
+		if status == contract.CodeStatusUnchanged {
 			continue
 		}
-		total += size
+		entries = append(entries, entry{
+			path: p, before: b, after: a, hasBefore: bOK, hasAfter: aOK,
+			size: len(b) + len(a),
+		})
+	}
 
-		if bOK {
-			file.Before = b
+	sizes := make([]int, len(entries))
+	for i := range entries {
+		sizes[i] = entries[i].size
+	}
+	keep := allocate(sizes, MaxTotalBytes)
+
+	bundle := contract.CodeBundle{Root: label, Files: make([]contract.CodeFile, 0, len(entries)), Skipped: []string{}}
+	for i, e := range entries {
+		file := contract.CodeFile{
+			Path:     e.path,
+			Status:   statusOf(e.before, e.hasBefore, e.after, e.hasAfter),
+			Language: languageOf(e.path),
 		}
-		if aOK {
-			file.After = a
+		if !keep[i] {
+			bundle.Truncated = true
+			bundle.Skipped = append(bundle.Skipped, e.path)
+		} else {
+			if e.hasBefore {
+				file.Before = e.before
+			}
+			if e.hasAfter {
+				file.After = e.after
+			}
 		}
 		bundle.Files = append(bundle.Files, file)
 	}
 	return bundle, nil
+}
+
+// allocate 按体积从小到大分配正文预算。目录顺序下，大文件在前会吃掉
+// 预算，让后面所有小文件都变成空卡片。
+func allocate(sizes []int, max int) []bool {
+	order := make([]int, len(sizes))
+	for i := range sizes {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(left, right int) bool {
+		return sizes[order[left]] < sizes[order[right]]
+	})
+	keep := make([]bool, len(sizes))
+	total := 0
+	for _, i := range order {
+		if total+sizes[i] > max {
+			continue
+		}
+		keep[i] = true
+		total += sizes[i]
+	}
+	return keep
 }
 
 func statusOf(before string, hasBefore bool, after string, hasAfter bool) contract.CodeStatus {

@@ -1,44 +1,18 @@
 import { useMemo } from 'react';
-import { diffLines, diffStats, type DiffStats } from '../lib/diff';
-import type { CodeFile, Fact, Review, Signal } from '../types';
+import { fileDiff } from '../lib/fileDiff';
+import { fileDigest } from '../lib/hash';
+import { buildTree, flattenTree } from '../lib/tree';
 import { useApp } from './AppProvider';
 
-export function buildFactMap(review: Review): Map<string, Fact> {
-  const map = new Map<string, Fact>();
-  for (const delta of [review.project, review.logic, review.intent]) {
-    for (const fact of delta.added) map.set(fact.identity, fact);
-    for (const fact of delta.removed) map.set(fact.identity, fact);
-  }
-  return map;
-}
-
-export function signalScope(signal: Signal, facts: Map<string, Fact>): { fact: Fact; file: string; line?: number } | null {
-  for (const id of signal.evidence) {
-    const fact = facts.get(id);
-    if (fact?.file) return { fact, file: fact.file, line: fact.line };
-  }
-  return null;
-}
-
-export interface ReviewData {
-  review: Review | null;
-  files: CodeFile[];
-  signals: Signal[];
-  facts: Map<string, Fact>;
-  stats: Map<string, DiffStats>;
-}
-
-export function useReviewData(): ReviewData {
+export function useReviewData() {
   const { payload } = useApp();
   return useMemo(() => {
-    const review = payload?.review ?? null;
-    const files = payload?.code.files ?? [];
-    const facts = review ? buildFactMap(review) : new Map<string, Fact>();
-    const signals = review?.signals ?? [];
-    const stats = new Map<string, DiffStats>();
-    for (const file of files) {
-      stats.set(file.path, diffStats(diffLines(file.before ?? '', file.after ?? '')));
-    }
-    return { review, files, signals, facts, stats };
-  }, [payload]);
+    const changed = payload?.code.files.filter((file) => file.status !== 'unchanged') ?? [];
+    // Sidebar and diff cards must share one order. The sidebar's tree order wins.
+    const rank = new Map(flattenTree(buildTree(changed, true)).map((path, index) => [path, index]));
+    const files = [...changed].sort((left, right) => (rank.get(left.path) ?? 0) - (rank.get(right.path) ?? 0));
+    const stats = new Map(files.map((file) => [file.path, fileDiff(file).stats]));
+    const digests = new Map(files.map((file) => [file.path, fileDigest(file.path, file.before, file.after)]));
+    return { files, stats, digests, truncated: payload?.code.truncated ?? false, skipped: payload?.code.skipped.length ?? 0 };
+  }, [payload?.code]);
 }

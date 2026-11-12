@@ -27,6 +27,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+[data-theme="light"] body {
+  background: var(--bg);
+}
+
 button,
 input,
 textarea {
@@ -252,20 +256,19 @@ pre {
 
 /* 代码高亮 token 由 innerHTML 注入，必须是全局样式。 */
 .tok-keyword {
-  color: var(--purple);
+  color: #cf222e;
 }
 
 .tok-string {
-  color: var(--green);
+  color: #0a3069;
 }
 
 .tok-comment {
-  color: var(--faint);
-  font-style: italic;
+  color: #6e7781;
 }
 
 .tok-number {
-  color: var(--amber);
+  color: #0550ae;
 }
 
 .tok-literal {

@@ -76,6 +76,7 @@ type BehaviorStats = contract.BehaviorStats
 // AI 摘要层。
 type AISummary = contract.AiSummary
 type AIRisk = contract.AiRisk
+type AIModule = contract.AiModule
 
 // 符号图：函数、类型与调用边。行为图之外的全量结构投影。
 type SymbolGraph = contract.SymbolGraph

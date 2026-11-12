@@ -8,21 +8,22 @@
 
 .head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 14px 11px;
-  border-bottom: 1px solid var(--line);
+  padding: 13px 12px 9px;
 }
 
 .title {
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .sub {
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--faint);
   font: 10px/1.4 var(--mono);
 }
@@ -58,13 +59,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 25px;
-  padding-right: 10px;
+  height: 32px;
+  font-weight: 500;
+  padding-right: 12px;
   cursor: pointer;
   list-style: none;
-  color: var(--dim);
-  font-size: 11.5px;
-  user-select: none;
+  color: var(--ink);
+  font-size: 14px;
 }
 
 .dirRow::-webkit-details-marker {
@@ -87,7 +88,7 @@ details[open] > .dirRow > .chevron {
 
 .folder {
   flex: none;
-  color: var(--faint);
+  color: #54aeff;
 }
 
 .dirName {
@@ -110,13 +111,14 @@ details[open] > .dirRow > .chevron {
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: 26px;
-  padding-right: 10px;
+  height: 34px;
+  font-weight: 500;
+  padding-right: 12px;
   border: 0;
   background: transparent;
-  color: var(--dim);
+  color: var(--ink);
   text-align: left;
-  font-size: 11.5px;
+  font-size: 14px;
 }
 
 .fileRow:hover {
@@ -126,7 +128,10 @@ details[open] > .dirRow > .chevron {
 
 .fileIcon {
   flex: none;
-  color: var(--faint);
+}
+
+.fileRowDone .fileIcon {
+  opacity: .55;
 }
 
 .fileName {
@@ -176,101 +181,11 @@ details[open] > .dirRow > .chevron {
   color: var(--red);
 }
 
-.project {
-  margin-top: 16px;
-  padding: 12px 10px 4px;
-  border-top: 1px solid var(--line);
-}
-
-.sectionTitle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px 7px;
-  color: var(--faint);
-  font: 10px/1 var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.sectionTitle span {
-  display: flex;
-  gap: 7px;
-  font-size: 10px;
-}
-
-.projectFact {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 26px;
-  padding: 3px 5px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--dim);
-  text-align: left;
-  font-size: 11px;
-}
-
-.projectFact:hover {
-  background: var(--panel-2);
-  color: var(--ink);
-}
-
-.sign {
-  width: 10px;
-  flex: none;
-  font: 700 11px/1 var(--mono);
-}
-
-.factTitle {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.factLoc {
-  margin-left: auto;
-  color: var(--faint);
-  font: 9px/1.4 var(--mono);
-  white-space: nowrap;
-}
 
 .empty {
-  padding: 18px 14px;
+  padding: 24px 14px;
   color: var(--faint);
   font-size: 11.5px;
-}
-
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--line);
-  color: var(--faint);
-  font: 9.5px/1.3 var(--mono);
-}
-
-.foot span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.foot b {
-  color: var(--amber);
-  font-weight: 500;
-}
-
-.totalDiff {
-  display: inline-flex;
-  gap: 5px;
-  margin-left: 7px;
 }
 
 .summaryWrap {
@@ -322,14 +237,48 @@ details[open] > .dirRow > .chevron {
 .legendRemoved { background: var(--red); }
 
 .factCount {
-  display: block;
-  margin-top: 2px;
+  display: inline-flex;
+  gap: 5px;
   color: var(--faint);
-  font: 8.5px/1.3 var(--mono);
-  white-space: normal;
+  font: 10px/1.3 var(--mono);
+  white-space: nowrap;
 }
 
 .factCount b {
   color: var(--dim);
   font-weight: 650;
 }
+
+.filterInput { margin: 0 10px 8px; min-width: 0; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--ink); background: var(--panel); font: 12px var(--sans); }
+
+.dirRowDone .dirName {
+  color: var(--faint);
+}
+
+.dirRowDone .folder {
+  color: var(--faint);
+}
+
+.fileRowDone .fileName {
+  color: var(--faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+
+.check {
+  flex: none;
+  margin-left: 4px;
+  color: var(--green);
+  font-size: 10px;
+}
+
+.foot {
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+.commentCount { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--blue); font: 10px/1 var(--mono); }
+.commentCount + .count { margin-left: 4px; }

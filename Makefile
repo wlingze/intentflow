@@ -22,12 +22,14 @@ schema:
 frontend:
 	cd frontend && $(PNPM) build
 
-build: frontend
-	$(GO) build -o bin/intentflow ./cmd/intentflow
+build:
+	./scripts/build.sh
 
 check:
-	$(GO) vet ./cmd/... ./internal/...
+	$(GO) vet ./...
+	$(GO) test ./cmd/... ./internal/...
 	cd frontend && $(PNPM) typecheck
+	cd frontend && $(PNPM) test
 
 # 生成 demo 的 review.json（行为图也在这里）。
 demo:

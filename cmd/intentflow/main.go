@@ -1,15 +1,8 @@
-// Command intentflow 计算一次改动在三个层面的语义 diff。
-//
-// 用法：
-//
-//	intentflow serve --before <dir> --after <dir> [--addr 127.0.0.1:8123]
-//	intentflow diff  --before <dir> --after <dir> [--out ./intentflow-out]
-//
-// serve 会先完成分析，再直接启动 HTTP 工作台；diff 只写结构化结果。
+// Command intentflow is a local Git diff and PR review workbench.
+// It never compiles or executes the reviewed source code.
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -17,13 +10,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/yaklang/intentflow/frontend"
 	"github.com/yaklang/intentflow/internal/contract"
 	"github.com/yaklang/intentflow/internal/emit"
 	"github.com/yaklang/intentflow/internal/gitcompare"
-	"github.com/yaklang/intentflow/internal/insight"
 	"github.com/yaklang/intentflow/internal/model"
 	"github.com/yaklang/intentflow/internal/payload"
-	"github.com/yaklang/intentflow/internal/scan"
+	"github.com/yaklang/intentflow/internal/reviewstore"
 	"github.com/yaklang/intentflow/internal/serve"
 )
 
@@ -37,519 +30,457 @@ func main() {
 func run(args []string) error {
 	command := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		command = args[0]
-		args = args[1:]
+		command, args = args[0], args[1:]
 	}
 	switch command {
-	case "diff":
-		return runDiff(args)
 	case "serve":
 		return runServe(args)
+	case "diff":
+		return runDiff(args)
 	case "help", "version":
 		usage()
 		return nil
 	default:
-		usage()
 		return fmt.Errorf("未知命令 %q", command)
 	}
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `intentflow — 三层语义 diff
+	fmt.Fprint(os.Stderr, `intentflow — 本地 diff + PR review
 
-  intentflow serve --before <dir> --after <dir>
-      分析后启动 review 工作台（默认 127.0.0.1:8123）
+  intentflow -t . --base main
+  intentflow -t . --head WORKTREE
+  intentflow diff -t . --base main
 
-  intentflow diff --before <dir> --after <dir> [--out <dir>]
-      只输出 review.json，不启动服务
-
-通用参数：
-  --before-label  页面上显示的改动前标签（默认用目录名）
-  --after-label   页面上显示的改动后标签
-  --dump-facts    额外写出两侧全量事实
-  -v              打印进度
+  --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
+  --review-dir   评审 JSON 目录，默认启动目录下的 .intentflow
+  --base         基线；默认取当前分支历史中的 main / master
+  --head         终点，默认 HEAD；WORKTREE 包含未提交改动
+  --host         监听地址，默认 0.0.0.0
+  --port         默认由系统分配空闲端口
+  --before/after 目录比较
+  --dist         覆盖内嵌前端，仅调试用
 `)
 }
 
-// options 是两条命令共享的分析参数。
 type options struct {
-	before      string
-	after       string
-	beforeLabel string
-	afterLabel  string
-	out         string
-	dump        bool
-	verbose     bool
-	repo        string
-	subdir      string
-	from        string
-	to          string
-	commits     string
+	target, language, base, head, mode string
+	before, after                      string
+	beforeLabel, afterLabel            string
+	out, reviewDir                     string
+	verbose                            bool
 }
 
 func (o *options) register(fs *flag.FlagSet) {
-	fs.StringVar(&o.before, "before", "", "改动前的代码目录")
-	fs.StringVar(&o.after, "after", "", "改动后的代码目录")
-	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前的显示标签")
-	fs.StringVar(&o.afterLabel, "after-label", "", "改动后的显示标签")
-	fs.StringVar(&o.out, "out", "./intentflow-out", "输出目录")
-	fs.BoolVar(&o.dump, "dump-facts", false, "额外写出两侧全量事实，用于调试")
+	fs.StringVar(&o.target, "t", ".", "Git 代码目录")
+	fs.StringVar(&o.target, "target", ".", "Git 代码目录")
+	fs.StringVar(&o.language, "l", "go", "兼容参数；diff 支持所有文本语言")
+	fs.StringVar(&o.language, "language", "go", "兼容参数；不编译源码")
+	fs.StringVar(&o.base, "base", "", "Git 基线；默认找 main / master")
+	fs.StringVar(&o.head, "head", "HEAD", "Git 终点；WORKTREE 表示工作区")
+	fs.StringVar(&o.mode, "mode", "diff", "仅支持 diff")
+	fs.StringVar(&o.before, "before", "", "改动前目录")
+	fs.StringVar(&o.after, "after", "", "改动后目录")
+	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前标签")
+	fs.StringVar(&o.afterLabel, "after-label", "", "改动后标签")
+	fs.StringVar(&o.out, "out", "./intentflow-out", "Markdown 导出目录")
+	fs.StringVar(&o.reviewDir, "review-dir", ".intentflow", "评审 JSON 目录")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
-	fs.StringVar(&o.repo, "repo", "", "Git 仓库目录；设置后用提交范围代替目录比较")
-	fs.StringVar(&o.subdir, "subdir", "", "只比较仓库内的这个子树")
-	fs.StringVar(&o.from, "from", "HEAD~1", "提交范围的起点（不含）")
-	fs.StringVar(&o.to, "to", "HEAD", "提交范围的终点")
-	fs.StringVar(&o.commits, "commits", "", "初始选中的提交 SHA，逗号分隔；空表示全部")
-}
-
-func runDiff(args []string) error {
-	var opt options
-	fs := flag.NewFlagSet("intentflow diff", flag.ExitOnError)
-	opt.register(fs)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	var review *model.Review
-	var err error
-	if opt.repo != "" {
-		var built contract.Payload
-		built, err = buildGitReview(opt)
-		if err == nil {
-			review = &built.Review
-		}
-	} else {
-		review, err = analyze(opt)
-	}
-	if err != nil {
-		return err
-	}
-	if review.Ai.Status == "" {
-		review.Ai = insight.Analyze(context.Background(), review, nil)
-	}
-	jsonPath, err := emit.JSON(review, opt.out)
-	if err != nil {
-		return fmt.Errorf("写出 review.json 失败: %w", err)
-	}
-	printStats(review)
-	fmt.Println("→", jsonPath)
-	if opt.repo != "" {
-		fmt.Printf("提示：运行 intentflow serve --repo %s --subdir %s --from %s --to %s 打开工作台\n",
-			opt.repo, opt.subdir, opt.from, opt.to)
-	} else {
-		fmt.Printf("提示：运行 intentflow serve --before %s --after %s 打开工作台\n", opt.before, opt.after)
-	}
-	return nil
 }
 
 func runServe(args []string) error {
 	var opt options
-	fs := flag.NewFlagSet("intentflow serve", flag.ExitOnError)
+	fs := flag.NewFlagSet("intentflow", flag.ContinueOnError)
 	opt.register(fs)
-	addr := fs.String("addr", "127.0.0.1:8123", "HTTP 监听地址")
-	dist := fs.String("dist", "frontend/dist", "前端构建产物目录")
+	host := fs.String("host", "0.0.0.0", "HTTP 监听地址")
+	port := fs.Int("port", 0, "HTTP 端口；0 自动分配")
+	dist := fs.String("dist", "", "覆盖内嵌前端")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
-	if opt.repo != "" {
-		return runServeGit(opt, *addr, *dist)
-	}
-
-	review, err := analyze(opt)
+	a, err := newApp(opt)
 	if err != nil {
 		return err
 	}
-	bRoot, err := scan.EnsureRoot(opt.before)
-	if err != nil {
-		return fmt.Errorf("before: %w", err)
-	}
-	aRoot, err := scan.EnsureRoot(opt.after)
-	if err != nil {
-		return fmt.Errorf("after: %w", err)
-	}
-	code, err := payload.Build(bRoot, aRoot, review.Before+" → "+review.After)
-	if err != nil {
-		return fmt.Errorf("读取源码失败: %w", err)
-	}
-	if code.Truncated {
-		fmt.Printf("注意：%d 个文件超出体积上限，未携带正文\n", len(code.Skipped))
-	}
-	review.Ai = insight.Analyze(context.Background(), review, code.Files)
-	jsonPath, err := emit.JSON(review, opt.out)
-	if err != nil {
-		return fmt.Errorf("写出 review.json 失败: %w", err)
-	}
-	printStats(review)
-	fmt.Println("→", jsonPath)
-
+	defer a.close()
+	fmt.Println("评审 JSON:", a.store.Dir)
 	return serve.Listen(serve.Config{
-		Addr:    *addr,
-		DistDir: *dist,
-		OutDir:  opt.out,
-		Payload: contract.Payload{Review: *review, Code: code},
+		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(), OutDir: opt.out,
+		Payload: a.payload, Revisions: a.revisions, Load: a.load, SaveReview: a.saveReview,
+		SaveAsset: a.store.SaveAsset, ReadAsset: a.store.ReadAsset,
+		ListDrafts: a.store.ListDrafts, RestoreDraft: a.store.RestoreDraft,
 	})
 }
 
-// analyze 跑完整的三层分析。serve 与 diff 共用这一条路径，
-// 避免两个命令的结果出现偏差。
-func analyze(opt options) (*model.Review, error) {
-	if opt.before == "" || opt.after == "" {
-		usage()
-		return nil, fmt.Errorf("--before 与 --after 都是必需的")
+func runDiff(args []string) error {
+	var opt options
+	fs := flag.NewFlagSet("intentflow diff", flag.ContinueOnError)
+	opt.register(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-
-	bRoot, err := scan.EnsureRoot(opt.before)
+	a, err := newApp(opt)
 	if err != nil {
-		return nil, fmt.Errorf("before: %w", err)
+		return err
 	}
-	aRoot, err := scan.EnsureRoot(opt.after)
-	if err != nil {
-		return nil, fmt.Errorf("after: %w", err)
+	defer a.close()
+	p := a.payload()
+	path, err := emit.JSON(&p.Review, opt.out)
+	if err == nil {
+		fmt.Println("→", path)
 	}
-
-	beforeLabel := displayPath(bRoot)
-	if opt.beforeLabel != "" {
-		beforeLabel = opt.beforeLabel
-	}
-	afterLabel := displayPath(aRoot)
-	if opt.afterLabel != "" {
-		afterLabel = opt.afterLabel
-	}
-	return analyzeRoots(bRoot, aRoot, beforeLabel, afterLabel, opt, nil)
+	return err
 }
 
-// analyzeRoots 对两个已就绪的目录跑完整分析。目录模式与 Git 模式共用它，
-// 保证两种入口得到同一种结果结构。
-func analyzeRoots(bRoot, aRoot, beforeLabel, afterLabel string, opt options, comparison *model.Comparison) (*model.Review, error) {
-	review := &model.Review{
-		Before:  beforeLabel,
-		After:   afterLabel,
-		Notes:   []string{},
-		Signals: []model.Signal{},
+type revision struct {
+	id   string
+	data contract.Payload
+}
+
+type app struct {
+	mu                                sync.Mutex
+	opt                               options
+	store                             *reviewstore.Store
+	repo                              *gitcompare.Repo
+	branch, baseRef, baseSHA, headSHA string
+	headIsWorktree                    bool
+	folder                            bool
+	current                           *revision
+	cache                             map[string]*revision
+	dirs                              []string
+}
+
+func newApp(opt options) (*app, error) {
+	if opt.mode != "" && opt.mode != "diff" {
+		return nil, fmt.Errorf("仅支持 --mode diff；当前版本不运行 SSA、扫描或 AI")
 	}
-	if comparison == nil {
-		review.Comparison = model.Comparison{
-			Mode:        contract.Folder,
-			BeforeLabel: beforeLabel,
-			AfterLabel:  afterLabel,
-			Commits:     []model.Commit{},
-			Selected:    []string{},
-			Note:        "目录比较：没有 Git 历史，提交选择不可用",
+	if opt.head == "" {
+		opt.head = "HEAD"
+	}
+	store, err := reviewstore.New(opt.reviewDir)
+	if err != nil {
+		return nil, err
+	}
+	a := &app{opt: opt, store: store, cache: map[string]*revision{}}
+	if opt.before != "" || opt.after != "" {
+		if opt.before == "" || opt.after == "" {
+			return nil, fmt.Errorf("--before 与 --after 需要同时提供")
 		}
+		before, err := ensureRoot(opt.before)
+		if err != nil {
+			return nil, err
+		}
+		after, err := ensureRoot(opt.after)
+		if err != nil {
+			return nil, err
+		}
+		bl, al := displayPath(before), displayPath(after)
+		if opt.beforeLabel != "" {
+			bl = opt.beforeLabel
+		}
+		if opt.afterLabel != "" {
+			al = opt.afterLabel
+		}
+		code, err := payload.Build(before, after, bl+" → "+al)
+		if err != nil {
+			return nil, err
+		}
+		comparison := model.Comparison{Mode: contract.Folder, BeforeLabel: bl, AfterLabel: al, Commits: []contract.Commit{}, Selected: []string{}, Note: "目录比较"}
+		ctx := reviewstore.NewContext(before+" → "+after, "目录比较", before, after, "range", "", code)
+		p, err := a.newPayload(comparison, code, ctx)
+		if err != nil {
+			return nil, err
+		}
+		a.folder = true
+		a.current = &revision{id: "range", data: p}
+		a.cache["range"] = a.current
+		a.printCompare(p)
+		return a, nil
+	}
+	a.repo, err = openTarget(opt.target)
+	if err != nil {
+		return nil, err
+	}
+	a.branch, err = a.repo.Branch()
+	if err != nil {
+		return nil, err
+	}
+	a.headIsWorktree = strings.EqualFold(opt.head, "WORKTREE") || opt.head == "."
+	head := opt.head
+	if a.headIsWorktree {
+		head = "HEAD"
+	}
+	a.headSHA, err = a.repo.Resolve(head)
+	if err != nil {
+		return nil, err
+	}
+	a.baseRef = opt.base
+	if a.baseRef == "" {
+		var distance int
+		a.baseRef, a.baseSHA, distance, err = detectBase(a.repo, a.headSHA)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("· 分支 %s；基线 %s（%s，领先 %d 个提交）\n", a.branch, a.baseRef, shortSHA(a.baseSHA), distance)
 	} else {
-		review.Comparison = *comparison
-	}
-
-	// ---- 所有层级共用一次 SSA 编译 ----
-	if opt.verbose {
-		fmt.Println("· 编译 SSA（before）")
-	}
-	bSet, bIndex, bNotes, err := scan.AnalyzeSSA(context.Background(), bRoot, "intentflow_before")
-	if err != nil {
-		return nil, fmt.Errorf("before 分析失败: %w", err)
-	}
-	for _, n := range bNotes {
-		review.Notes = append(review.Notes, "before: "+n)
-	}
-	if opt.verbose {
-		fmt.Printf("  before 事实: project=%d logic=%d intent=%d funcs=%d\n",
-			bSet.Len(model.LayerProject), bSet.Len(model.LayerLogic), bSet.Len(model.LayerIntent), len(bIndex.Funcs))
-	}
-
-	if opt.verbose {
-		fmt.Println("· 编译 SSA（after）")
-	}
-	aSet, aIndex, aNotes, err := scan.AnalyzeSSA(context.Background(), aRoot, "intentflow_after")
-	if err != nil {
-		return nil, fmt.Errorf("after 分析失败: %w", err)
-	}
-	for _, n := range aNotes {
-		review.Notes = append(review.Notes, "after: "+n)
-	}
-	if opt.verbose {
-		fmt.Printf("  after  事实: project=%d logic=%d intent=%d funcs=%d\n",
-			aSet.Len(model.LayerProject), aSet.Len(model.LayerLogic), aSet.Len(model.LayerIntent), len(aIndex.Funcs))
-	}
-
-	// ---- 三层 diff ----
-	if opt.dump {
-		if err := emit.FactSets(bSet, aSet, opt.out); err != nil {
-			return nil, fmt.Errorf("写出事实快照失败: %w", err)
+		a.baseSHA, err = a.repo.Resolve(a.baseRef)
+		if err != nil {
+			return nil, err
 		}
-		fmt.Println("→", filepath.Join(opt.out, "facts.json"))
+		fmt.Printf("· 分支 %s；基线 %s\n", a.branch, a.baseRef)
 	}
-
-	review.Project = model.Diff(model.LayerProject, bSet, aSet)
-	review.Logic = model.Diff(model.LayerLogic, bSet, aSet)
-	review.Intent = model.Diff(model.LayerIntent, bSet, aSet)
-	review.Signals = scan.Signals(review)
-	review.Behavior = scan.BuildBehavior(bIndex, aIndex, scan.IntentFacts(bSet), review)
-	review.Symbols = scan.BuildSymbolGraph(bIndex, aIndex)
-	return review, nil
-}
-
-func printStats(review *model.Review) {
-	fmt.Printf("意图层 ±%d/%d  逻辑层 ±%d/%d  项目层 ±%d/%d  关注点 %d\n",
-		len(review.Intent.Added), len(review.Intent.Removed),
-		len(review.Logic.Added), len(review.Logic.Removed),
-		len(review.Project.Added), len(review.Project.Removed),
-		len(review.Signals))
-}
-
-// displayPath 优先返回相对当前工作目录的路径，便于阅读。
-func displayPath(abs string) string {
-	wd, err := os.Getwd()
+	dirty, err := a.repo.StatusFiles()
 	if err != nil {
-		return abs
+		return nil, err
 	}
-	if rel, err := filepath.Rel(wd, abs); err == nil && !strings.HasPrefix(rel, "..") {
-		return rel
+	id := "range"
+	if len(dirty) > 0 && (a.headIsWorktree || a.baseSHA == a.headSHA) {
+		id = "worktree"
+	}
+	if _, err := a.load(id); err != nil {
+		a.close()
+		return nil, err
+	}
+	return a, nil
+}
+
+func (a *app) newPayload(comparison model.Comparison, code contract.CodeBundle, ctx contract.ReviewContext) (contract.Payload, error) {
+	doc, err := a.store.Load(ctx, code.Files)
+	if err != nil {
+		return contract.Payload{}, fmt.Errorf("读取评审 %s: %w", a.store.Path(ctx), err)
+	}
+	return contract.Payload{Code: code, Session: doc, Review: model.Review{
+		Before: comparison.BeforeLabel, After: comparison.AfterLabel, Comparison: comparison,
+		Notes: []string{}, Signals: []model.Signal{}, Findings: []contract.Finding{},
+		Scan: contract.ScanState{Mode: contract.ScanModeDiff, Status: contract.ScanStatusSkipped},
+	}}, nil
+}
+
+func (a *app) buildRevision(id string) (*revision, error) {
+	tmp, err := os.MkdirTemp("", "intentflow-rev-*")
+	if err != nil {
+		return nil, err
+	}
+	a.dirs = append(a.dirs, tmp)
+	before, after := filepath.Join(tmp, "before"), filepath.Join(tmp, "after")
+	base, head := a.baseSHA, a.headSHA
+	bl, al, note := "", "", ""
+	baseRef, headRef := a.baseRef, a.opt.head
+	switch {
+	case id == "range":
+		bl, al = shortSHA(base), shortSHA(head)
+		note = "提交范围；不含未提交改动"
+	case id == "worktree":
+		// Uncommitted changes are always relative to HEAD, not a custom --head.
+		base, err = a.repo.Resolve("HEAD")
+		if err != nil {
+			return nil, err
+		}
+		head, headRef = "WORKTREE", "WORKTREE"
+		after = a.repo.Worktree()
+		bl, al, note = shortSHA(base), "工作区", "HEAD → 工作区；包含未跟踪文件"
+	case strings.HasPrefix(id, "commit:"):
+		commit, err := a.repo.Show(strings.TrimPrefix(id, "commit:"))
+		if err != nil {
+			return nil, err
+		}
+		base = ""
+		if len(commit.Parents) > 0 {
+			base = commit.Parents[0]
+		}
+		head = commit.Sha
+		bl, al = shortSHA(base), commit.Short
+		if base == "" {
+			bl = "空树"
+		}
+		baseRef, headRef, note = bl, al, "单提交："+commit.Subject
+	default:
+		return nil, fmt.Errorf("未知 revision %q", id)
+	}
+	if base != "" {
+		if err := a.repo.ArchiveRef(base, before); err != nil {
+			return nil, err
+		}
+	} else if err := os.MkdirAll(before, 0o755); err != nil {
+		return nil, err
+	}
+	if head != "WORKTREE" {
+		if err := a.repo.ArchiveRef(head, after); err != nil {
+			return nil, err
+		}
+	}
+	comparison := model.Comparison{Mode: contract.Git, BeforeLabel: bl, AfterLabel: al,
+		Repo: ptr(a.repo.Root), Subdir: ptr(a.repo.Subdir), BaseRef: ptr(baseRef), HeadRef: ptr(headRef),
+		Commits: []contract.Commit{}, Selected: []string{}, Note: note}
+	code, err := payload.Build(before, after, bl+" → "+al)
+	if err != nil {
+		return nil, err
+	}
+	ctx := reviewstore.NewContext(a.repo.Root, a.branch, base, head, id, a.repo.Subdir, code)
+	p, err := a.newPayload(comparison, code, ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &revision{id: id, data: p}, nil
+}
+
+func (a *app) load(id string) (contract.Payload, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if id == "" && a.current != nil {
+		id = a.current.id
+	}
+	if rev, ok := a.cache[id]; ok {
+		a.current = rev
+		return rev.data, nil
+	}
+	if a.folder {
+		return contract.Payload{}, fmt.Errorf("目录比较不支持 revision %q", id)
+	}
+	rev, err := a.buildRevision(id)
+	if err != nil {
+		return contract.Payload{}, err
+	}
+	a.cache[id], a.current = rev, rev
+	a.printCompare(rev.data)
+	return rev.data, nil
+}
+
+func (a *app) payload() contract.Payload {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current.data
+}
+
+func (a *app) saveReview(doc contract.ReviewSession) (contract.ReviewSession, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rev := a.cache[doc.Context.Revision]
+	if rev == nil {
+		return doc, reviewstore.ErrMismatch
+	}
+	saved, err := a.store.Save(doc, rev.data.Session.Context, rev.data.Code.Files)
+	if err == nil {
+		rev.data.Session = saved
+	}
+	return saved, err
+}
+
+func (a *app) revisions() (contract.RevisionList, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.folder {
+		return contract.RevisionList{Current: "range", Base: a.current.data.Review.Before, Head: a.current.data.Review.After,
+			Revisions: []contract.Revision{{Id: "range", Kind: contract.RevisionKindRange, Label: "目录比较"}}}, nil
+	}
+	dirty, err := a.repo.StatusFiles()
+	if err != nil {
+		return contract.RevisionList{}, err
+	}
+	revs := []contract.Revision{}
+	if len(dirty) > 0 || a.headIsWorktree {
+		label := "未提交的改动"
+		if len(dirty) == 0 {
+			label = "工作区（无改动）"
+		}
+		revs = append(revs, contract.Revision{Id: "worktree", Kind: contract.RevisionKindWorktree, Label: label, Short: "WORKTREE", Files: int32(len(dirty))})
+	}
+	revs = append(revs, contract.Revision{Id: "range", Kind: contract.RevisionKindRange, Label: "全部改动", Sha: a.headSHA, Short: shortSHA(a.headSHA), Subject: shortSHA(a.baseSHA) + " → " + shortSHA(a.headSHA)})
+	commits, err := a.repo.Commits(a.baseSHA, a.headSHA)
+	if err != nil {
+		return contract.RevisionList{}, err
+	}
+	for i := len(commits) - 1; i >= 0; i-- {
+		c := commits[i]
+		revs = append(revs, contract.Revision{Id: "commit:" + c.Sha, Kind: contract.RevisionKindCommit, Label: c.Short + " " + c.Subject, Sha: c.Sha, Short: c.Short, Subject: c.Subject, Author: c.Author, Date: c.Date})
+	}
+	return contract.RevisionList{Base: a.baseRef, Head: a.opt.head, Current: a.current.id, Dirty: len(dirty) > 0, Revisions: revs}, nil
+}
+
+func (a *app) printCompare(p contract.Payload) {
+	fmt.Printf("· 比较 %s → %s，%d 个改动文件\n", p.Review.Before, p.Review.After, len(p.Code.Files))
+	if p.Code.Truncated {
+		fmt.Printf("  注意：%d 个文件超出体积上限，未携带正文\n", len(p.Code.Skipped))
+	}
+	if p.Session.UpdatedAt != "" {
+		fmt.Printf("· 已恢复 session %s：%d 条评论\n", p.Session.Context.SessionId, len(p.Session.Comments))
+	}
+}
+
+func (a *app) close() {
+	for _, dir := range a.dirs {
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func ensureRoot(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("不是目录: %s", dir)
+	}
+	return abs, nil
+}
+
+func detectBase(repo *gitcompare.Repo, head string) (string, string, int, error) {
+	ref, sha, distance := "", "", 0
+	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
+		s, err := repo.Resolve(candidate)
+		if err != nil || !repo.IsAncestor(s, head) {
+			continue
+		}
+		d, err := repo.Distance(s, head)
+		if err != nil {
+			continue
+		}
+		if ref == "" || d < distance {
+			ref, sha, distance = candidate, s, d
+		}
+	}
+	if ref == "" {
+		return "", "", 0, fmt.Errorf("当前分支不在 main / master / origin/main / origin/master 之上；用 --base 指定基线")
+	}
+	return ref, sha, distance, nil
+}
+
+func openTarget(target string) (*gitcompare.Repo, error) {
+	if target == "" {
+		target = "."
+	}
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return nil, err
+	}
+	r, err := gitcompare.Open(abs, "")
+	if err != nil {
+		return nil, err
+	}
+	if rel, err := filepath.Rel(r.Root, abs); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		r.Subdir = filepath.ToSlash(rel)
+	}
+	return r, nil
+}
+
+func displayPath(abs string) string {
+	if wd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(wd, abs); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
 	}
 	return abs
 }
-
-// mergeLayer 把 src 中指定层的事实并入 dst。
-func mergeLayer(dst, src model.FactSet, layer model.Layer) {
-	for _, f := range src[layer] {
-		dst.Add(f)
-	}
-}
-
-// ---- Git 比较模式 ----
-
-// gitRequest 是一次「选择提交后重新分析」所需的全部输入。
-type gitRequest struct {
-	opt     options
-	repo    *gitcompare.Repo
-	baseSHA string
-	all     []contract.Commit
-}
-
-// buildGitReview 给 diff 命令用的 Git 入口，复用 serve 的同一条分析路径。
-func buildGitReview(opt options) (contract.Payload, error) {
-	repo, err := gitcompare.Open(opt.repo, opt.subdir)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	baseSHA, err := repo.Resolve(opt.from)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	headSHA, err := repo.Resolve(opt.to)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	all, err := repo.Commits(baseSHA, headSHA)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	if len(all) == 0 {
-		return contract.Payload{}, fmt.Errorf("%s..%s 内没有触及 %q 的提交", opt.from, opt.to, opt.subdir)
-	}
-	return buildGitPayload(gitRequest{opt: opt, repo: repo, baseSHA: baseSHA, all: all}, parseCSV(opt.commits)...)
-}
-
-// gitPayloadCache 缓存 (选中提交集合) -> payload。分析一次约一分钟，
-// 用户来回切换勾选时不能每次都重跑。
-type gitPayloadCache struct {
-	mu    sync.Mutex
-	items map[string]contract.Payload
-}
-
-// runServeGit 启动 Git 提交比较模式的工作台。
-func runServeGit(opt options, addr, dist string) error {
-	repo, err := gitcompare.Open(opt.repo, opt.subdir)
-	if err != nil {
-		return err
-	}
-	baseSHA, err := repo.Resolve(opt.from)
-	if err != nil {
-		return err
-	}
-	headSHA, err := repo.Resolve(opt.to)
-	if err != nil {
-		return err
-	}
-	all, err := repo.Commits(baseSHA, headSHA)
-	if err != nil {
-		return fmt.Errorf("读取提交列表失败: %w", err)
-	}
-	if len(all) == 0 {
-		return fmt.Errorf("%s..%s 内没有触及 %q 的提交", opt.from, opt.to, opt.subdir)
-	}
-
-	req := gitRequest{opt: opt, repo: repo, baseSHA: baseSHA, all: all}
-	selected := parseCSV(opt.commits)
-	payload, err := buildGitPayload(req, selected...)
-	if err != nil {
-		return err
-	}
-	cache := &gitPayloadCache{items: map[string]contract.Payload{cacheKey(selected, all): payload}}
-
-	commits := func() (contract.CommitList, error) {
-		return contract.CommitList{
-			Mode:     contract.Git,
-			Repo:     ptr(repo.Root),
-			Subdir:   ptr(repo.Subdir),
-			BaseRef:  ptr(opt.from),
-			HeadRef:  ptr(opt.to),
-			Commits:  all,
-			Selected: selected,
-			Note:     "勾选提交后只比较这些提交的文件改动",
-		}, nil
-	}
-	rebuild := func(chosen []string) (contract.Payload, error) {
-		key := cacheKey(chosen, all)
-		cache.mu.Lock()
-		if hit, ok := cache.items[key]; ok {
-			cache.mu.Unlock()
-			return hit, nil
-		}
-		cache.mu.Unlock()
-		built, err := buildGitPayload(req, chosen...)
-		if err != nil {
-			return contract.Payload{}, err
-		}
-		cache.mu.Lock()
-		cache.items[key] = built
-		cache.mu.Unlock()
-		return built, nil
-	}
-
-	jsonPath, err := emit.JSON(&payload.Review, opt.out)
-	if err != nil {
-		return fmt.Errorf("写出 review.json 失败: %w", err)
-	}
-	printStats(&payload.Review)
-	fmt.Println("→", jsonPath)
-
-	return serve.Listen(serve.Config{
-		Addr:    addr,
-		DistDir: dist,
-		OutDir:  opt.out,
-		Payload: payload,
-		Commits: commits,
-		Rebuild: rebuild,
-	})
-}
-
-// buildGitPayload 按选中提交物化目录并跑分析。空选择表示全部提交。
-func buildGitPayload(req gitRequest, selected ...string) (contract.Payload, error) {
-	chosen := selectCommits(req.all, selected)
-	if len(chosen) == 0 {
-		return contract.Payload{}, fmt.Errorf("没有选中任何提交")
-	}
-	base := req.baseSHA
-	baseLabel := req.opt.from
-	if chosen[0].Sha != req.all[0].Sha {
-		if len(chosen[0].Parents) == 0 {
-			base = ""
-			baseLabel = "空树"
-		} else {
-			base = chosen[0].Parents[0]
-			baseLabel = shortSHA(base)
-		}
-	} else {
-		baseLabel = req.opt.from
-	}
-	shas := make([]string, 0, len(chosen))
-	for _, commit := range chosen {
-		shas = append(shas, commit.Sha)
-	}
-	afterLabel := shortSHA(chosen[len(chosen)-1].Sha)
-	if len(chosen) == len(req.all) {
-		afterLabel = req.opt.to
-	} else {
-		afterLabel = fmt.Sprintf("%s · %d/%d 提交", shortSHA(chosen[len(chosen)-1].Sha), len(chosen), len(req.all))
-	}
-
-	tmp, err := os.MkdirTemp("", "intentflow-git-*")
-	if err != nil {
-		return contract.Payload{}, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-
-	beforeDir, afterDir, err := req.repo.Materialize(base, shas, tmp)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	note := "只应用所选提交的文件版本；同一文件里未选中提交的改动不会单独进入比较"
-	comparison := &model.Comparison{
-		Mode:        contract.Git,
-		BeforeLabel: baseLabel,
-		AfterLabel:  afterLabel,
-		Repo:        ptr(req.repo.Root),
-		Subdir:      ptr(req.repo.Subdir),
-		BaseRef:     ptr(baseLabel),
-		HeadRef:     ptr(afterLabel),
-		Commits:     req.all,
-		Selected:    shas,
-		Note:        note,
-	}
-
-	if req.opt.verbose {
-		fmt.Printf("· Git 比较 %d 个提交（base=%s）\n", len(chosen), baseLabel)
-	}
-	review, err := analyzeRoots(beforeDir, afterDir, baseLabel, afterLabel, req.opt, comparison)
-	if err != nil {
-		return contract.Payload{}, err
-	}
-	code, err := payload.Build(beforeDir, afterDir, review.Before+" → "+review.After)
-	if err != nil {
-		return contract.Payload{}, fmt.Errorf("读取源码失败: %w", err)
-	}
-	review.Ai = insight.Analyze(context.Background(), review, code.Files)
-	return contract.Payload{Review: *review, Code: code}, nil
-}
-
-func selectCommits(all []contract.Commit, selected []string) []contract.Commit {
-	if len(selected) == 0 {
-		return all
-	}
-	// 接受完整 SHA 或唯一前缀，前端传完整 SHA，手敲前缀也能用。
-	matches := func(commit contract.Commit, sha string) bool {
-		sha = strings.TrimSpace(sha)
-		if len(sha) < 4 {
-			return false
-		}
-		return strings.HasPrefix(commit.Sha, sha) || strings.HasPrefix(commit.Short, sha)
-	}
-	chosen := make([]contract.Commit, 0, len(selected))
-	for _, commit := range all {
-		for _, sha := range selected {
-			if matches(commit, sha) {
-				chosen = append(chosen, commit)
-				break
-			}
-		}
-	}
-	return chosen
-}
-
-func cacheKey(selected []string, all []contract.Commit) string {
-	if len(selected) == 0 {
-		return "all"
-	}
-	return strings.Join(selected, ",")
-}
-
-func parseCSV(raw string) []string {
-	out := []string{}
-	for _, part := range strings.Split(raw, ",") {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			out = append(out, trimmed)
-		}
-	}
-	return out
-}
-
 func shortSHA(sha string) string {
-	if len(sha) <= 8 {
-		return sha
+	if len(sha) > 8 {
+		return sha[:8]
 	}
-	return sha[:8]
+	return sha
 }
-
 func ptr(value string) *string {
 	if value == "" {
 		return nil

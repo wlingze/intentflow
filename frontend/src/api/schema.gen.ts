@@ -21,15 +21,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/commits": {
+    "/api/revisions": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Commits available for selection */
-        get: operations["getCommits"];
+        /** Commits in the comparison plus the uncommitted worktree entry */
+        get: operations["getRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save or import a review for a matching repository, branch and diff */
+        put: operations["saveReviewSession"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Other saved drafts for the same branch session */
+        get: operations["listReviewDrafts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/drafts/{comparison_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore another draft of the same branch into the current comparison */
+        post: operations["restoreReviewDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload an image attached to a review comment */
+        post: operations["uploadReviewAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/assets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an uploaded review image */
+        get: operations["getReviewAsset"];
         put?: never;
         post?: never;
         delete?: never;
@@ -47,7 +132,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save the reviewer's notes */
+        /** Write the review JSON to the output directory */
         post: operations["postReview"];
         delete?: never;
         options?: never;
@@ -95,6 +180,62 @@ export interface components {
         Delta: {
             added: components["schemas"]["Fact"][];
             removed: components["schemas"]["Fact"][];
+        };
+        /** @enum {string} */
+        RevisionKind: "range" | "commit" | "worktree";
+        Revision: {
+            id: string;
+            kind: components["schemas"]["RevisionKind"];
+            label: string;
+            sha: string;
+            short: string;
+            subject: string;
+            author: string;
+            date: string;
+            /** Format: int32 */
+            files: number;
+        };
+        RevisionList: {
+            base: string;
+            head: string;
+            current: string;
+            dirty: boolean;
+            revisions: components["schemas"]["Revision"][];
+        };
+        /** @enum {string} */
+        ScanMode: "diff" | "scan" | "review";
+        /** @enum {string} */
+        ScanStatus: "pending" | "running" | "ok" | "error" | "skipped";
+        ScanState: {
+            mode: components["schemas"]["ScanMode"];
+            status: components["schemas"]["ScanStatus"];
+            /** Format: int32 */
+            rules: number;
+            /** Format: int32 */
+            files: number;
+            /** Format: int32 */
+            findings: number;
+            started_at: string;
+            finished_at: string;
+            message: string;
+        };
+        Finding: {
+            id: string;
+            rule: string;
+            title: string;
+            category: string;
+            category_title: string;
+            severity: string;
+            engine: string;
+            file: string;
+            /** Format: int32 */
+            line: number;
+            snippet: string;
+        };
+        ScanResponse: {
+            scan: components["schemas"]["ScanState"];
+            findings: components["schemas"]["Finding"][];
+            ai: components["schemas"]["AiSummary"];
         };
         Signal: {
             id: string;
@@ -195,6 +336,8 @@ export interface components {
             ai: components["schemas"]["AiSummary"];
             comparison: components["schemas"]["Comparison"];
             symbols: components["schemas"]["SymbolGraph"];
+            scan: components["schemas"]["ScanState"];
+            findings: components["schemas"]["Finding"][];
         };
         /** @enum {string} */
         ComparisonMode: "folder" | "git";
@@ -274,12 +417,18 @@ export interface components {
         };
         AiSummary: {
             /** @enum {string} */
-            status: "ok" | "unavailable" | "error";
+            status: "ok" | "unavailable" | "error" | "pending";
             model: string;
             summary: string;
+            modules: components["schemas"]["AiModule"][];
             risks: components["schemas"]["AiRisk"][];
             focus: string[];
             generated_at: string;
+        };
+        AiModule: {
+            name: string;
+            files: string[];
+            change: string;
         };
         AiRisk: {
             title: string;
@@ -302,6 +451,29 @@ export interface components {
         Payload: {
             review: components["schemas"]["Review"];
             code: components["schemas"]["CodeBundle"];
+            session: components["schemas"]["ReviewSession"];
+        };
+        ReviewContext: {
+            session_id: string;
+            comparison_id: string;
+            repository: string;
+            branch: string;
+            base: string;
+            head: string;
+            revision: string;
+            subdir: string;
+            diff_digest: string;
+        };
+        ReviewSession: {
+            /** Format: int32 */
+            version: number;
+            context: components["schemas"]["ReviewContext"];
+            comments: components["schemas"]["Comment"][];
+            /** @description Reviewed files, formatted as <file path>#<content digest>. */
+            viewed: string[];
+            /** @description Reviewed hunks, formatted as <file path>@<row index>#<hunk digest>. */
+            reviewed_hunks: string[];
+            updated_at: string;
         };
         CommitList: {
             mode: components["schemas"]["ComparisonMode"];
@@ -332,6 +504,9 @@ export interface components {
             /** Format: int64 */
             createdAt: number;
             quote?: components["schemas"]["Quote"];
+            /** @default false */
+            resolved: boolean;
+            images: string[];
         };
         ReviewState: {
             comments: components["schemas"]["Comment"][];
@@ -339,8 +514,30 @@ export interface components {
             kept: string[];
         };
         ReviewRequest: {
-            markdown: string;
-            data: components["schemas"]["ReviewState"];
+            document: components["schemas"]["ReviewSession"];
+        };
+        ReviewAsset: {
+            name: string;
+            url: string;
+        };
+        ReviewDraft: {
+            comparison_id: string;
+            revision: string;
+            base: string;
+            head: string;
+            updated_at: string;
+            comments: number;
+        };
+        ReviewDraftList: {
+            session_id: string;
+            drafts: components["schemas"]["ReviewDraft"][];
+        };
+        RestoreRequest: {
+            relax: boolean;
+        };
+        RestoreResult: {
+            document: components["schemas"]["ReviewSession"];
+            adjusted: number;
         };
         ReviewResponse: {
             path: string;
@@ -356,7 +553,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getPayload: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Revision id from /api/revisions (range, worktree, or commit:<sha>). */
+                revision?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -374,7 +574,7 @@ export interface operations {
             };
         };
     };
-    getCommits: {
+    getRevisions: {
         parameters: {
             query?: never;
             header?: never;
@@ -383,13 +583,143 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Commit list for the configured comparison */
+            /** @description Available revisions */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommitList"];
+                    "application/json": components["schemas"]["RevisionList"];
+                };
+            };
+        };
+    };
+    saveReviewSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewSession"];
+            };
+        };
+        responses: {
+            /** @description Atomically saved review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewSession"];
+                };
+            };
+            /** @description Repository, branch or comparison does not match */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listReviewDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drafts for the current session, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewDraftList"];
+                };
+            };
+        };
+    };
+    restoreReviewDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comparison_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft now saved as the current comparison */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResult"];
+                };
+            };
+            /** @description Some comments no longer match the current diff */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    uploadReviewAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Stored asset name and URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewAsset"];
+                };
+            };
+        };
+    };
+    getReviewAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Image bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
                 };
             };
         };

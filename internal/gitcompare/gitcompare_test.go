@@ -108,3 +108,49 @@ func read(t *testing.T, dir, name string) string {
 	}
 	return string(data)
 }
+
+// 单提交入口用「第一父提交」作为基线；subdir 为 "." 时按整仓比较。
+func TestSingleCommitAndDotSubdir(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "pkg/a.go", "v1\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "one")
+	write(t, dir, "pkg/a.go", "v2\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "two")
+
+	repo, err := Open(dir, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.Subdir != "" {
+		t.Fatalf("subdir %q, want empty", repo.Subdir)
+	}
+	head, err := repo.Resolve("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err := repo.Commits("", head)
+	if err != nil || len(commits) != 2 {
+		t.Fatalf("commits %v %v", commits, err)
+	}
+	before, after, err := repo.Materialize(commits[1].Parents[0], []string{commits[1].Sha}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(after, "pkg", "a.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "v2\n" {
+		t.Fatalf("after = %q", data)
+	}
+	base, err := os.ReadFile(filepath.Join(before, "pkg", "a.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(base) != "v1\n" {
+		t.Fatalf("before = %q", base)
+	}
+}

@@ -1,0 +1,16 @@
+.comment { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.head { display: flex; align-items: center; gap: 8px; min-height: 18px; padding: 8px 12px 0; }
+.where { max-width: 100%; padding: 0; border: 0; background: none; color: var(--blue); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px/1.6 var(--mono); text-align: left; }
+.where:hover { text-decoration: underline; }
+.head time { margin-left: auto; color: var(--faint); font: 10.5px/1.6 var(--mono); white-space: nowrap; }
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 8px 7px; }
+.actions > :first-child { margin-right: auto; }
+.actions .btn { height: 24px; padding: 0 6px; font-size: 11px; }
+.confirm { margin-right: auto; color: var(--dim); font-size: 11px; }
+.error { margin: 4px 0 0; color: var(--red); font-size: 11px; }
+.resolved { background: var(--panel-2); }
+.edit { padding: 8px 10px 4px; }
+.edit textarea { width: 100%; min-height: 64px; resize: vertical; font-size: 12.5px; }
+.compact { border-radius: 5px; margin: 0; }
+.compact .actions { padding: 0 6px 6px; }
+@media(max-width: 650px) { .head time { display: none; } }

@@ -2,11 +2,7 @@ openapi: 3.0.3
 info:
   title: intentflow review contract
   version: 0.2.0
-  description: |
-    One schema for the analyzer, the HTTP API and the workbench.
-
-    The graph is a behavior projection, not a call graph:
-    trigger -> decision -> transform -> effect, grouped by scenario.
+  description: Local Git diff and persistent pull-request-style reviews.
 
 servers:
   - url: http://127.0.0.1:8123
@@ -16,6 +12,11 @@ paths:
     get:
       summary: Full review payload
       operationId: getPayload
+      parameters:
+        - in: query
+          name: revision
+          description: Revision id from /api/revisions (range, worktree, or commit:<sha>).
+          schema: { type: string }
       responses:
         '200':
           description: Review facts, behavior graph and source bundle
@@ -23,20 +24,99 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Payload'
-  /api/commits:
+  /api/revisions:
     get:
-      summary: Commits available for selection
-      operationId: getCommits
+      summary: Commits in the comparison plus the uncommitted worktree entry
+      operationId: getRevisions
       responses:
         '200':
-          description: Commit list for the configured comparison
+          description: Available revisions
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CommitList'
+                $ref: '#/components/schemas/RevisionList'
+  /api/review/state:
+    put:
+      summary: Save or import a review for a matching repository, branch and diff
+      operationId: saveReviewSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewSession' }
+      responses:
+        '200':
+          description: Atomically saved review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSession' }
+        '409':
+          description: Repository, branch or comparison does not match
+  /api/review/drafts:
+    get:
+      summary: Other saved drafts for the same branch session
+      operationId: listReviewDrafts
+      responses:
+        '200':
+          description: Drafts for the current session, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewDraftList' }
+  /api/review/drafts/{comparison_id}:
+    post:
+      summary: Restore another draft of the same branch into the current comparison
+      operationId: restoreReviewDraft
+      parameters:
+        - in: path
+          name: comparison_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RestoreRequest' }
+      responses:
+        '200':
+          description: Draft now saved as the current comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestoreResult' }
+        '409':
+          description: Some comments no longer match the current diff
+  /api/review/assets:
+    post:
+      summary: Upload an image attached to a review comment
+      operationId: uploadReviewAsset
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: Stored asset name and URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewAsset' }
+  /api/review/assets/{name}:
+    get:
+      summary: Read an uploaded review image
+      operationId: getReviewAsset
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Image bytes
+          content:
+            image/png:
+              schema: { type: string, format: binary }
   /api/review:
     post:
-      summary: Save the reviewer's notes
+      summary: Write the review JSON to the output directory
       operationId: postReview
       requestBody:
         required: true
@@ -114,6 +194,87 @@ components:
         removed:
           type: array
           items: { $ref: '#/components/schemas/Fact' }
+
+    RevisionKind:
+      type: string
+      enum: [range, commit, worktree]
+
+    Revision:
+      type: object
+      additionalProperties: false
+      required: [id, kind, label, sha, short, subject, author, date, files]
+      properties:
+        id: { type: string }
+        kind: { $ref: '#/components/schemas/RevisionKind' }
+        label: { type: string }
+        sha: { type: string }
+        short: { type: string }
+        subject: { type: string }
+        author: { type: string }
+        date: { type: string }
+        files: { type: integer, format: int32 }
+
+    RevisionList:
+      type: object
+      additionalProperties: false
+      required: [base, head, current, dirty, revisions]
+      properties:
+        base: { type: string }
+        head: { type: string }
+        current: { type: string }
+        dirty: { type: boolean }
+        revisions:
+          type: array
+          items: { $ref: '#/components/schemas/Revision' }
+
+    ScanMode:
+      type: string
+      enum: [diff, scan, review]
+
+    ScanStatus:
+      type: string
+      enum: [pending, running, ok, error, skipped]
+
+    ScanState:
+      type: object
+      additionalProperties: false
+      required: [mode, status, rules, files, findings, started_at, finished_at, message]
+      properties:
+        mode: { $ref: '#/components/schemas/ScanMode' }
+        status: { $ref: '#/components/schemas/ScanStatus' }
+        rules: { type: integer, format: int32 }
+        files: { type: integer, format: int32 }
+        findings: { type: integer, format: int32 }
+        started_at: { type: string }
+        finished_at: { type: string }
+        message: { type: string }
+
+    Finding:
+      type: object
+      additionalProperties: false
+      required: [id, rule, title, category, category_title, severity, engine, file, line, snippet]
+      properties:
+        id: { type: string }
+        rule: { type: string }
+        title: { type: string }
+        category: { type: string }
+        category_title: { type: string }
+        severity: { type: string }
+        engine: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+        snippet: { type: string }
+
+    ScanResponse:
+      type: object
+      additionalProperties: false
+      required: [scan, findings, ai]
+      properties:
+        scan: { $ref: '#/components/schemas/ScanState' }
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
+        ai: { $ref: '#/components/schemas/AiSummary' }
 
     Signal:
       type: object
@@ -243,7 +404,7 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [before, after, project, logic, intent, signals, notes, behavior, ai, comparison, symbols]
+      required: [before, after, project, logic, intent, signals, notes, behavior, ai, comparison, symbols, scan, findings]
       properties:
         before: { type: string }
         after: { type: string }
@@ -260,6 +421,10 @@ components:
         ai: { $ref: '#/components/schemas/AiSummary' }
         comparison: { $ref: '#/components/schemas/Comparison' }
         symbols: { $ref: '#/components/schemas/SymbolGraph' }
+        scan: { $ref: '#/components/schemas/ScanState' }
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
 
     ComparisonMode:
       type: string
@@ -379,11 +544,14 @@ components:
     AiSummary:
       type: object
       additionalProperties: false
-      required: [status, model, summary, risks, focus, generated_at]
+      required: [status, model, summary, modules, risks, focus, generated_at]
       properties:
-        status: { type: string, enum: [ok, unavailable, error] }
+        status: { type: string, enum: [ok, unavailable, error, pending] }
         model: { type: string }
         summary: { type: string }
+        modules:
+          type: array
+          items: { $ref: '#/components/schemas/AiModule' }
         risks:
           type: array
           items: { $ref: '#/components/schemas/AiRisk' }
@@ -391,6 +559,17 @@ components:
           type: array
           items: { type: string }
         generated_at: { type: string }
+
+    AiModule:
+      type: object
+      additionalProperties: false
+      required: [name, files, change]
+      properties:
+        name: { type: string }
+        files:
+          type: array
+          items: { type: string }
+        change: { type: string }
 
     AiRisk:
       type: object
@@ -431,10 +610,46 @@ components:
     Payload:
       type: object
       additionalProperties: false
-      required: [review, code]
+      required: [review, code, session]
       properties:
         review: { $ref: '#/components/schemas/Review' }
         code: { $ref: '#/components/schemas/CodeBundle' }
+        session: { $ref: '#/components/schemas/ReviewSession' }
+
+    ReviewContext:
+      type: object
+      additionalProperties: false
+      required: [session_id, comparison_id, repository, branch, base, head, revision, subdir, diff_digest]
+      properties:
+        session_id: { type: string }
+        comparison_id: { type: string }
+        repository: { type: string }
+        branch: { type: string }
+        base: { type: string }
+        head: { type: string }
+        revision: { type: string }
+        subdir: { type: string }
+        diff_digest: { type: string }
+
+    ReviewSession:
+      type: object
+      additionalProperties: false
+      required: [version, context, comments, viewed, reviewed_hunks, updated_at]
+      properties:
+        version: { type: integer, format: int32 }
+        context: { $ref: '#/components/schemas/ReviewContext' }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+        viewed:
+          type: array
+          description: Reviewed files, formatted as <file path>#<content digest>.
+          items: { type: string }
+        reviewed_hunks:
+          type: array
+          description: Reviewed hunks, formatted as <file path>@<row index>#<hunk digest>.
+          items: { type: string }
+        updated_at: { type: string }
 
     CommitList:
       type: object
@@ -468,7 +683,7 @@ components:
     Comment:
       type: object
       additionalProperties: false
-      required: [id, text, title, source, signalId, createdAt]
+      required: [id, text, title, source, signalId, createdAt, images]
       properties:
         id: { type: string }
         text: { type: string }
@@ -477,6 +692,10 @@ components:
         signalId: { type: string }
         createdAt: { type: integer, format: int64 }
         quote: { $ref: '#/components/schemas/Quote' }
+        resolved: { type: boolean, default: false }
+        images:
+          type: array
+          items: { type: string }
 
     ReviewState:
       type: object
@@ -496,10 +715,54 @@ components:
     ReviewRequest:
       type: object
       additionalProperties: false
-      required: [markdown, data]
+      required: [document]
       properties:
-        markdown: { type: string }
-        data: { $ref: '#/components/schemas/ReviewState' }
+        document: { $ref: '#/components/schemas/ReviewSession' }
+
+    ReviewAsset:
+      type: object
+      additionalProperties: false
+      required: [name, url]
+      properties:
+        name: { type: string }
+        url: { type: string }
+
+    ReviewDraft:
+      type: object
+      additionalProperties: false
+      required: [comparison_id, revision, base, head, updated_at, comments]
+      properties:
+        comparison_id: { type: string }
+        revision: { type: string }
+        base: { type: string }
+        head: { type: string }
+        updated_at: { type: string }
+        comments: { type: integer }
+
+    ReviewDraftList:
+      type: object
+      additionalProperties: false
+      required: [session_id, drafts]
+      properties:
+        session_id: { type: string }
+        drafts:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewDraft' }
+
+    RestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [relax]
+      properties:
+        relax: { type: boolean }
+
+    RestoreResult:
+      type: object
+      additionalProperties: false
+      required: [document, adjusted]
+      properties:
+        document: { $ref: '#/components/schemas/ReviewSession' }
+        adjusted: { type: integer }
 
     ReviewResponse:
       type: object

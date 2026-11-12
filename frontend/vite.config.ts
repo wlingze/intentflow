@@ -14,5 +14,10 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: { fileIcons: ['material-file-icons'] },
+      },
+    },
   },
 });

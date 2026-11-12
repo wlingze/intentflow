@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
-import { buildTree, countChanged, type TreeNode } from '../lib/tree';
+import { useEffect, useMemo, useState } from 'react';
+import { buildTree, countChanged, countFiles, countViewed, type TreeNode } from '../lib/tree';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { DiffStats } from '../lib/diff';
-import { IconChevronRight, IconFile, IconFolder } from './Icons';
+import { IconChevronRight, IconComment, IconFolder } from './Icons';
+import { FileIcon } from './FileTypeIcon';
 import styles from './FileTree.module.css';
 
 const STATUS_CLASS: Record<string, string> = {
@@ -20,9 +21,21 @@ const STATUS_LETTER: Record<string, string> = {
   unchanged: '',
 };
 
-function FileRows({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
+interface RowsProps {
+  nodes: TreeNode[];
+  stats: Map<string, DiffStats>;
+  digests: Map<string, string>;
+  viewed: string[];
+  commentCounts: Map<string, number>;
+  expanded: Set<string>;
+  onToggle: (path: string, open: boolean) => void;
+  depth?: number;
+}
+
+function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onToggle, depth = 0 }: RowsProps) {
   const dispatch = useAppDispatch();
-  const { stats } = useReviewData();
+  // A viewed mark only counts while the file content still matches its digest.
+  const isViewed = (path: string) => viewed.includes(`${path}#${digests.get(path) ?? ''}`);
 
   return (
     <>
@@ -30,48 +43,72 @@ function FileRows({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
         if (node.type === 'dir') {
           const changed = countChanged(node);
           const aggregate = collectStats(node.children, stats);
+          const comments = collectComments(node.children, commentCounts);
+          const total = countFiles(node);
+          const done = countViewed(node, isViewed);
+          const allViewed = total > 0 && done === total;
           return (
-            <details key={node.path} className={styles.dir} open={depth < 4}>
-              <summary className={styles.dirRow} style={{ paddingLeft: 6 + depth * 12 }}>
+            <details
+              key={node.path}
+              className={styles.dir}
+              open={expanded.has(node.path)}
+              onToggle={(event) => onToggle(node.path, event.currentTarget.open)}
+            >
+              <summary className={`${styles.dirRow} ${allViewed ? styles.dirRowDone : ''}`} style={{ paddingLeft: 6 + depth * 12 }}>
                 <IconChevronRight className={styles.chevron} width={12} height={12} />
                 <IconFolder width={13} height={13} className={styles.folder} />
                 <span className={styles.dirName}>{node.name}</span>
                 {aggregate.adds > 0 && <b className={styles.plus}>+{aggregate.adds}</b>}
                 {aggregate.dels > 0 && <b className={styles.minus}>−{aggregate.dels}</b>}
+                {comments > 0 && <span className={styles.commentCount} title={`${comments} 条评论`}><IconComment width={11} height={11} />{comments}</span>}
                 {changed > 0 && <span className={styles.count}>{changed}</span>}
+                {allViewed && <span className={styles.check} aria-label="已查看">✓</span>}
               </summary>
-              <FileRows nodes={node.children} depth={depth + 1} />
+              <FileRows nodes={node.children} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={expanded} onToggle={onToggle} depth={depth + 1} />
             </details>
           );
         }
 
         const stat = stats.get(node.path);
         const status = node.file.status;
+        const comments = commentCounts.get(node.path) ?? 0;
+        const done = isViewed(node.path);
         return (
           <button
             key={node.path}
             type="button"
-            className={styles.fileRow}
+            className={`${styles.fileRow} ${done ? styles.fileRowDone : ''}`}
             style={{ paddingLeft: 22 + depth * 12 }}
             title={node.path}
-            onClick={() => dispatch({ type: 'code/open', file: node.path })}
+            onClick={() => dispatch({ type: 'code/reveal', file: node.path })}
           >
-            <IconFile width={13} height={13} className={styles.fileIcon} />
+            <FileIcon name={node.name} size={14} className={styles.fileIcon} />
             <span className={styles.fileName}>{node.name}</span>
             {status !== 'unchanged' && (
               <span className={`${styles.status} ${STATUS_CLASS[status]}`}>{STATUS_LETTER[status]}</span>
             )}
+            {comments > 0 && <span className={styles.commentCount} title={`${comments} 条评论`}><IconComment width={11} height={11} />{comments}</span>}
             {stat && (stat.adds > 0 || stat.dels > 0) && (
               <span className={styles.diffstat}>
                 {stat.adds > 0 && <b className={styles.plus}>+{stat.adds}</b>}
                 {stat.dels > 0 && <b className={styles.minus}>−{stat.dels}</b>}
               </span>
             )}
+            {done && <span className={styles.check} aria-label="已查看">✓</span>}
           </button>
         );
       })}
     </>
   );
+}
+
+function collectComments(nodes: TreeNode[], commentCounts: Map<string, number>): number {
+  let total = 0;
+  for (const node of nodes) {
+    if (node.type === 'dir') total += collectComments(node.children, commentCounts);
+    else total += commentCounts.get(node.path) ?? 0;
+  }
+  return total;
 }
 
 function collectStats(nodes: TreeNode[], stats: Map<string, DiffStats>): { adds: number; dels: number; changed: number; files: number } {
@@ -97,71 +134,100 @@ function collectStats(nodes: TreeNode[], stats: Map<string, DiffStats>): { adds:
   return { adds, dels, changed, files };
 }
 
-export function FileTree({ variant = 'project' }: { variant?: 'project' | 'files' }) {
-  const { payload, onlyChanged } = useApp();
-  const dispatch = useAppDispatch();
-  const { review, files, stats } = useReviewData();
-  const tree = useMemo(() => buildTree(files, onlyChanged), [files, onlyChanged]);
-  const changed = files.filter((file) => file.status !== 'unchanged').length;
+function dirAncestors(path: string): string[] {
+  const parts = path.split('/');
+  const dirs: string[] = [];
+  for (let index = 1; index < parts.length; index++) dirs.push(parts.slice(0, index).join('/'));
+  return dirs;
+}
+
+function allDirs(nodes: TreeNode[]): Set<string> {
+  const dirs = new Set<string>();
+  const walk = (list: TreeNode[]) => {
+    for (const node of list) {
+      if (node.type !== 'dir') continue;
+      dirs.add(node.path);
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return dirs;
+}
+
+export function FileTree() {
+  const { viewed, comments, code } = useApp();
+  const { files, stats, digests } = useReviewData();
+  const commentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments) {
+      const file = comment.quote?.file;
+      if (file) counts.set(file, (counts.get(file) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
+  const [filter, setFilter] = useState('');
+  // Directories start collapsed; jumps and filtering open what is needed.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const tree = useMemo(
+    () => buildTree(files.filter((file) => file.path.toLowerCase().includes(filter.toLowerCase())), true),
+    [files, filter],
+  );
   const totals = collectStats(buildTree(files, true), stats);
-  const added = files.filter((file) => file.status === 'added').length;
-  const removed = files.filter((file) => file.status === 'removed').length;
-  const modified = files.filter((file) => file.status === 'modified').length;
-  const all = Math.max(1, added + modified + removed);
+  const visibleDirs = useMemo(() => filter ? allDirs(tree) : null, [filter, tree]);
+  const open = visibleDirs ?? expanded;
+
+  const onToggle = (path: string, isOpen: boolean) => setExpanded((prev) => {
+    if (prev.has(path) === isOpen) return prev;
+    const next = new Set(prev);
+    if (isOpen) next.add(path);
+    else next.delete(path);
+    return next;
+  });
+
+  // Revealing a file from search, the symbol panel or a comment opens its path.
+  const reveal = code.reveal?.file ?? '';
+  useEffect(() => {
+    if (!reveal) return;
+    const dirs = dirAncestors(reveal);
+    if (!dirs.length) return;
+    setExpanded((prev) => {
+      if (dirs.every((dir) => prev.has(dir))) return prev;
+      const next = new Set(prev);
+      for (const dir of dirs) next.add(dir);
+      return next;
+    });
+  }, [reveal, code.revealToken]);
 
   return (
     <div className={styles.panel}>
       <div className={styles.head}>
-        <div>
-          <div className={styles.title}>{variant === 'project' ? '项目改动' : '变更文件'}</div>
-          <div className={styles.sub}>
-            {changed} 个变更 · {files.length} 个文件
-            <span className={styles.factCount}>
-              <b>代码</b> +{totals.adds}/−{totals.dels}
-              {' · '}
-              <b>结构</b> +{review?.project.added.length ?? 0}/−{review?.project.removed.length ?? 0}
-              {' · '}
-              <b>调用</b> +{review?.logic.added.length ?? 0}/−{review?.logic.removed.length ?? 0}
-            </span>
-          </div>
+        <div className={styles.title}>变更文件</div>
+        <div className={styles.sub}>
+          <span>{files.length} 个</span>
+          <span className={styles.factCount}><b className={styles.plus}>+{totals.adds}</b> <b className={styles.minus}>−{totals.dels}</b></span>
         </div>
-        <button
-          type="button"
-          className={`btn btnGhost btnSmall ${styles.toggle}`}
-          aria-pressed={onlyChanged}
-          onClick={() => dispatch({ type: 'onlyChanged', value: !onlyChanged })}
-        >
-          只看变更
-        </button>
       </div>
 
-      <div className={styles.summaryWrap} aria-label="改动构成">
-        <div className={styles.summaryBar}>
-          <i className={styles.summaryAdded} style={{ width: `${(added / all) * 100}%` }} />
-          <i className={styles.summaryModified} style={{ width: `${(modified / all) * 100}%` }} />
-          <i className={styles.summaryRemoved} style={{ width: `${(removed / all) * 100}%` }} />
-        </div>
-        <div className={styles.summaryLegend}>
-          <span><i className={styles.legendAdded} />新增 {added}</span>
-          <span><i className={styles.legendModified} />修改 {modified}</span>
-          <span><i className={styles.legendRemoved} />删除 {removed}</span>
-        </div>
-      </div>
+      <input
+        className={styles.filterInput}
+        aria-label="过滤文件"
+        placeholder="过滤文件…"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+      />
 
       <div className={styles.scroll}>
         {tree.length ? (
           <div className={styles.tree}>
-            <FileRows nodes={tree} />
+            <FileRows nodes={tree} stats={stats} digests={digests} viewed={viewed} commentCounts={commentCounts} expanded={open} onToggle={onToggle} />
           </div>
         ) : (
           <div className={styles.empty}>没有可显示的文件</div>
         )}
-
       </div>
 
       <div className={styles.foot}>
-        <span title={payload?.code.root}>{payload?.code.root}</span>
-        {payload?.code.truncated && <b>已截断</b>}
+        {viewed.length}/{files.length} 已查看
       </div>
     </div>
   );

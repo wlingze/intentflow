@@ -1,0 +1,26 @@
+.results { flex: 1 1 auto; min-height: 0; max-height: min(56vh, 540px); overflow: auto; padding: 3px 0 6px; }
+.panel { max-height: none; }
+.group { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 7px 12px 5px; background: var(--panel-2); color: var(--dim); font: 10.5px var(--mono); }
+.group span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group b { margin-left: auto; color: var(--faint); font-weight: 500; }
+.hit { display: grid; grid-template-columns: 34px 40px minmax(0, 1fr); align-items: baseline; gap: 7px; width: 100%; padding: 5px 12px 5px 10px; border: 0; background: transparent; color: var(--dim); text-align: left; }
+.hit:hover { background: var(--panel-2); }
+.hitAdd { background: color-mix(in srgb, var(--green) 7%, transparent); box-shadow: inset 2px 0 var(--green); }
+.hitAdd:hover { background: color-mix(in srgb, var(--green) 12%, transparent); }
+.hitDel { background: color-mix(in srgb, var(--red) 7%, transparent); box-shadow: inset 2px 0 var(--red); }
+.hitDel:hover { background: color-mix(in srgb, var(--red) 12%, transparent); }
+.active, .active:hover { background: var(--blue-soft); }
+.line { color: var(--faint); font: 10px/1.5 var(--mono); text-align: right; }
+.kind { font-size: 10px; white-space: nowrap; text-align: center; }
+.kindAdd { padding: 0 3px; border-radius: 3px; background: var(--green-soft); color: var(--green); font-weight: 600; }
+.kindDel { padding: 0 3px; border-radius: 3px; background: var(--red-soft); color: var(--red); font-weight: 600; }
+.kindContext { color: var(--faint); }
+.code { overflow: hidden; text-overflow: ellipsis; white-space: pre; tab-size: 4; color: var(--dim); font: 11px/1.6 var(--mono); }
+.active .code { color: var(--ink); }
+.code mark { padding: 0; border-radius: 2px; background: var(--amber-soft); color: var(--ink); box-shadow: inset 0 -1px var(--amber-line); }
+.more { width: 100%; padding: 8px; border: 0; border-top: 1px solid var(--line); background: var(--panel); color: var(--blue); font-size: 11px; }
+.more:hover { background: var(--panel-2); }
+@media(max-width: 650px) {
+  .kind { display: none; }
+  .hit { grid-template-columns: 30px minmax(0, 1fr); }
+}

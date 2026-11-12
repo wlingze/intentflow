@@ -12,6 +12,7 @@
     "mock": "node scripts/make-mock.mjs"
   },
   "dependencies": {
+    "material-file-icons": "2.4.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

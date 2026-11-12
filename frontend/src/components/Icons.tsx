@@ -100,14 +100,6 @@ export function IconSearch(props: IconProps) {
   );
 }
 
-export function IconDiff(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M8 3v18M16 3v18M3 8h18M3 16h18" />
-    </svg>
-  );
-}
-
 export function IconComment(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -167,14 +159,6 @@ export function IconBot(props: IconProps) {
   );
 }
 
-export function IconCode(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16" />
-    </svg>
-  );
-}
-
 export function IconBranch(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -182,33 +166,6 @@ export function IconBranch(props: IconProps) {
       <circle cx="6" cy="19" r="2" />
       <circle cx="18" cy="7" r="2" />
       <path d="M6 7v10M8 7h4a4 4 0 0 1 4 4v4" />
-    </svg>
-  );
-}
-
-export function IconAlert(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M12 3 2 21h20Z" />
-      <path d="M12 9v5M12 18h.01" />
-    </svg>
-  );
-}
-
-export function IconMinus(props: IconProps) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" {...props}>
-      <path d="M3.5 8h9" />
-    </svg>
-  );
-}
-
-export function IconTarget(props: IconProps) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" {...props}>
-      <circle cx="8" cy="8" r="4.6" />
-      <circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" />
-      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" strokeLinecap="round" />
     </svg>
   );
 }

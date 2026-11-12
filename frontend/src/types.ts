@@ -14,12 +14,6 @@ export type Side = Schemas['Side'];
 export type Fact = Schemas['Fact'];
 export type Delta = Schemas['Delta'];
 export type Signal = Schemas['Signal'];
-export type BehaviorNode = Schemas['BehaviorNode'];
-export type BehaviorEdge = Schemas['BehaviorEdge'];
-export type BehaviorScenario = Schemas['BehaviorScenario'];
-export type BehaviorLane = Schemas['BehaviorLane'];
-export type BehaviorStats = Schemas['BehaviorStats'];
-export type BehaviorGraph = Schemas['BehaviorGraph'];
 export type AISummary = Schemas['AiSummary'];
 export type AIRisk = Schemas['AiRisk'];
 export type Review = Schemas['Review'];
@@ -38,6 +32,16 @@ export type SymbolNode = Schemas['SymbolNode'];
 export type SymbolEdge = Schemas['SymbolEdge'];
 export type SymbolRef = Schemas['SymbolRef'];
 export type SymbolStats = Schemas['SymbolStats'];
+export type ScanState = Schemas['ScanState'];
+export type ScanResponse = Schemas['ScanResponse'];
+export type Finding = Schemas['Finding'];
+export type Revision = Schemas['Revision'];
+export type RevisionList = Schemas['RevisionList'];
+export type ReviewSession = Schemas['ReviewSession'];
+export type ReviewContext = Schemas['ReviewContext'];
+export type ReviewDraft = Schemas['ReviewDraft'];
+export type ReviewDraftList = Schemas['ReviewDraftList'];
+export type RestoreResult = Schemas['RestoreResult'];
 
 export interface PersistedReview {
   comments: Comment[];
@@ -45,64 +49,5 @@ export interface PersistedReview {
   kept: string[];
 }
 
-export type ViewMode = 'graph' | 'code';
 export type DiffLayout = 'split' | 'unified';
 export type CodeMode = 'diff' | 'search';
-
-export interface Selection {
-  kind: 'node' | 'edge';
-  id: string;
-}
-
-export interface LaidOutNode extends BehaviorNode {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rowKey: string;
-  scenarioId: string;
-  /** file/function 聚合节点的成员数。 */
-  count?: number;
-  /** 聚合节点包含的函数或文件。 */
-  members?: string[];
-  /** 控制节点外观；不填按 BehaviorRole 画。 */
-  display?: 'file' | 'function' | 'behavior';
-  /** 聚合节点对应的原始行为节点，用于打开代码坞。 */
-  sourceNodeId?: string;
-}
-
-export interface LaidOutEdge extends BehaviorEdge {
-  path: string;
-  labelX: number;
-  labelY: number;
-  pathId: string;
-  rowKey: string;
-  /** 聚合边的原始关系数。 */
-  count?: number;
-}
-
-export interface BehaviorRow {
-  id: string;
-  index: number;
-  title: string;
-  delta: DeltaKind;
-  source: string;
-  shape: string;
-  category: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  nodes: LaidOutNode[];
-  edges: LaidOutEdge[];
-}
-
-export interface BehaviorLayout {
-  rows: BehaviorRow[];
-  nodes: LaidOutNode[];
-  edges: LaidOutEdge[];
-  width: number;
-  height: number;
-  nodeWidth: number;
-  nodeHeight: number;
-}
