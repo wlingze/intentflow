@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yaklang/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/contract"
 )
 
 // Confidence 表示一条结论的可信度来源。

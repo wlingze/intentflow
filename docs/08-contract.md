@@ -96,10 +96,9 @@ ReviewSession
 └── updated_at : string
 ```
 
-`Comment` 包含 `id/text/title/source/signalId/createdAt/quote/resolved/images`。
+`Comment` 包含 `id/text/title/source/signalId/createdAt/quote/resolved`。
 `quote` 是 `file/side/start/end/snippet`，可以省略：没有 `quote` 的条目是不绑定行号的意见。
-新评论的图片以 Markdown 图片写进 `text`，URL 指向 `/api/review/assets/...`。
-`images` 字段保留给旧数据，新评论固定为空数组。
+图片以 Markdown 图片写进 `text`，内容内联为 data URL。
 
 ## 5. 接口
 
@@ -107,19 +106,9 @@ ReviewSession
 | --- | --- | --- |
 | GET | `/api/payload` | 当前比较快照；`?revision=` 切换 |
 | GET | `/api/revisions` | 比较范围列表 |
-| GET | `/api/review/drafts` | 当前分支 session 的其他草稿 |
-| POST | `/api/review/drafts/{comparison_id}` | 恢复该草稿；`relax` 时降级失效行号 |
-| PUT | `/api/review/state` | 保存或导入评审；上下文不符返回 409 |
-| POST | `/api/review/assets` | 上传图片，返回 `{name, url}` |
-| GET | `/api/review/assets/{name}` | 读取图片，长缓存 |
-| POST | `/api/review` | 把评审 JSON 写到 `--out` |
 
-`PUT /api/review/state` 使用严格 JSON 解码：未知字段、尾随内容、超过 16MB 都拒绝。
-写入使用临时文件 + rename，权限 0600。
-
-`POST /api/review/assets` 上限 8MB，只接受 png、jpg、gif、webp，格式由内容嗅探决定，
-不看扩展名或请求头。文件名是内容的 SHA-256，重复上传不产生新文件。
-`GET` 只接受 `^[a-f0-9]{64}\.(png|jpe?g|gif|webp)$`，避免路径穿越。
+服务端只读。评审状态的保存、恢复和草稿列表都在浏览器里完成，
+没有对应的写接口。
 
 ## 6. 必填策略
 
@@ -136,7 +125,5 @@ ReviewSession
 
 ## 8. 导出文件
 
-- `--out/review.json`：`POST /api/review` 写出的评审 JSON，与 `.intentflow` 里的文件同构。
-- `.intentflow/sessions/<session>/<comparison>.json`：自动保存的草稿。
-- `.intentflow/assets/<sha256>.<ext>`：评论图片。
-- 手动导出的 Markdown 引用图片时写 `assets/<name>`。
+- `--out/review.json`：`intentflow diff` 写出的评审 JSON，字段与浏览器里的文档一致。
+- 手动导出的 Markdown 把图片内联为 data URL，单个文件即可分享。

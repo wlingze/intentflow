@@ -1,63 +1,33 @@
 package serve
 
 import (
-	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"testing/fstest"
 
-	"github.com/yaklang/intentflow/internal/contract"
-	"github.com/yaklang/intentflow/internal/reviewstore"
+	"github.com/wlingze/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/reviewctx"
 )
 
-func TestReviewStateAPI(t *testing.T) {
-	files := []contract.CodeFile{{Path: "a.go", Status: contract.CodeStatusAdded, After: "package a\n"}}
-	ctx := reviewstore.NewContext("/repo", "feature/review", "a", "b", "range", "", contract.CodeBundle{Files: files})
-	store, _ := reviewstore.New(t.TempDir())
-	cfg := Config{
-		DistFS:     fstest.MapFS{"index.html": {Data: []byte("embedded frontend")}},
-		Payload:    func() contract.Payload { return contract.Payload{Session: reviewstore.Empty(ctx)} },
-		SaveReview: func(doc contract.ReviewSession) (contract.ReviewSession, error) { return store.Save(doc, ctx, files) },
-		SaveAsset:  store.SaveAsset,
-		ReadAsset:  store.ReadAsset,
-		OutDir:     t.TempDir(),
-	}
-	h, err := NewHandler(cfg)
+func newTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	ctx := reviewctx.NewContext("/repo", "feature/review", "a", "b", "range", "", contract.CodeBundle{})
+	h, err := NewHandler(Config{
+		DistFS:  fstest.MapFS{"index.html": {Data: []byte("embedded frontend")}},
+		Payload: func() contract.Payload { return contract.Payload{Session: reviewctx.Empty(ctx)} },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	save := func(doc contract.ReviewSession) *httptest.ResponseRecorder {
-		t.Helper()
-		raw, _ := json.Marshal(doc)
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/api/review/state", bytes.NewReader(raw)))
-		return w
-	}
-	doc := reviewstore.Empty(ctx)
-	if w := save(doc); w.Code != 200 {
-		t.Fatalf("save: %d %s", w.Code, w.Body)
-	}
-	doc.Context.Branch = "another-branch"
-	if w := save(doc); w.Code != 409 {
-		t.Fatalf("branch mismatch: %d %s", w.Code, w.Body)
-	}
-	loaded, err := store.Load(ctx, files)
-	if err != nil {
-		t.Fatalf("original review modified: %+v %v", loaded, err)
-	}
-	for _, path := range []string{"/api/scan", "/api/commits"} {
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-		if w.Code != 404 {
-			t.Fatalf("removed API %s returned %d", path, w.Code)
-		}
-	}
+	return h
+}
+
+func TestServesEmbeddedFrontend(t *testing.T) {
+	h := newTestHandler(t)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != 200 || w.Body.String() != "embedded frontend" {
@@ -65,78 +35,28 @@ func TestReviewStateAPI(t *testing.T) {
 	}
 }
 
-func TestAssetAPIAndReviewJSON(t *testing.T) {
-	files := []contract.CodeFile{{Path: "a.go", Status: contract.CodeStatusAdded, After: "package a\n"}}
-	ctx := reviewstore.NewContext("/repo", "feature/review", "a", "b", "range", "", contract.CodeBundle{Files: files})
-	store, _ := reviewstore.New(t.TempDir())
-	out := t.TempDir()
-	cfg := Config{
-		DistFS:     fstest.MapFS{"index.html": {Data: []byte("embedded frontend")}},
-		Payload:    func() contract.Payload { return contract.Payload{Session: reviewstore.Empty(ctx)} },
-		SaveReview: func(doc contract.ReviewSession) (contract.ReviewSession, error) { return store.Save(doc, ctx, files) },
-		SaveAsset:  store.SaveAsset,
-		ReadAsset:  store.ReadAsset,
-		OutDir:     out,
+func TestRemovedAPIsAreGone(t *testing.T) {
+	// 评审状态只存浏览器；这些接口一旦回归，说明又往服务端写数据了。
+	h := newTestHandler(t)
+	paths := []struct{ method, path string }{
+		{http.MethodPut, "/api/review/state"},
+		{http.MethodGet, "/api/review/drafts"},
+		{http.MethodPost, "/api/review/assets"},
+		{http.MethodPost, "/api/review"},
+		{http.MethodGet, "/api/scan"},
+		{http.MethodPost, "/api/commits"},
 	}
-	h, err := NewHandler(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	png := []byte("\x89PNG\r\n\x1a\nsmall-image")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/review/assets", bytes.NewReader(png)))
-	if w.Code != 200 {
-		t.Fatalf("upload: %d %s", w.Code, w.Body)
-	}
-	var asset contract.ReviewAsset
-	if err := json.Unmarshal(w.Body.Bytes(), &asset); err != nil || asset.Name == "" {
-		t.Fatalf("asset response: %s %v", w.Body, err)
-	}
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, asset.Url, nil))
-	if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), png) || w.Header().Get("Content-Type") != "image/png" {
-		t.Fatalf("read asset: %d %s %q", w.Code, w.Body, w.Header().Get("Content-Type"))
-	}
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/review/assets/not-valid.png", nil))
-	if w.Code != 404 {
-		t.Fatalf("invalid asset name returned %d", w.Code)
-	}
-
-	doc := reviewstore.Empty(ctx)
-	doc.Comments = []contract.Comment{{
-		Id: "overall", Text: "整体意见", Title: "", Source: "manual", SignalId: "", CreatedAt: 1,
-		Images: []string{asset.Name},
-	}}
-	raw, _ := json.Marshal(contract.ReviewRequest{Document: doc})
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/review", bytes.NewReader(raw)))
-	if w.Code != 200 {
-		t.Fatalf("submit review: %d %s", w.Code, w.Body)
-	}
-	var response contract.ReviewResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Path != filepath.Join(out, "review.json") {
-		t.Fatalf("unexpected review path: %s", response.Path)
-	}
-	saved, err := os.ReadFile(response.Path)
-	if err != nil || !bytes.Contains(saved, []byte(`"images"`)) {
-		t.Fatalf("review.json missing images: %s %v", saved, err)
+	for _, item := range paths {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(item.method, item.path, nil))
+		if w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s returned %d", item.method, item.path, w.Code)
+		}
 	}
 }
 
 func TestPayloadUsesGzip(t *testing.T) {
-	ctx := reviewstore.NewContext("/repo", "feature", "a", "b", "range", "", contract.CodeBundle{})
-	cfg := Config{
-		DistFS:  fstest.MapFS{"index.html": {Data: []byte("embedded frontend")}},
-		Payload: func() contract.Payload { return contract.Payload{Session: reviewstore.Empty(ctx)} },
-	}
-	h, err := NewHandler(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/payload", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
@@ -155,5 +75,8 @@ func TestPayloadUsesGzip(t *testing.T) {
 	var payload contract.Payload
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatalf("payload body: %v", err)
+	}
+	if payload.Session.Version != 1 {
+		t.Fatalf("payload session: %+v", payload.Session)
 	}
 }

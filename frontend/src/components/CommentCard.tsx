@@ -43,7 +43,7 @@ export function CommentCard({ comment, compact = false }: { comment: Comment; co
           }}
         >保存</button>
       </div>
-    </div> : <CommentBody text={comment.text} legacy={comment.images} />}
+    </div> : <CommentBody text={comment.text} />}
     {!editing && <div className={styles.actions}>
       {deleting ? <>
         <span className={styles.confirm}>删除？</span>

@@ -109,7 +109,7 @@ function ReviewTab() {
         onSubmit={(text) => {
           const comment: Comment = {
             id: uid('c-'), text, title: '', source: 'manual', signalId: '', createdAt: Date.now(),
-            resolved: false, images: [],
+            resolved: false,
           };
           dispatch({ type: 'comment/add', comment });
         }}

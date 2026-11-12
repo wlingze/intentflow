@@ -2,16 +2,37 @@
 // 用法：NODE_PATH=<playwright 全局包> node scripts/e2e/render.mjs http://127.0.0.1:45277
 // 这些行为依赖真实布局，单元测试覆盖不到。
 import assert from 'node:assert/strict';
+import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-const url = process.argv[2] || 'http://127.0.0.1:45277';
+const url = process.argv[2] || 'http://127.0.0.1:8123';
+
+// 找到已安装的 Chromium：先看 CHROME_PATH，再找 Playwright 的缓存目录。
+// 找不到就让 Playwright 用自带解析，缺浏览器时报错信息更清楚。
+function findChrome() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache', 'ms-playwright');
+  if (!existsSync(root)) return undefined;
+  const candidates = [];
+  for (const entry of readdirSync(root)) {
+    if (!entry.startsWith('chromium-')) continue;
+    candidates.push(
+      join(root, entry, 'chrome-linux64', 'chrome'),
+      join(root, entry, 'chrome-linux', 'chrome'),
+      join(root, entry, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+    );
+  }
+  return candidates.find((path) => existsSync(path));
+}
 
 (async () => {
   const browser = await chromium.launch({
-    executablePath: '/home/wlz/.cache/ms-playwright/chromium-1246/chrome-linux64/chrome',
+    executablePath: findChrome(),
     args: ['--no-sandbox'],
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
@@ -52,10 +73,19 @@ const url = process.argv[2] || 'http://127.0.0.1:45277';
   });
 
   // 4. Search jump puts the target line inside the viewport.
+  //    搜索词取自当前 diff，任何仓库都能跑。
+  const term = await page.evaluate(() => {
+    for (const source of document.querySelectorAll('[data-source]')) {
+      const match = (source.textContent || '').match(/[A-Za-z_]{6,}/);
+      if (match) return match[0];
+    }
+    return 'func';
+  });
   await page.keyboard.press('Control+f');
   await page.waitForTimeout(300);
-  await page.locator('[data-search-panel="true"] input').first().fill('TimeoutSecond');
+  await page.locator('[data-search-panel="true"] input').first().fill(term);
   await page.waitForTimeout(1200);
+  results.searchTerm = term;
   // Hit rows carry the code line as title;工具按钮用 aria-label 固定文案。
   const buttons = page.locator('[data-search-panel="true"] button');
   const total = await buttons.count();
@@ -110,7 +140,7 @@ const url = process.argv[2] || 'http://127.0.0.1:45277';
   //    正文只在视口附近挂载，跳到很远的文件时最容易只滚了容器没挂载正文。
   await page.keyboard.press('Control+f');
   await page.waitForTimeout(300);
-  await page.locator('[data-search-panel="true"] input').first().fill('func');
+  await page.locator('[data-search-panel="true"] input').first().fill(term);
   await page.waitForTimeout(1500);
   const far = [];
   const panelButtons = page.locator('[data-search-panel="true"] button');
@@ -120,7 +150,9 @@ const url = process.argv[2] || 'http://127.0.0.1:45277';
     if (!label) far.push(index);
   }
   const deep = [];
-  for (const index of far.filter((_, order) => order % 15 === 0).slice(0, 5)) {
+  // 抽样覆盖开头、中间和最后一条；小仓库也能取到样本。
+  const picks = [...new Set([0, 0.25, 0.5, 0.75, 1].map((ratio) => far[Math.min(far.length - 1, Math.round(ratio * (far.length - 1)))]).filter((index) => index !== undefined))];
+  for (const index of picks) {
     await panelButtons.nth(index).click();
     await page.waitForTimeout(1200);
     deep.push(await page.evaluate(() => {

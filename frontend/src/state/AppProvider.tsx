@@ -51,7 +51,6 @@ export type Action =
   | { type: 'tab/set'; tab: AppState['rightTab'] }
   | { type: 'drawer/set'; drawer: 'left' | 'right' | null }
   | { type: 'comment/add'; comment: Comment }
-  | { type: 'comment/images'; id: string; images: string[] }
   | { type: 'comment/update'; id: string; text: string }
   | { type: 'comment/delete'; id: string }
   | { type: 'comment/resolve'; id: string; resolved: boolean }
@@ -134,7 +133,6 @@ function reducer(state: AppState, action: Action): AppState {
     case 'drawer/set': return { ...state, drawer: action.drawer };
     case 'comment/add': return changed({ comments: [...state.comments, action.comment] });
     case 'comment/update': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, text: action.text } : c) });
-    case 'comment/images': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, images: action.images } : c) });
     case 'comment/resolve': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, resolved: action.resolved } : c) });
     case 'comment/delete': return changed({ comments: state.comments.filter((c) => c.id !== action.id) });
     case 'viewed/toggle': {

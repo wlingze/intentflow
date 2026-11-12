@@ -25,7 +25,6 @@ export function parseReviewJSON(raw: string, expected: ReviewContext): ReviewSes
       signalId: String(comment.signalId ?? ''),
       createdAt: Number(comment.createdAt ?? 0),
       resolved: Boolean(comment.resolved),
-      images: Array.isArray(comment.images) ? comment.images.map(String) : [],
       ...(comment.quote ? {
         quote: {
           file: String(comment.quote.file ?? ''),

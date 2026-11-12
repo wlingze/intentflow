@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: intentflow review contract
-  version: 0.2.0
+  version: 0.3.0
   description: Local Git diff and persistent pull-request-style reviews.
 
 servers:
@@ -35,103 +35,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RevisionList'
-  /api/review/state:
-    put:
-      summary: Save or import a review for a matching repository, branch and diff
-      operationId: saveReviewSession
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReviewSession' }
-      responses:
-        '200':
-          description: Atomically saved review
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReviewSession' }
-        '409':
-          description: Repository, branch or comparison does not match
-  /api/review/drafts:
-    get:
-      summary: Other saved drafts for the same branch session
-      operationId: listReviewDrafts
-      responses:
-        '200':
-          description: Drafts for the current session, newest first
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReviewDraftList' }
-  /api/review/drafts/{comparison_id}:
-    post:
-      summary: Restore another draft of the same branch into the current comparison
-      operationId: restoreReviewDraft
-      parameters:
-        - in: path
-          name: comparison_id
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RestoreRequest' }
-      responses:
-        '200':
-          description: Draft now saved as the current comparison
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/RestoreResult' }
-        '409':
-          description: Some comments no longer match the current diff
-  /api/review/assets:
-    post:
-      summary: Upload an image attached to a review comment
-      operationId: uploadReviewAsset
-      requestBody:
-        required: true
-        content:
-          application/octet-stream:
-            schema: { type: string, format: binary }
-      responses:
-        '200':
-          description: Stored asset name and URL
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReviewAsset' }
-  /api/review/assets/{name}:
-    get:
-      summary: Read an uploaded review image
-      operationId: getReviewAsset
-      parameters:
-        - in: path
-          name: name
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Image bytes
-          content:
-            image/png:
-              schema: { type: string, format: binary }
-  /api/review:
-    post:
-      summary: Write the review JSON to the output directory
-      operationId: postReview
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReviewRequest'
-      responses:
-        '200':
-          description: review.md written
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReviewResponse'
-
 components:
   schemas:
     Confidence:
@@ -684,7 +587,7 @@ components:
     Comment:
       type: object
       additionalProperties: false
-      required: [id, text, title, source, signalId, createdAt, images]
+      required: [id, text, title, source, signalId, createdAt]
       properties:
         id: { type: string }
         text: { type: string }
@@ -694,80 +597,4 @@ components:
         createdAt: { type: integer, format: int64 }
         quote: { $ref: '#/components/schemas/Quote' }
         resolved: { type: boolean, default: false }
-        images:
-          type: array
-          items: { type: string }
 
-    ReviewState:
-      type: object
-      additionalProperties: false
-      required: [comments, dismissed, kept]
-      properties:
-        comments:
-          type: array
-          items: { $ref: '#/components/schemas/Comment' }
-        dismissed:
-          type: array
-          items: { type: string }
-        kept:
-          type: array
-          items: { type: string }
-
-    ReviewRequest:
-      type: object
-      additionalProperties: false
-      required: [document]
-      properties:
-        document: { $ref: '#/components/schemas/ReviewSession' }
-
-    ReviewAsset:
-      type: object
-      additionalProperties: false
-      required: [name, url]
-      properties:
-        name: { type: string }
-        url: { type: string }
-
-    ReviewDraft:
-      type: object
-      additionalProperties: false
-      required: [comparison_id, revision, base, head, updated_at, comments]
-      properties:
-        comparison_id: { type: string }
-        revision: { type: string }
-        base: { type: string }
-        head: { type: string }
-        updated_at: { type: string }
-        comments: { type: integer }
-
-    ReviewDraftList:
-      type: object
-      additionalProperties: false
-      required: [session_id, drafts]
-      properties:
-        session_id: { type: string }
-        drafts:
-          type: array
-          items: { $ref: '#/components/schemas/ReviewDraft' }
-
-    RestoreRequest:
-      type: object
-      additionalProperties: false
-      required: [relax]
-      properties:
-        relax: { type: boolean }
-
-    RestoreResult:
-      type: object
-      additionalProperties: false
-      required: [document, adjusted]
-      properties:
-        document: { $ref: '#/components/schemas/ReviewSession' }
-        adjusted: { type: integer }
-
-    ReviewResponse:
-      type: object
-      additionalProperties: false
-      required: [path]
-      properties:
-        path: { type: string }

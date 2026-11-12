@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yaklang/intentflow/internal/model"
+	"github.com/wlingze/intentflow/internal/model"
 )
 
 // FactSets 把两侧的全量事实快照写成 facts.json，用于调试与人工核对。

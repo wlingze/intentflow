@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yaklang/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/contract"
 )
 
 // Repo 绑定一个可执行的 Git 仓库（普通仓库或 worktree 均可）。

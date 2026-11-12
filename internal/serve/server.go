@@ -11,29 +11,25 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/yaklang/intentflow/internal/contract"
-	"github.com/yaklang/intentflow/internal/reviewstore"
+	"github.com/wlingze/intentflow/internal/contract"
 )
 
+// Config 描述一个只读的 diff 工作台。评审状态由浏览器保存，服务端不落盘。
 type Config struct {
-	Host         string
-	Port         int
-	DistDir      string
-	DistFS       fs.FS
-	OutDir       string
-	Payload      func() contract.Payload
-	Revisions    func() (contract.RevisionList, error)
-	Load         func(string) (contract.Payload, error)
-	SaveReview   func(contract.ReviewSession) (contract.ReviewSession, error)
-	SaveAsset    func([]byte, string) (string, error)
-	ReadAsset    func(string) ([]byte, string, error)
-	ListDrafts   func(contract.ReviewContext) ([]contract.ReviewDraft, error)
-	RestoreDraft func(contract.ReviewContext, []contract.CodeFile, string, bool) (contract.ReviewSession, int, error)
+	Host      string
+	Port      int
+	DistDir   string
+	DistFS    fs.FS
+	Payload   func() contract.Payload
+	Revisions func() (contract.RevisionList, error)
+	Load      func(string) (contract.Payload, error)
+	// OpenBrowser 在终端里启动时自动打开工作台；无图形环境时静默跳过。
+	OpenBrowser bool
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -72,130 +68,6 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			return
 		}
 		writeJSON(w, 200, list)
-	})
-	mux.HandleFunc("PUT /api/review/state", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.SaveReview == nil {
-			writeError(w, 503, "评审存储不可用")
-			return
-		}
-		var doc contract.ReviewSession
-		if err := decode(w, r, &doc); err != nil {
-			writeError(w, 400, "评审 JSON 无法读取: "+err.Error())
-			return
-		}
-		saved, err := cfg.SaveReview(doc)
-		if err != nil {
-			status := 400
-			if errors.Is(err, reviewstore.ErrMismatch) {
-				status = 409
-			}
-			writeError(w, status, err.Error())
-			return
-		}
-		writeJSON(w, 200, saved)
-	})
-	mux.HandleFunc("GET /api/review/drafts", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.ListDrafts == nil {
-			writeJSON(w, 200, contract.ReviewDraftList{Drafts: []contract.ReviewDraft{}})
-			return
-		}
-		current := cfg.Payload()
-		drafts, err := cfg.ListDrafts(current.Session.Context)
-		if err != nil {
-			writeError(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, contract.ReviewDraftList{SessionId: current.Session.Context.SessionId, Drafts: drafts})
-	})
-	mux.HandleFunc("POST /api/review/drafts/{comparison_id}", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.RestoreDraft == nil {
-			writeError(w, 503, "草稿恢复不可用")
-			return
-		}
-		var req contract.RestoreRequest
-		if err := decode(w, r, &req); err != nil {
-			writeError(w, 400, "请求不是合法 JSON")
-			return
-		}
-		current := cfg.Payload()
-		doc, adjusted, err := cfg.RestoreDraft(current.Session.Context, current.Code.Files, r.PathValue("comparison_id"), req.Relax)
-		if err != nil {
-			status := 400
-			if errors.Is(err, reviewstore.ErrMismatch) {
-				status = 409
-			}
-			writeError(w, status, err.Error())
-			return
-		}
-		if cfg.SaveReview != nil {
-			doc, err = cfg.SaveReview(doc)
-			if err != nil {
-				writeError(w, 400, err.Error())
-				return
-			}
-		}
-		writeJSON(w, 200, contract.RestoreResult{Document: doc, Adjusted: adjusted})
-	})
-	mux.HandleFunc("POST /api/review/assets", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.SaveAsset == nil {
-			writeError(w, 503, "图片存储不可用")
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, 400, "图片读取失败: "+err.Error())
-			return
-		}
-		ext, ok := map[string]string{
-			"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
-		}[http.DetectContentType(data)]
-		if !ok {
-			writeError(w, 400, "只支持 png、jpg、gif、webp 图片")
-			return
-		}
-		name, err := cfg.SaveAsset(data, ext)
-		if err != nil {
-			writeError(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, contract.ReviewAsset{Name: name, Url: path.Join("/api/review/assets", name)})
-	})
-	mux.HandleFunc("GET /api/review/assets/{name}", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.ReadAsset == nil {
-			writeError(w, 503, "图片存储不可用")
-			return
-		}
-		data, kind, err := cfg.ReadAsset(r.PathValue("name"))
-		if err != nil {
-			writeError(w, 404, err.Error())
-			return
-		}
-		w.Header().Set("Content-Type", kind)
-		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-		_, _ = w.Write(data)
-	})
-	mux.HandleFunc("POST /api/review", func(w http.ResponseWriter, r *http.Request) {
-		var req contract.ReviewRequest
-		if err := decode(w, r, &req); err != nil {
-			writeError(w, 400, "请求不是合法 JSON")
-			return
-		}
-		doc := req.Document
-		if cfg.SaveReview != nil {
-			saved, err := cfg.SaveReview(doc)
-			if err != nil {
-				writeError(w, 400, err.Error())
-				return
-			}
-			doc = saved
-		}
-		target, err := writeReviewJSON(cfg.OutDir, doc)
-		if err != nil {
-			writeError(w, 500, err.Error())
-			return
-		}
-		writeJSON(w, 200, contract.ReviewResponse{Path: target})
 	})
 	mux.Handle("/", spaHandler(dist))
 	return gzipMiddleware(mux), nil
@@ -283,6 +155,9 @@ func Listen(cfg Config) error {
 		fmt.Println("  " + url)
 	}
 	fmt.Println("端口:", port)
+	if cfg.OpenBrowser {
+		go openBrowser(accessURLs(host, port)[0])
+	}
 	return http.Serve(ln, logRequests(handler))
 }
 
@@ -321,34 +196,20 @@ func localIPv4() []string {
 	return out
 }
 
-func writeReviewJSON(dir string, doc contract.ReviewSession) (string, error) {
-	if dir == "" {
-		dir = "intentflow-out"
+// openBrowser 打开默认浏览器。只在本地有图形会话时调用。
+func openBrowser(url string) {
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+	for _, name := range []string{"xdg-open", "open"} {
+		if _, err := exec.LookPath(name); err != nil {
+			continue
+		}
+		cmd := exec.Command(name, url)
+		cmd.Stdout, cmd.Stderr = nil, nil
+		_ = cmd.Start()
+		return
 	}
-	raw, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	target := filepath.Join(dir, "review.json")
-	tmp, err := os.CreateTemp(dir, ".review-*.json")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(append(raw, '\n')); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp.Name(), target); err != nil {
-		return "", err
-	}
-	return target, nil
 }
 
 func distFS(cfg Config) (fs.FS, error) {

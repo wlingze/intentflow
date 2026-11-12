@@ -41,11 +41,7 @@ export function buildReviewMarkdown(
       lines.push(quoteBlock(comment).trimEnd());
       if (comment.quote?.snippet) lines.push('');
       if (comment.title) lines.push(`**${comment.title}**`);
-      lines.push(comment.text.trim().replaceAll('](/api/review/assets/', '](assets/'));
-      if (comment.images?.length) {
-        lines.push('');
-        for (const image of comment.images) lines.push(`![${image}](assets/${image})`);
-      }
+      lines.push(comment.text.trim());
       lines.push('');
     });
   }

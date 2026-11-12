@@ -108,10 +108,8 @@ Review tab 只有两部分：
 ### 2.6 图片
 
 - 图片直接粘贴进评论正文，渲染时按正文里的 Markdown 图片显示。
-- 支持 png、jpg、gif、webp，单张上限 6MB。
-- 上传后服务端按内容哈希命名，存 `.intentflow/assets/`。
-- 评审 JSON 的正文保存图片 URL，不内嵌 base64。
-- 旧数据里的 `images` 字段继续显示，但新评论不再单独存附件。
+- 支持 png、jpg、gif、webp，单张上限 1.5MB。
+- 图片内联为 data URL，随评审一起存浏览器，不落磁盘、不发请求。
 
 ### 2.7 全局搜索
 
@@ -194,8 +192,7 @@ Review tab 只有两部分：
 ### 2.14 评审状态存放
 
 - 评审 JSON 存在浏览器 localStorage，键为 `intentflow.review.<comparison_id>`。
-- 服务端默认不写 `.intentflow` 目录；`--review-dir` 留空即纯内存。
-- 需要落盘时显式传 `--review-dir`，行为与旧版本一致。
+- 服务端不写磁盘；仓库里不产生任何文件。
 - 评论图片内联为 data URL，随文档一起存在浏览器；单张上限 1.5MB。
 - 「其他草稿」列表与恢复也走浏览器存储。
 - 导出入口不变：顶部「提交 Review」复制 Markdown 或保存 JSON 文件。

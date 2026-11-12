@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yaklang/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/contract"
 )
 
 // 单文件与整包上限。超过上限的文件只保留状态，不带正文，

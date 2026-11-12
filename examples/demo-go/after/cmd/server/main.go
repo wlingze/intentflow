@@ -1,30 +1,11 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
 	"net/http"
 	"os"
-	"strings"
+
+	"demo/internal/store"
 )
-
-var db *sql.DB
-
-func findUser(name string) (string, error) {
-	var query string
-	switch {
-	case strings.Contains(name, "@"):
-		query = fmt.Sprintf("SELECT id FROM users WHERE email LIKE '%%%s%%'", name)
-	default:
-		query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
-	}
-	rows, err := db.Query(query)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-	return "", nil
-}
 
 func loadTemplate() (string, error) {
 	base := os.Getenv("APP_HOME")
@@ -38,7 +19,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	id, err := findUser(name)
+	id, err := store.FindUser(name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusInternalServerError)
 		return

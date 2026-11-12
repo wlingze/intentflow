@@ -259,7 +259,6 @@ type CodeStatus string
 type Comment struct {
 	CreatedAt int64         `json:"createdAt"`
 	Id        string        `json:"id"`
-	Images    []string      `json:"images"`
 	Quote     *Quote        `json:"quote,omitempty"`
 	Resolved  *bool         `json:"resolved,omitempty"`
 	SignalId  string        `json:"signalId"`
@@ -373,17 +372,6 @@ type Quote struct {
 	Start   int32  `json:"start"`
 }
 
-// RestoreRequest defines model for RestoreRequest.
-type RestoreRequest struct {
-	Relax bool `json:"relax"`
-}
-
-// RestoreResult defines model for RestoreResult.
-type RestoreResult struct {
-	Adjusted int           `json:"adjusted"`
-	Document ReviewSession `json:"document"`
-}
-
 // Review defines model for Review.
 type Review struct {
 	After      string        `json:"after"`
@@ -401,12 +389,6 @@ type Review struct {
 	Symbols    SymbolGraph   `json:"symbols"`
 }
 
-// ReviewAsset defines model for ReviewAsset.
-type ReviewAsset struct {
-	Name string `json:"name"`
-	Url  string `json:"url"`
-}
-
 // ReviewContext defines model for ReviewContext.
 type ReviewContext struct {
 	Base         string `json:"base"`
@@ -418,32 +400,6 @@ type ReviewContext struct {
 	Revision     string `json:"revision"`
 	SessionId    string `json:"session_id"`
 	Subdir       string `json:"subdir"`
-}
-
-// ReviewDraft defines model for ReviewDraft.
-type ReviewDraft struct {
-	Base         string `json:"base"`
-	Comments     int    `json:"comments"`
-	ComparisonId string `json:"comparison_id"`
-	Head         string `json:"head"`
-	Revision     string `json:"revision"`
-	UpdatedAt    string `json:"updated_at"`
-}
-
-// ReviewDraftList defines model for ReviewDraftList.
-type ReviewDraftList struct {
-	Drafts    []ReviewDraft `json:"drafts"`
-	SessionId string        `json:"session_id"`
-}
-
-// ReviewRequest defines model for ReviewRequest.
-type ReviewRequest struct {
-	Document ReviewSession `json:"document"`
-}
-
-// ReviewResponse defines model for ReviewResponse.
-type ReviewResponse struct {
-	Path string `json:"path"`
 }
 
 // ReviewSession defines model for ReviewSession.
@@ -458,13 +414,6 @@ type ReviewSession struct {
 
 	// Viewed Reviewed files, formatted as <file path>#<content digest>.
 	Viewed []string `json:"viewed"`
-}
-
-// ReviewState defines model for ReviewState.
-type ReviewState struct {
-	Comments  []Comment `json:"comments"`
-	Dismissed []string  `json:"dismissed"`
-	Kept      []string  `json:"kept"`
 }
 
 // Revision defines model for Revision.
@@ -595,12 +544,3 @@ type GetPayloadParams struct {
 	// Revision Revision id from /api/revisions (range, worktree, or commit:<sha>).
 	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 }
-
-// PostReviewJSONRequestBody defines body for PostReview for application/json ContentType.
-type PostReviewJSONRequestBody = ReviewRequest
-
-// RestoreReviewDraftJSONRequestBody defines body for RestoreReviewDraft for application/json ContentType.
-type RestoreReviewDraftJSONRequestBody = RestoreRequest
-
-// SaveReviewSessionJSONRequestBody defines body for SaveReviewSession for application/json ContentType.
-type SaveReviewSessionJSONRequestBody = ReviewSession

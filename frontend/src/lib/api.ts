@@ -14,8 +14,3 @@ export async function fetchPayload(revision?: string): Promise<Payload> {
 export async function fetchRevisions(): Promise<RevisionList> {
   return jsonResponse<RevisionList>(await fetch('/api/revisions', { cache: 'no-store' }));
 }
-
-/** Legacy review images still referenced by `/api/review/assets/<name>`. */
-export function reviewAssetUrl(name: string): string {
-  return `/api/review/assets/${encodeURIComponent(name)}`;
-}

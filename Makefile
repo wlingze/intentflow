@@ -7,6 +7,8 @@ DEMO_AFTER ?= examples/demo-go/after
 DEMO_OUT ?= examples/demo-go/out
 ADDR ?= 127.0.0.1:8123
 E2E_URL ?= http://127.0.0.1:8123
+# e2e 需要 Playwright。NODE_PATH 指向全局安装的包，没有就退回本地解析。
+PLAYWRIGHT_PATH ?= $(HOME)/.local/lib/node_modules/@playwright/cli/node_modules
 
 .PHONY: tools schema frontend build check e2e demo serve clean
 
@@ -33,18 +35,18 @@ check:
 	cd frontend && $(PNPM) test
 
 # 渲染层检查：真实布局下的滚动、行内标记、文件树色调与跳转。
-# 需要已启动的服务与全局 playwright：NODE_PATH=~/.local/lib/node_modules/@playwright/cli/node_modules
+# 需要已启动的服务，以及 Playwright（全局或本地安装均可，用 PLAYWRIGHT_PATH 覆盖）。
 e2e:
-	NODE_PATH=$$HOME/.local/lib/node_modules/@playwright/cli/node_modules node scripts/e2e/render.mjs $(E2E_URL)
+	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/render.mjs $(E2E_URL)
 
-# 生成 demo 的 review.json（行为图也在这里）。
+# 生成 demo 的 review.json。
 demo:
 	$(GO) build -o bin/intentflow ./cmd/intentflow
 	./bin/intentflow diff --before $(DEMO_BEFORE) --after $(DEMO_AFTER) --out $(DEMO_OUT)
 
-# 分析后直接启动工作台。前端产物必须已构建。
+# 分析后直接启动工作台。前端已嵌进二进制，不需要 dist 目录。
 serve: build
-	./bin/intentflow serve --before $(DEMO_BEFORE) --after $(DEMO_AFTER) --out $(DEMO_OUT) --addr $(ADDR)
+	./bin/intentflow --before $(DEMO_BEFORE) --after $(DEMO_AFTER) --host 127.0.0.1 --port 8123
 
 # 不提供 rm -rf：需要清理时请手动确认路径后删除。
 clean:

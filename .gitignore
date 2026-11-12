@@ -1,8 +1,6 @@
 /bin/
+/intentflow
 /intentflow-out/
+/.intentflow/
 /examples/demo-go/*/go.sum
 /examples/demo-go/out/
-examples/yaklang-llvm/out/
-
-/intentflow
-/.intentflow/

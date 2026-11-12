@@ -25,7 +25,7 @@ const context = (comparison: string, session = 's-1'): ReviewContext => ({
 
 const doc = (comparison: string, session = 's-1'): ReviewSession => ({
   version: 1, context: context(comparison, session),
-  comments: [{ id: 'c-1', resolved: false, source: 'manual', title: '', signalId: '', text: '看这里', createdAt: 1, images: [] }],
+  comments: [{ id: 'c-1', resolved: false, source: 'manual', title: '', signalId: '', text: '看这里', createdAt: 1 }],
   viewed: ['a.go#1'], reviewed_hunks: [], updated_at: '',
 });
 

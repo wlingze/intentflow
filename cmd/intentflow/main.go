@@ -10,14 +10,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yaklang/intentflow/frontend"
-	"github.com/yaklang/intentflow/internal/contract"
-	"github.com/yaklang/intentflow/internal/emit"
-	"github.com/yaklang/intentflow/internal/gitcompare"
-	"github.com/yaklang/intentflow/internal/model"
-	"github.com/yaklang/intentflow/internal/payload"
-	"github.com/yaklang/intentflow/internal/reviewstore"
-	"github.com/yaklang/intentflow/internal/serve"
+	"github.com/wlingze/intentflow/frontend"
+	"github.com/wlingze/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/emit"
+	"github.com/wlingze/intentflow/internal/gitcompare"
+	"github.com/wlingze/intentflow/internal/model"
+	"github.com/wlingze/intentflow/internal/payload"
+	"github.com/wlingze/intentflow/internal/reviewctx"
+	"github.com/wlingze/intentflow/internal/serve"
 )
 
 func main() {
@@ -67,7 +67,7 @@ type options struct {
 	target, language, base, head, mode string
 	before, after                      string
 	beforeLabel, afterLabel            string
-	out, reviewDir                     string
+	out                                string
 	verbose                            bool
 }
 
@@ -84,8 +84,16 @@ func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前标签")
 	fs.StringVar(&o.afterLabel, "after-label", "", "改动后标签")
 	fs.StringVar(&o.out, "out", "./intentflow-out", "Markdown 导出目录")
-	fs.StringVar(&o.reviewDir, "review-dir", "", "评审 JSON 目录；留空表示不写磁盘")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
+}
+
+// isTerminal 判断标准输出是否接到终端，避免后台启动时弹出浏览器。
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func runServe(args []string) error {
@@ -95,6 +103,7 @@ func runServe(args []string) error {
 	host := fs.String("host", "0.0.0.0", "HTTP 监听地址")
 	port := fs.Int("port", 0, "HTTP 端口；0 自动分配")
 	dist := fs.String("dist", "", "覆盖内嵌前端")
+	noOpen := fs.Bool("no-open", false, "不自动打开浏览器")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -103,16 +112,10 @@ func runServe(args []string) error {
 		return err
 	}
 	defer a.close()
-	if a.store.Dir == "" {
-		fmt.Println("· 评审状态只保存在浏览器；不写 .intentflow 目录")
-	} else {
-		fmt.Println("· 评审 JSON:", a.store.Dir)
-	}
 	return serve.Listen(serve.Config{
-		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(), OutDir: opt.out,
-		Payload: a.payload, Revisions: a.revisions, Load: a.load, SaveReview: a.saveReview,
-		SaveAsset: a.store.SaveAsset, ReadAsset: a.store.ReadAsset,
-		ListDrafts: a.store.ListDrafts, RestoreDraft: a.store.RestoreDraft,
+		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
+		Payload: a.payload, Revisions: a.revisions, Load: a.load,
+		OpenBrowser: !*noOpen && isTerminal(os.Stdout),
 	})
 }
 
@@ -144,7 +147,6 @@ type revision struct {
 type app struct {
 	mu                                sync.Mutex
 	opt                               options
-	store                             *reviewstore.Store
 	repo                              *gitcompare.Repo
 	branch, baseRef, baseSHA, headSHA string
 	headIsWorktree                    bool
@@ -161,11 +163,8 @@ func newApp(opt options) (*app, error) {
 	if opt.head == "" {
 		opt.head = "HEAD"
 	}
-	store, err := reviewstore.New(opt.reviewDir)
-	if err != nil {
-		return nil, err
-	}
-	a := &app{opt: opt, store: store, cache: map[string]*revision{}}
+	a := &app{opt: opt, cache: map[string]*revision{}}
+	var err error
 	if opt.before != "" || opt.after != "" {
 		if opt.before == "" || opt.after == "" {
 			return nil, fmt.Errorf("--before 与 --after 需要同时提供")
@@ -190,7 +189,7 @@ func newApp(opt options) (*app, error) {
 			return nil, err
 		}
 		comparison := model.Comparison{Mode: contract.Folder, BeforeLabel: bl, AfterLabel: al, Commits: []contract.Commit{}, Selected: []string{}, Note: "目录比较"}
-		ctx := reviewstore.NewContext(before+" → "+after, "目录比较", before, after, "range", "", code)
+		ctx := reviewctx.NewContext(before+" → "+after, "目录比较", before, after, "range", "", code)
 		p, err := a.newPayload(comparison, code, ctx)
 		if err != nil {
 			return nil, err
@@ -249,11 +248,7 @@ func newApp(opt options) (*app, error) {
 }
 
 func (a *app) newPayload(comparison model.Comparison, code contract.CodeBundle, ctx contract.ReviewContext) (contract.Payload, error) {
-	doc, err := a.store.Load(ctx, code.Files)
-	if err != nil {
-		return contract.Payload{}, fmt.Errorf("读取评审 %s: %w", a.store.Path(ctx), err)
-	}
-	return contract.Payload{Code: code, Session: doc, Review: model.Review{
+	return contract.Payload{Code: code, Session: reviewctx.Empty(ctx), Review: model.Review{
 		Before: comparison.BeforeLabel, After: comparison.AfterLabel, Comparison: comparison,
 		Notes: []string{}, Signals: []model.Signal{}, Findings: []contract.Finding{},
 		Scan: contract.ScanState{Mode: contract.ScanModeDiff, Status: contract.ScanStatusSkipped},
@@ -324,7 +319,7 @@ func (a *app) buildRevision(id string) (*revision, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx := reviewstore.NewContext(a.repo.Root, a.branch, base, head, id, a.repo.Subdir, code)
+	ctx := reviewctx.NewContext(a.repo.Root, a.branch, base, head, id, a.repo.Subdir, code)
 	p, err := a.newPayload(comparison, code, ctx)
 	if err != nil {
 		return nil, err
@@ -358,20 +353,6 @@ func (a *app) payload() contract.Payload {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.current.data
-}
-
-func (a *app) saveReview(doc contract.ReviewSession) (contract.ReviewSession, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	rev := a.cache[doc.Context.Revision]
-	if rev == nil {
-		return doc, reviewstore.ErrMismatch
-	}
-	saved, err := a.store.Save(doc, rev.data.Session.Context, rev.data.Code.Files)
-	if err == nil {
-		rev.data.Session = saved
-	}
-	return saved, err
 }
 
 func (a *app) revisions() (contract.RevisionList, error) {

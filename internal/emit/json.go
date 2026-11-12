@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yaklang/intentflow/internal/model"
+	"github.com/wlingze/intentflow/internal/model"
 )
 
 // JSON 写出 review.json。

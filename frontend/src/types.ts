@@ -22,7 +22,6 @@ export type CodeBundle = Schemas['CodeBundle'];
 export type Payload = Schemas['Payload'];
 export type Quote = Schemas['Quote'];
 export type Comment = Schemas['Comment'];
-export type ReviewState = Schemas['ReviewState'];
 export type Comparison = Schemas['Comparison'];
 export type ComparisonMode = Schemas['ComparisonMode'];
 export type Commit = Schemas['Commit'];
@@ -39,7 +38,6 @@ export type Revision = Schemas['Revision'];
 export type RevisionList = Schemas['RevisionList'];
 export type ReviewSession = Schemas['ReviewSession'];
 export type ReviewContext = Schemas['ReviewContext'];
-export type ReviewDraft = Schemas['ReviewDraft'];
 
 export interface PersistedReview {
   comments: Comment[];

@@ -563,7 +563,7 @@ export const FileDiffCard = memo(function FileDiffCard({
           {commentHere && <form className={styles.inlineComment} onSubmit={(event) => {
             event.preventDefault();
             if (!draft.trim()) return;
-            dispatch({ type: 'comment/add', comment: { id: uid('c-'), resolved: false, source: 'manual', title: '', signalId: '', text: draft.trim(), createdAt: Date.now(), images: [], quote: { file: file.path, side: comment.side, start: comment.start, end: comment.end, snippet: comment.snippet } } });
+            dispatch({ type: 'comment/add', comment: { id: uid('c-'), resolved: false, source: 'manual', title: '', signalId: '', text: draft.trim(), createdAt: Date.now(), quote: { file: file.path, side: comment.side, start: comment.start, end: comment.end, snippet: comment.snippet } } });
             setComment(null); setDraft('');
             dispatch({ type: 'toast/show', message: '评论已加入 Review', kind: 'success' });
           }}>
