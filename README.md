@@ -167,7 +167,7 @@ schema/openapi.yaml   唯一数据契约
 internal/contract/    生成：Go JSON 类型
 internal/gitcompare/  Git 比较范围与提交
 internal/payload/     源码包：before/after 文本与文件状态
-internal/reviewstore/ 评审存储：内存模式或指定目录
+internal/reviewctx/   评审身份：session 与比较范围摘要
 internal/serve/       HTTP 服务与内嵌前端
 frontend/             React + TypeScript + Vite
 examples/demo-go/     单文件 demo

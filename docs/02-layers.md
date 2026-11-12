@@ -102,7 +102,7 @@ REMOVED  handleSearch → findUser → SQL   shape=direct   src=http_input   [IN
 
 因为「安全」与「不安全」的分界线不在端点，在中间：同样是 HTTP→SQL，参数化传参和字符串拼接是两件完全不同的事。
 
-同理，`graphify` 的 `graph_diff` 用节点 ID（依赖路径）做身份，重构改文件名就会全量误报。这是同一个坑的另一种形态。
+同理，用节点 ID（依赖路径）做图 diff 身份的工具，重构改文件名就会全量误报。这是同一个坑的另一种形态。
 
 ## 来源归一化
 
