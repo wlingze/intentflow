@@ -71,12 +71,13 @@ export function DiffStage() {
     };
   }, [files, dispatch]);
 
-  // 文件树点击：把目标卡片滚到顶部。行级定位由卡片自己处理。
+  // 跳转第一步：不管有没有行号，都先把目标卡片滚进视口。行级定位由卡片
+  // 在挂载后自己完成；卡片不在视口附近时正文不挂载，所以必须由这里先滚。
   useEffect(() => {
-    if (!code.reveal || code.line !== undefined) return;
+    if (!code.reveal) return;
     const target = scroller.current?.querySelector<HTMLElement>(`[data-file="${cssEscape(code.reveal.file)}"]`);
     target?.scrollIntoView({ block: 'start', behavior: 'instant' });
-  }, [code.reveal, code.line]);
+  }, [code.reveal, code.revealToken]);
 
   const allViewed = files.length > 0 && files.every((file) => viewed.includes(viewedEntry(file.path)));
 

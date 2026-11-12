@@ -28,21 +28,27 @@ var (
 	}
 )
 
+// Store keeps review JSON on disk when Dir is set, and in memory otherwise.
+// The memory mode is the default: the workbench is a local viewer, and review
+// state normally lives in the browser; nothing is written next to the repo.
 type Store struct {
 	Dir string
 	mu  sync.Mutex
+	mem map[string][]byte
 }
 
 func New(dir string) (*Store, error) {
 	if dir == "" {
-		dir = ".intentflow"
+		return &Store{mem: map[string][]byte{}}, nil
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{Dir: abs}, nil
+	return &Store{Dir: abs, mem: map[string][]byte{}}, nil
 }
+
+func (s *Store) inMemory() bool { return s.Dir == "" }
 
 func digest(v any) string {
 	raw, _ := json.Marshal(v)
@@ -90,6 +96,11 @@ func quoteInRange(quote *contract.Quote, files map[string]contract.CodeFile) boo
 func (s *Store) Path(ctx contract.ReviewContext) string {
 	// Hash again rather than trusting imported ids as filesystem paths.
 	return filepath.Join(s.Dir, "sessions", digest(ctx.SessionId)[:24], digest(ctx.ComparisonId)[:24]+".json")
+}
+
+// key is the in-memory equivalent of Path.
+func key(ctx contract.ReviewContext) string {
+	return digest(ctx.SessionId)[:24] + "/" + digest(ctx.ComparisonId)[:24]
 }
 
 func Validate(doc contract.ReviewSession, expected contract.ReviewContext, files []contract.CodeFile) error {
@@ -143,12 +154,22 @@ func Validate(doc contract.ReviewSession, expected contract.ReviewContext, files
 func (s *Store) Load(ctx contract.ReviewContext, files []contract.CodeFile) (contract.ReviewSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	raw, err := os.ReadFile(s.Path(ctx))
-	if errors.Is(err, os.ErrNotExist) {
-		return Empty(ctx), nil
-	}
-	if err != nil {
-		return contract.ReviewSession{}, err
+	var raw []byte
+	var err error
+	if s.inMemory() {
+		stored, ok := s.mem[key(ctx)]
+		if !ok {
+			return Empty(ctx), nil
+		}
+		raw = stored
+	} else {
+		raw, err = os.ReadFile(s.Path(ctx))
+		if errors.Is(err, os.ErrNotExist) {
+			return Empty(ctx), nil
+		}
+		if err != nil {
+			return contract.ReviewSession{}, err
+		}
 	}
 	var doc contract.ReviewSession
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -193,6 +214,10 @@ func (s *Store) Save(doc contract.ReviewSession, expected contract.ReviewContext
 	if err != nil {
 		return doc, err
 	}
+	if s.inMemory() {
+		s.mem[key(expected)] = append([]byte{}, append(raw, '\n')...)
+		return doc, nil
+	}
 	target := s.Path(expected)
 	dir := filepath.Dir(target)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -222,6 +247,9 @@ func (s *Store) sessionDir(ctx contract.ReviewContext) string {
 
 // ListDrafts returns every saved comparison draft for the branch session.
 func (s *Store) ListDrafts(ctx contract.ReviewContext) ([]contract.ReviewDraft, error) {
+	if s.inMemory() {
+		return s.listMemoryDrafts(ctx), nil
+	}
 	dir := s.sessionDir(ctx)
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -253,13 +281,45 @@ func (s *Store) ListDrafts(ctx contract.ReviewContext) ([]contract.ReviewDraft, 
 	return out, nil
 }
 
+// listMemoryDrafts mirrors ListDrafts over the in-memory map.
+func (s *Store) listMemoryDrafts(ctx contract.ReviewContext) []contract.ReviewDraft {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prefix := digest(ctx.SessionId)[:24] + "/"
+	out := []contract.ReviewDraft{}
+	for path, raw := range s.mem {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		var doc contract.ReviewSession
+		if json.Unmarshal(raw, &doc) != nil || doc.Context.SessionId != ctx.SessionId || len(doc.Comments) == 0 {
+			continue
+		}
+		out = append(out, contract.ReviewDraft{
+			ComparisonId: doc.Context.ComparisonId, Revision: doc.Context.Revision,
+			Base: doc.Context.Base, Head: doc.Context.Head, UpdatedAt: doc.UpdatedAt,
+			Comments: len(doc.Comments),
+		})
+	}
+	sort.Slice(out, func(left, right int) bool { return out[left].UpdatedAt > out[right].UpdatedAt })
+	return out
+}
+
 // RestoreDraft copies another comparison's draft into the current comparison.
 // With relax, comments whose line anchors no longer exist become general comments.
 func (s *Store) RestoreDraft(ctx contract.ReviewContext, files []contract.CodeFile, comparisonID string, relax bool) (contract.ReviewSession, int, error) {
-	path := filepath.Join(s.sessionDir(ctx), digest(comparisonID)[:24]+".json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return contract.ReviewSession{}, 0, fmt.Errorf("找不到草稿 %s: %w", comparisonID, err)
+	var raw []byte
+	var err error
+	if s.inMemory() {
+		raw, _ = s.mem[digest(ctx.SessionId)[:24]+"/"+digest(comparisonID)[:24]]
+		if raw == nil {
+			return contract.ReviewSession{}, 0, fmt.Errorf("找不到草稿 %s", comparisonID)
+		}
+	} else {
+		raw, err = os.ReadFile(filepath.Join(s.sessionDir(ctx), digest(comparisonID)[:24]+".json"))
+		if err != nil {
+			return contract.ReviewSession{}, 0, fmt.Errorf("找不到草稿 %s: %w", comparisonID, err)
+		}
 	}
 	var doc contract.ReviewSession
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -313,9 +373,15 @@ func (s *Store) SaveAsset(data []byte, ext string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	name := hex.EncodeToString(sum[:]) + ext
-	dir := filepath.Join(s.Dir, "assets")
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.inMemory() {
+		if _, ok := s.mem["assets/"+name]; !ok {
+			s.mem["assets/"+name] = append([]byte{}, data...)
+		}
+		return name, nil
+	}
+	dir := filepath.Join(s.Dir, "assets")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -353,6 +419,15 @@ func (s *Store) ReadAsset(name string) ([]byte, string, error) {
 	kind, ok := assetContentType[ext]
 	if !ok {
 		return nil, "", errors.New("不支持的图片格式")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inMemory() {
+		stored, ok := s.mem["assets/"+name]
+		if !ok {
+			return nil, "", os.ErrNotExist
+		}
+		return stored, kind, nil
 	}
 	data, err := os.ReadFile(filepath.Join(s.Dir, "assets", name))
 	if err != nil {

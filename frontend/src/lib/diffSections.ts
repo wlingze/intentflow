@@ -1,5 +1,6 @@
 import type { DiffRow } from './diff';
 import type { Hunk } from './hunks';
+import { pairChangedBlock } from './pairLines';
 
 export interface Expansion { top: number; bottom: number }
 export interface DiffSection { type: 'code' | 'gap'; start: number; end: number; key: number; leading?: boolean; trailing?: boolean }
@@ -64,7 +65,7 @@ export function splitPairs(rows: DiffRow[]): SplitPair[] {
       if (next.type === 'del') left.push(next.a);
       else if (next.type === 'add') right.push(next.b);
     }
-    for (let i = 0; i < Math.max(left.length, right.length); i++) pairs.push({ left: left[i], right: right[i], changed: true });
+    pairs.push(...pairChangedBlock(left, right));
   }
   return pairs;
 }

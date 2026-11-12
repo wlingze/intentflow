@@ -40,8 +40,6 @@ export type RevisionList = Schemas['RevisionList'];
 export type ReviewSession = Schemas['ReviewSession'];
 export type ReviewContext = Schemas['ReviewContext'];
 export type ReviewDraft = Schemas['ReviewDraft'];
-export type ReviewDraftList = Schemas['ReviewDraftList'];
-export type RestoreResult = Schemas['RestoreResult'];
 
 export interface PersistedReview {
   comments: Comment[];

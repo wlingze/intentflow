@@ -11,7 +11,7 @@ export function CommentBody({ text, legacy = [] }: { text: string; legacy?: stri
     const index = match.index ?? 0;
     if (index > cursor) nodes.push(text.slice(cursor, index));
     const src = match[1];
-    nodes.push({ src: src.startsWith('/api/') ? src : reviewAssetUrl(src) });
+    nodes.push({ src: src.startsWith('/api/') || src.startsWith('data:') ? src : reviewAssetUrl(src) });
     cursor = index + match[0].length;
   }
   if (cursor < text.length) nodes.push(text.slice(cursor));

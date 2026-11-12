@@ -255,3 +255,58 @@ func TestRestoreDropsStaleLineAnchors(t *testing.T) {
 		t.Fatalf("viewed files not filtered: %+v", restored.Viewed)
 	}
 }
+
+// 默认不落盘：评审状态只存在进程内存和浏览器里。
+func TestMemoryStoreWritesNothing(t *testing.T) {
+	ctx, files := fixture()
+	work := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(work); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	store, err := New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Dir != "" {
+		t.Fatalf("默认目录应为空，实际 %q", store.Dir)
+	}
+	doc := Empty(ctx)
+	doc.Comments = []contract.Comment{{Id: "one", Text: "内存里的评审", Source: "manual"}}
+	if _, err := store.Save(doc, ctx, files); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(ctx, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Text != "内存里的评审" {
+		t.Fatalf("内存读取失败: %+v", got)
+	}
+	drafts, err := store.ListDrafts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drafts) != 1 || drafts[0].ComparisonId != ctx.ComparisonId {
+		t.Fatalf("内存草稿列表错误: %+v", drafts)
+	}
+	name, err := store.SaveAsset([]byte("\x89PNG\r\n\x1a\nfake"), ".png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, kind, err := store.ReadAsset(name); err != nil || kind != "image/png" {
+		t.Fatalf("内存图片读取失败: %v %q", err, kind)
+	}
+	entries, err := os.ReadDir(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("不应写任何文件，实际 %d 项", len(entries))
+	}
+}

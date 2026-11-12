@@ -106,6 +106,35 @@ const url = process.argv[2] || 'http://127.0.0.1:45277';
     results.symbol = { word: word.value, marks: await page.locator('[data-source] mark').count() };
   }
 
+  // 6. Deep jump: a hit far down the file list must land on its line.
+  //    正文只在视口附近挂载，跳到很远的文件时最容易只滚了容器没挂载正文。
+  await page.keyboard.press('Control+f');
+  await page.waitForTimeout(300);
+  await page.locator('[data-search-panel="true"] input').first().fill('func');
+  await page.waitForTimeout(1500);
+  const far = [];
+  const panelButtons = page.locator('[data-search-panel="true"] button');
+  const panelTotal = await panelButtons.count();
+  for (let index = 0; index < panelTotal; index++) {
+    const label = await panelButtons.nth(index).getAttribute('aria-label');
+    if (!label) far.push(index);
+  }
+  const deep = [];
+  for (const index of far.filter((_, order) => order % 15 === 0).slice(0, 5)) {
+    await panelButtons.nth(index).click();
+    await page.waitForTimeout(1200);
+    deep.push(await page.evaluate(() => {
+      const target = document.querySelector('[class*=target]');
+      const scroller = document.querySelector('[data-review-scroll]');
+      if (!target || !scroller) return { hit: false };
+      const line = target.getBoundingClientRect();
+      const view = scroller.getBoundingClientRect();
+      return { hit: true, visible: line.top >= view.top && line.bottom <= view.bottom, file: target.closest('[data-file]')?.dataset.file.split('/').pop() };
+    }));
+  }
+  results.deepJumps = deep;
+  await page.keyboard.press('Escape');
+
   results.errors = errors;
   console.log(JSON.stringify(results, null, 1));
 
@@ -113,6 +142,8 @@ const url = process.argv[2] || 'http://127.0.0.1:45277';
   assert(results.inline.count > 0, 'no inline marks');
   assert.equal(results.inline.count, results.inline.painted, 'inline marks are not painted');
   assert(results.search.jumped?.visible, 'search jump missed the viewport');
+  assert(results.deepJumps.length > 0, 'no deep jump sampled');
+  for (const jump of results.deepJumps) assert(jump.hit && jump.visible, `deep jump missed: ${JSON.stringify(jump)}`);
   assert.equal(errors.length, 0, `console errors: ${errors.join(' | ')}`);
   await browser.close();
   console.log('E2E OK');

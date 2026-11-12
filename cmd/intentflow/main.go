@@ -53,7 +53,7 @@ func usage() {
   intentflow diff -t . --base main
 
   --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
-  --review-dir   评审 JSON 目录，默认启动目录下的 .intentflow
+  --review-dir   评审 JSON 目录；留空（默认）时只保存在内存与浏览器
   --base         基线；默认取当前分支历史中的 main / master
   --head         终点，默认 HEAD；WORKTREE 包含未提交改动
   --host         监听地址，默认 0.0.0.0
@@ -84,7 +84,7 @@ func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前标签")
 	fs.StringVar(&o.afterLabel, "after-label", "", "改动后标签")
 	fs.StringVar(&o.out, "out", "./intentflow-out", "Markdown 导出目录")
-	fs.StringVar(&o.reviewDir, "review-dir", ".intentflow", "评审 JSON 目录")
+	fs.StringVar(&o.reviewDir, "review-dir", "", "评审 JSON 目录；留空表示不写磁盘")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
 }
 
@@ -103,7 +103,11 @@ func runServe(args []string) error {
 		return err
 	}
 	defer a.close()
-	fmt.Println("评审 JSON:", a.store.Dir)
+	if a.store.Dir == "" {
+		fmt.Println("· 评审状态只保存在浏览器；不写 .intentflow 目录")
+	} else {
+		fmt.Println("· 评审 JSON:", a.store.Dir)
+	}
 	return serve.Listen(serve.Config{
 		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(), OutDir: opt.out,
 		Payload: a.payload, Revisions: a.revisions, Load: a.load, SaveReview: a.saveReview,

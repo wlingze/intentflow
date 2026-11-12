@@ -26,6 +26,11 @@
   --accent: #5eead4;
   --accent-soft: rgba(94, 234, 212, 0.12);
 
+  /* 行内改动：比整行底色更深的实色，不用描边。 */
+  --chg-add: rgba(46, 160, 67, 0.62);
+  --chg-del: rgba(248, 81, 73, 0.55);
+  --word-hl: rgba(56, 139, 253, 0.35);
+
   --grid: rgba(255, 255, 255, 0.022);
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
@@ -70,6 +75,11 @@
   --purple-soft: #fbefff;
   --accent: #0969da;
   --accent-soft: #ddf4ff;
+
+  /* 深一档的字级底色：比整行底色明显，正文对比度仍 ≥ 6.9:1。 */
+  --chg-add: #7ee2a8;
+  --chg-del: #ffa198;
+  --word-hl: #c2e0ff;
 
   --grid: rgba(31, 35, 40, 0.02);
   --shadow: 0 16px 40px rgba(31, 35, 40, 0.12);

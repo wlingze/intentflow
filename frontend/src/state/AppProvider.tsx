@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
-import { fetchPayload, fetchRevisions, saveReviewSession } from '../lib/api';
+import { fetchPayload, fetchRevisions } from '../lib/api';
+import { loadLocalReview, saveLocalReview } from '../lib/localReview';
 import { sameList } from '../lib/visibleFiles';
 import { loadPrefs, savePrefs } from '../lib/prefs';
 import type { Comment, DiffLayout, Payload, ReviewSession, RevisionList, Side } from '../types';
@@ -100,9 +101,11 @@ export async function saveCurrentReview(state: AppState, dispatch: Dispatch<Acti
   const comparison = doc.context.comparison_id;
   dispatch({ type: 'review/saving', comparison });
   try {
-    const saved = await saveReviewSession(doc);
-    dispatch({ type: 'review/saved', comparison, version: state.editVersion, updatedAt: saved.updated_at });
-    return saved;
+    // 评审状态存在浏览器里：工作台只读仓库，不往仓库写文件。
+    saveLocalReview(doc);
+    const updatedAt = new Date().toISOString();
+    dispatch({ type: 'review/saved', comparison, version: state.editVersion, updatedAt });
+    return { ...doc, updated_at: updatedAt };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     dispatch({ type: 'review/error', comparison, error: message });
@@ -182,7 +185,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   useEffect(() => {
     let cancelled = false;
-    fetchPayload().then((payload) => { if (!cancelled) dispatch({ type: 'payload/loaded', payload }); })
+    fetchPayload().then((payload) => {
+      if (cancelled) return;
+      // 浏览器里存着同一比较范围的记录时以它为准，服务端只给空文档。
+      const local = loadLocalReview(payload.session.context);
+      dispatch({ type: 'payload/loaded', payload: local ? { ...payload, session: local } : payload });
+    })
       .catch((error: unknown) => { if (!cancelled) dispatch({ type: 'payload/error', error: error instanceof Error ? error.message : String(error) }); });
     fetchRevisions().then((revisions) => { if (!cancelled) dispatch({ type: 'revisions/loaded', revisions }); }).catch(() => undefined);
     return () => { cancelled = true; };

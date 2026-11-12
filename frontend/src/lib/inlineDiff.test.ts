@@ -46,3 +46,17 @@ describe('inlineDiff', () => {
     expect(slice('level: low', marks.after.get(2) ?? [])).toEqual(['low']);
   });
 });
+
+describe('inlineDiff with content pairing', () => {
+  it('marks a moved title, not the whole line', () => {
+    // 与 GitHub 一致：标题行对上标题行，只有前缀算新增。
+    const rows = diffLines(
+      'title: "Audit C Format String Vulnerability"\ntitle_zh: "审计漏洞"\nlevel: high',
+      'mode: "ssa"\ntitle: "数据流: Audit C Format String Vulnerability"\ntitle_zh: "数据流: 审计漏洞"\nlevel: ""',
+    );
+    const marks = inlineMarks(splitPairs(rows));
+    const after = [...marks.after.values()].map((ranges) => ranges.map((range) => range.end - range.start));
+    // 每处标记都只覆盖新增的词，不会把整行涂满。
+    for (const widths of after) expect(Math.max(...widths)).toBeLessThan(24);
+  });
+});
