@@ -2,6 +2,7 @@
 package serve
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -197,7 +198,55 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		writeJSON(w, 200, contract.ReviewResponse{Path: target})
 	})
 	mux.Handle("/", spaHandler(dist))
-	return mux, nil
+	return gzipMiddleware(mux), nil
+}
+
+// 12 MB 的 payload 会拖慢局域网首屏；JSON 与静态文本用 gzip 传输。
+// 图片、字体与已压缩内容跳过，避免无意义的重编码。
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer *gzip.Writer
+	wrote  bool
+	plain  bool
+}
+
+func (g *gzipResponseWriter) WriteHeader(status int) {
+	if g.wrote {
+		return
+	}
+	g.wrote = true
+	contentType := g.Header().Get("Content-Type")
+	if g.Header().Get("Content-Encoding") != "" || strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "font/") {
+		g.plain = true
+		g.ResponseWriter.WriteHeader(status)
+		return
+	}
+	g.Header().Del("Content-Length")
+	g.Header().Set("Content-Encoding", "gzip")
+	g.Header().Add("Vary", "Accept-Encoding")
+	g.ResponseWriter.WriteHeader(status)
+}
+
+func (g *gzipResponseWriter) Write(data []byte) (int, error) {
+	if !g.wrote {
+		g.WriteHeader(http.StatusOK)
+	}
+	if g.plain {
+		return g.ResponseWriter.Write(data)
+	}
+	return g.writer.Write(data)
+}
+
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, writer: gz}, r)
+	})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) error {

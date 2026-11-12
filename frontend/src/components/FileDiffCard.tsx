@@ -214,16 +214,22 @@ export const FileDiffCard = memo(function FileDiffCard({
   pickedRef.current = picked;
   const lastReveal = useRef('');
   useEffect(() => {
-    if (!open || ready) return;
+    if (!open) return;
     const element = root.current;
     if (!element) return;
     if (typeof IntersectionObserver === 'undefined') { setReady(true); return; }
-    const observer = new IntersectionObserver((entries) => {
+    // Two thresholds: render early (1200px) and drop the body again once the
+    // card is far away (6000px), so a long review keeps a bounded DOM.
+    const near = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) setReady(true);
     }, { rootMargin: '1200px 0px' });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [open, ready]);
+    const far = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) setReady(false);
+    }, { rootMargin: '6000px 0px' });
+    near.observe(element);
+    far.observe(element);
+    return () => { near.disconnect(); far.disconnect(); };
+  }, [open]);
   const diff = ready ? fileDiff(file) : null;
   const rows = diff?.rows ?? EMPTY_ROWS;
   const hunks = diff?.hunks ?? EMPTY_HUNKS;
@@ -307,6 +313,18 @@ export const FileDiffCard = memo(function FileDiffCard({
     const offset = panel ? Math.max(100, panel.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + 16) : 100;
     const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (index >= 0 ? virtual.offsetOf(index) - offset : 0);
     scroller.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+    // Row heights are estimated until the card is laid out, and the card may be
+    // content-visibility:auto, so correct once the real row exists.
+    let tries = 0;
+    const settle = () => {
+      if (tries++ > 8 || !root.current) return;
+      const line = targetLine ? root.current.querySelector<HTMLElement>(`[data-line="${targetLine}"][data-side="${targetSide}"]`) : null;
+      if (!line) { requestAnimationFrame(settle); return; }
+      const delta = line.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + offset);
+      if (Math.abs(delta) > 4 && Math.abs(delta) < scroller.clientHeight) scroller.scrollTop += delta;
+      else if (Math.abs(delta) >= scroller.clientHeight) { scroller.scrollTop += delta; requestAnimationFrame(settle); }
+    };
+    requestAnimationFrame(settle);
   }, [pendingScroll, ready, open, items, virtual, targetLine, targetSide]);
 
   const expand = (section: DiffSection, end: 'top' | 'bottom') => setExpanded((current) => {

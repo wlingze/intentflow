@@ -38,6 +38,20 @@ function matchAt(text: string, needle: string, wholeWord: boolean, caseSensitive
   return -1;
 }
 
+// Lowercased bodies per file, so a rejected file costs one `indexOf` instead
+// of a full diff. Diffs are the expensive part on a 1000-file review.
+const bodies = new WeakMap<CodeFile, string>();
+
+function body(file: CodeFile, caseSensitive: boolean): string {
+  const joined = `${file.before ?? ''}\u0000${file.after ?? ''}`;
+  if (caseSensitive) return joined;
+  const cached = bodies.get(file);
+  if (cached) return cached;
+  const lower = joined.toLocaleLowerCase();
+  bodies.set(file, lower);
+  return lower;
+}
+
 // Search every line the diff can reveal, including unchanged context inside
 // collapsed gaps. One hit per line: jumping is line-level, so duplicate
 // occurrences on the same line add noise without adding targets.
@@ -45,8 +59,11 @@ export function searchDiff(files: CodeFile[], query: string, options: SearchOpti
   const wholeWord = !!options.wholeWord;
   const caseSensitive = !!options.caseSensitive;
   if (!query.trim()) return [];
+  const needle = caseSensitive ? query : query.toLocaleLowerCase();
   const hits: SearchHit[] = [];
   for (const file of files) {
+    // Cheap prefilter: a file without the raw substring cannot produce a hit.
+    if (!body(file, caseSensitive).includes(needle)) continue;
     for (const row of fileDiff(file).rows) {
       if (row.type === 'del') {
         const start = matchAt(row.a.text, query, wholeWord, caseSensitive);

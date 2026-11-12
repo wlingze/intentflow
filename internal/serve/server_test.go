@@ -2,7 +2,9 @@ package serve
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -122,5 +124,36 @@ func TestAssetAPIAndReviewJSON(t *testing.T) {
 	saved, err := os.ReadFile(response.Path)
 	if err != nil || !bytes.Contains(saved, []byte(`"images"`)) {
 		t.Fatalf("review.json missing images: %s %v", saved, err)
+	}
+}
+
+func TestPayloadUsesGzip(t *testing.T) {
+	ctx := reviewstore.NewContext("/repo", "feature", "a", "b", "range", "", contract.CodeBundle{})
+	cfg := Config{
+		DistFS:  fstest.MapFS{"index.html": {Data: []byte("embedded frontend")}},
+		Payload: func() contract.Payload { return contract.Payload{Session: reviewstore.Empty(ctx)} },
+	}
+	h, err := NewHandler(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/payload", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q", got)
+	}
+	reader, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload contract.Payload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("payload body: %v", err)
 	}
 }
