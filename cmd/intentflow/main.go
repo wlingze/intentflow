@@ -18,6 +18,7 @@ import (
 	"github.com/wlingze/intentflow/internal/payload"
 	"github.com/wlingze/intentflow/internal/reviewctx"
 	"github.com/wlingze/intentflow/internal/serve"
+	"github.com/wlingze/intentflow/internal/version"
 )
 
 func main() {
@@ -37,7 +38,10 @@ func run(args []string) error {
 		return runServe(args)
 	case "diff":
 		return runDiff(args)
-	case "help", "version":
+	case "version", "--version", "-version":
+		fmt.Println(version.String())
+		return nil
+	case "help", "--help", "-h":
 		usage()
 		return nil
 	default:
@@ -51,9 +55,10 @@ func usage() {
   intentflow -t . --base main
   intentflow -t . --head WORKTREE
   intentflow diff -t . --base main
+  intentflow version
 
   --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
-  --review-dir   评审 JSON 目录；留空（默认）时只保存在内存与浏览器
+  --no-open      不自动打开浏览器
   --base         基线；默认取当前分支历史中的 main / master
   --head         终点，默认 HEAD；WORKTREE 包含未提交改动
   --host         监听地址，默认 0.0.0.0

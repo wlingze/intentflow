@@ -19,7 +19,16 @@ touch frontend/dist/.gitkeep
 
 echo "· 构建二进制"
 mkdir -p bin
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/intentflow ./cmd/intentflow
+# 开发构建带上 git 信息，`intentflow version` 能看出是哪个提交构建的。
+VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CGO_ENABLED=0 go build -trimpath \
+  -ldflags "-s -w \
+    -X github.com/wlingze/intentflow/internal/version.Version=${VERSION} \
+    -X github.com/wlingze/intentflow/internal/version.Commit=${COMMIT} \
+    -X github.com/wlingze/intentflow/internal/version.Date=${DATE}" \
+  -o bin/intentflow ./cmd/intentflow
 
 BIN="$(pwd)/bin/intentflow"
 echo "→ $BIN"
