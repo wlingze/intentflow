@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="page.title">intentflow — local diff workbench</title>
-  <meta name="description" data-i18n-content="page.description" content="Read a local Git diff, write review comments, and copy the result to a coding agent as Markdown. One static binary, no server-side storage.">
+  <meta name="description" data-i18n-content="page.description" content="Read a local Git diff, write line comments, copy the review to your coding agent in one keystroke. One static binary, no server-side storage.">
   <meta name="color-scheme" content="dark light">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1a19'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%2384d7c7' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23161718'/%3E%3Cpath d='M10 8v16M22 8v16M10 16h12' stroke='%237fd4c4' stroke-width='2.5'/%3E%3C/svg%3E">
   <script src="./assets/theme-init.js"></script>
   <link rel="stylesheet" href="./assets/tokens.css">
   <link rel="stylesheet" href="./assets/base.css">
@@ -23,10 +23,11 @@
       </a>
 
       <nav class="site-nav" aria-label="Site">
-        <a href="#features" data-i18n="nav.features">Capabilities</a>
-        <a href="#handoff" data-i18n="nav.handoff">Handoff</a>
+        <a href="#copy" data-i18n="nav.copy">Copy</a>
+        <a href="#git" data-i18n="nav.git">Git ranges</a>
+        <a href="#local" data-i18n="nav.local">Local first</a>
+        <a href="#symbols" data-i18n="nav.symbols">Symbols</a>
         <a href="#install" data-i18n="nav.install">Install</a>
-        <a href="#status" data-i18n="nav.status">Status</a>
         <a href="./docs.html" data-i18n="nav.docs">Docs</a>
       </nav>
 
@@ -39,134 +40,195 @@
 
   <main id="main">
     <section class="hero">
-      <div class="container hero__grid">
-        <div>
-          <span class="eyebrow" data-i18n="hero.eyebrow">Local diff workbench</span>
-          <h1 class="hero__title" data-i18n="hero.title">Review code before you push it.</h1>
-          <p class="hero__lead" data-i18n="hero.lead">Open a local repository and read the diff file by file. Write line comments, then copy the review to your coding agent as Markdown.</p>
+      <div class="container">
+        <p class="hero__kicker" data-i18n="hero.kicker">Local diff workbench for coding agents</p>
+        <h1 class="hero__title" data-i18n="hero.title">Read the diff. Write the note. Hand it to the agent.</h1>
+        <p class="hero__lead" data-i18n="hero.lead">intentflow opens a local repository, shows every change as reviewable hunks, and turns your comments into one Markdown block you paste into Claude Code, Codex or pi.</p>
 
-          <div class="hero__actions">
-            <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
-            <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
-          </div>
+        <ul class="hero__facts">
+          <li><span class="mono" data-i18n="hero.fact1">single static binary</span></li>
+          <li><span class="mono" data-i18n="hero.fact2">runtime needs only git</span></li>
+          <li><span class="mono" data-i18n="hero.fact3">reviews stay in the browser</span></li>
+        </ul>
 
-          <p class="hero__meta" data-i18n="hero.meta">Single static binary · Go 1.24 build · reviews stay in the browser</p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
+          <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="pillar" id="copy">
+      <div class="container pillar__grid">
+        <div class="pillar__body">
+          <p class="pillar__num" aria-hidden="true">01</p>
+          <h2 class="pillar__title" data-i18n="copy.title">One keystroke to the agent</h2>
+          <p class="pillar__claim" data-i18n="copy.claim">The review leaves as Markdown with every path, side, line number and quoted line already in place.</p>
+
+          <dl class="spec">
+            <div class="spec__row">
+              <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt>
+              <dd data-i18n="copy.d1">Copies the whole review as Markdown without opening the menu. It stays quiet while the focus is in an input or a dialog.</dd>
+            </div>
+            <div class="spec__row">
+              <dt data-i18n="spec.quote">quoted code</dt>
+              <dd data-i18n="copy.d2">Each comment carries the code it refers to, so the agent sees the exact lines instead of a line number it cannot resolve.</dd>
+            </div>
+            <div class="spec__row">
+              <dt>Markdown / JSON</dt>
+              <dd data-i18n="copy.d3">The same menu copies or saves both formats. JSON keeps the full document for tools that read it.</dd>
+            </div>
+            <div class="spec__row">
+              <dt class="mono">paste</dt>
+              <dd data-i18n="copy.d4">Paste the block into Claude Code, Codex or pi. Nothing is submitted automatically.</dd>
+            </div>
+          </dl>
         </div>
 
-        <figure class="hero__shot">
+        <figure class="shot">
           <div class="frame">
-            <img src="./assets/img/workbench-overview.png" width="2000" height="1083" fetchpriority="high" data-i18n-alt="hero.alt" alt="The intentflow workbench: file tree on the left, diff cards in the middle, review panel on the right.">
+            <img src="./assets/img/workbench-export.png" width="3200" height="2000" loading="lazy" data-i18n-alt="copy.figAlt" alt="The submit menu open on the review panel, with Markdown and JSON rows.">
           </div>
-          <figcaption data-i18n="hero.caption">Workbench: file tree, diff cards, review panel.</figcaption>
+          <figcaption data-i18n="copy.fig">Submit menu: Markdown and JSON, each with copy and save.</figcaption>
         </figure>
       </div>
     </section>
 
-    <section class="section" id="features">
-      <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="features.eyebrow">Capabilities</span>
-          <h2 class="section__title" data-i18n="features.title">What the workbench does</h2>
-          <p class="section__lead" data-i18n="features.lead">Everything below runs on local files. No push, no pull request, no waiting for CI.</p>
-        </header>
+    <section class="pillar pillar--flip" id="git">
+      <div class="container pillar__grid">
+        <div class="pillar__body">
+          <p class="pillar__num" aria-hidden="true">02</p>
+          <h2 class="pillar__title" data-i18n="git.title">Git ranges, not a file picker</h2>
+          <p class="pillar__claim" data-i18n="git.claim">The comparison comes from Git history. Renames stay one card, and viewed marks expire when the content moves.</p>
 
-        <div class="facts">
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">01</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.tree.title">File tree</h3>
-              <p class="fact__body" data-i18n="features.tree.body">Fold by directory. File-type icons, comment counts, added and removed lines.</p>
+          <dl class="spec">
+            <div class="spec__row">
+              <dt class="mono">--base --head</dt>
+              <dd data-i18n="git.d1">`--base main` compares main to HEAD, `--head WORKTREE` adds uncommitted and untracked files, and `--before ./a --after ./b` diffs two folders.</dd>
             </div>
-          </article>
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">02</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.range.title">Comparison range</h3>
-              <p class="fact__body" data-i18n="features.range.body">All changes, the uncommitted worktree, or a single commit.</p>
+            <div class="spec__row">
+              <dt data-i18n="spec.detect">detection</dt>
+              <dd data-i18n="git.d2">With no `--base`, the nearest of `main`, `master`, `origin/main`, `origin/master` in HEAD history wins. If none is an ancestor, it stops and asks. It never falls back to `HEAD~1`.</dd>
             </div>
-          </article>
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">03</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.hunk.title">Hunk review</h3>
-              <p class="fact__body" data-i18n="features.hunk.body">Mark each hunk viewed. Editing the file drops its old marks.</p>
+            <div class="spec__row">
+              <dt class="mono">git diff -M</dt>
+              <dd data-i18n="git.d3">Renames are read from `git diff -M --name-status`, so an old path and a new path show up as one card, not a deletion plus an addition.</dd>
             </div>
-          </article>
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">04</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.comment.title">Comments</h3>
-              <p class="fact__body" data-i18n="features.comment.body">Line comments, range selections, and one overall comment.</p>
+            <div class="spec__row">
+              <dt data-i18n="spec.scope">scope</dt>
+              <dd data-i18n="git.d4">The header switches between all changes, the uncommitted worktree and a single commit. A diff digest drops viewed marks the moment the file changes.</dd>
             </div>
-          </article>
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">05</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.search.title">Global search</h3>
-              <p class="fact__body" data-i18n="features.search.body">Search every diff file. Hits split into added, removed and context.</p>
-            </div>
-          </article>
-          <article class="fact">
-            <span class="fact__index" aria-hidden="true">06</span>
-            <div>
-              <h3 class="fact__title" data-i18n="features.symbol.title">Symbol references</h3>
-              <p class="fact__body" data-i18n="features.symbol.body">Click an identifier to list every reference in the repository, then jump to it.</p>
-            </div>
-          </article>
+          </dl>
         </div>
+
+        <figure class="shot">
+          <div class="frame">
+            <img src="./assets/img/workbench-diff.png" width="3200" height="2000" loading="lazy" data-i18n-alt="git.figAlt" alt="A diff card in split view with a hunk header, a viewed checkbox and an inline comment.">
+          </div>
+          <figcaption data-i18n="git.fig">Split view: hunk header, viewed mark, line comment.</figcaption>
+        </figure>
       </div>
     </section>
 
-    <section class="section" id="handoff">
-      <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="handoff.eyebrow">Handoff</span>
-          <h2 class="section__title" data-i18n="handoff.title">Give the review to an agent</h2>
-          <p class="section__lead" data-i18n="handoff.lead">Every comment carries the path, the side, the line number and the quoted code. Ctrl+Enter copies the whole review as Markdown.</p>
-        </header>
+    <section class="pillar" id="local">
+      <div class="container pillar__grid">
+        <div class="pillar__body">
+          <p class="pillar__num" aria-hidden="true">03</p>
+          <h2 class="pillar__title" data-i18n="local.title">Local first, in one binary</h2>
+          <p class="pillar__claim" data-i18n="local.claim">One executable with the frontend embedded. No service to run, no account, no state on disk.</p>
 
-        <div class="split">
-          <div class="codeblock">
-            <div class="codeblock__head">
-              <span>review.md</span>
-              <button class="copy-btn" type="button" data-copy="handoff-sample" data-i18n="copy.copy">Copy</button>
+          <dl class="spec">
+            <div class="spec__row">
+              <dt class="mono">./intentflow</dt>
+              <dd data-i18n="local.d1">The frontend is embedded in the binary. Runtime needs `git` only; Node.js and pnpm are build-time dependencies.</dd>
             </div>
-            <pre><code data-i18n="handoff.sample" id="handoff-sample">## Review
-
-### 1. internal/store/store.go · R15
-&gt; query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
-
-User input is concatenated into SQL. Use a parameterised query: WHERE name LIKE ?, and pass the wildcard as a parameter.
-
-### 2. Overall
-This change replaces parameterised queries with string concatenation. I would revert it.</code></pre>
-          </div>
-
-          <div>
-            <p data-i18n="handoff.note">Markdown and JSON are also saved to a file from the same menu.</p>
-            <ul class="notes">
-              <li data-i18n="handoff.shortcut">Ctrl+Enter or Cmd+Enter in the diff area copies Markdown without opening the menu.</li>
-              <li data-i18n="handoff.quote">Quoted code travels with the comment, so the agent sees the exact line.</li>
-            </ul>
-          </div>
+            <div class="spec__row">
+              <dt class="mono">localStorage</dt>
+              <dd data-i18n="local.d2">Reviews live in the browser under `intentflow.review.&lt;comparison_id&gt;`. Comment images are inline data URLs, up to 1.5MB each, stored with the review.</dd>
+            </div>
+            <div class="spec__row">
+              <dt data-i18n="spec.session">session</dt>
+              <dd data-i18n="local.d3">One repository, branch and subdirectory form a stable session, like a local pull request. The same branch name in another repository never collides.</dd>
+            </div>
+            <div class="spec__row">
+              <dt data-i18n="spec.disk">disk</dt>
+              <dd data-i18n="local.d4">The server writes no files. Closing it loses nothing; the drafts stay in the browser.</dd>
+            </div>
+          </dl>
         </div>
+
+        <figure class="shot">
+          <div class="frame">
+            <img src="./assets/img/workbench-narrow.png" width="1920" height="1800" loading="lazy" data-i18n-alt="local.figAlt" alt="The workbench in a narrow window, with both side panels collapsed into drawers.">
+          </div>
+          <figcaption data-i18n="local.fig">Narrow window: no layout to install, both panels fold away.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="pillar pillar--flip" id="symbols">
+      <div class="container pillar__grid">
+        <div class="pillar__body">
+          <p class="pillar__num" aria-hidden="true">04</p>
+          <h2 class="pillar__title" data-i18n="symbols.title">Every reference, without a language server</h2>
+          <p class="pillar__claim" data-i18n="symbols.claim">Click any identifier in the diff. The left panel lists each place it appears across this comparison and jumps there.</p>
+
+          <dl class="spec">
+            <div class="spec__row">
+              <dt data-i18n="spec.scope2">scope</dt>
+              <dd data-i18n="symbols.d1">Every changed file in the current comparison, both sides. It is not a repository index and it is not LSP: no server, no index build.</dd>
+            </div>
+            <div class="spec__row">
+              <dt data-i18n="spec.match">match</dt>
+              <dd data-i18n="symbols.d2">Whole word by default, so `hit` does not match `hits`. A switch makes the match case-sensitive.</dd>
+            </div>
+            <div class="spec__row">
+              <dt data-i18n="spec.rows">rows</dt>
+              <dd data-i18n="symbols.d3">Grouped by file, each row with a line number and an added, removed or context colour. Clicking a row moves the diff to that position.</dd>
+            </div>
+            <div class="spec__row">
+              <dt class="mono">$hit → 1457</dt>
+              <dd data-i18n="symbols.d4">In the screenshot the identifier `$hit` returns 1457 references across one comparison. That is a plain text match, not a resolved symbol graph.</dd>
+            </div>
+          </dl>
+        </div>
+
+        <figure class="shot">
+          <div class="frame">
+            <img src="./assets/img/workbench-overview.png" width="2000" height="1083" loading="lazy" data-i18n-alt="symbols.figAlt" alt="The full workbench: file tree and the symbol panel on the left, diff cards in the middle, review panel on the right.">
+          </div>
+          <figcaption data-i18n="symbols.fig">Left, lower panel: the reference list for `$hit` with 1457 rows.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section section--tight" id="more">
+      <div class="container">
+        <h2 class="section__title" data-i18n="more.title">Also in the workbench</h2>
+        <ul class="more">
+          <li data-i18n="more.i1">File tree with type icons, comment counts and per-directory progress.</li>
+          <li data-i18n="more.i2">Line comments, multi-line selections and one overall comment.</li>
+          <li data-i18n="more.i3">Global search across every diff file, with case and whole-word switches.</li>
+          <li data-i18n="more.i4">Split or unified view, wrapping, and per-file horizontal scrolling.</li>
+          <li data-i18n="more.i5">Virtualised rows and lazy file bodies, so a thousand-file range still opens.</li>
+          <li data-i18n="more.i6">Keyboard: Ctrl+F to search, Ctrl+Enter to copy, arrow keys on the panel handles.</li>
+        </ul>
       </div>
     </section>
 
     <section class="section" id="install">
       <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="install.eyebrow">Install</span>
-          <h2 class="section__title" data-i18n="install.title">Download, unpack, run</h2>
-          <p class="section__lead" data-i18n="install.lead">Six platform archives for v0.1.0. Each one holds a single executable with the frontend embedded.</p>
-        </header>
+        <div class="section__head">
+          <h2 class="section__title" data-i18n="install.title">Install</h2>
+          <p class="section__lead" data-i18n="install.lead">Six v0.1.0 archives. Each holds one executable with the frontend inside.</p>
+        </div>
 
         <div class="split">
           <div>
             <div class="codeblock">
               <div class="codeblock__head">
                 <span data-i18n="install.unix">Linux / macOS</span>
-                <button class="copy-btn" type="button" data-copy="install-unix" data-i18n="copy.copy">Copy</button>
+                <button class="copy-btn" type="button" data-copy="install-unix" data-i18n="btn.copy">Copy</button>
               </div>
               <pre><code data-i18n="install.unixCmd" id="install-unix">tar -xzf intentflow_0.1.0_linux_amd64.tar.gz
 sudo install -m755 intentflow /usr/local/bin/intentflow
@@ -176,14 +238,14 @@ intentflow version</code></pre>
             <div class="codeblock">
               <div class="codeblock__head">
                 <span data-i18n="install.windows">Windows</span>
-                <button class="copy-btn" type="button" data-copy="install-windows" data-i18n="copy.copy">Copy</button>
+                <button class="copy-btn" type="button" data-copy="install-windows" data-i18n="btn.copy">Copy</button>
               </div>
               <pre><code data-i18n="install.windowsCmd" id="install-windows">Expand-Archive intentflow_0.1.0_windows_amd64.zip -DestinationPath .
 .\intentflow.exe version</code></pre>
             </div>
 
-            <p class="hero__meta" data-i18n="install.note">Runtime needs git only. No Node.js, pnpm or frontend build.</p>
-            <p><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
+            <p class="fine" data-i18n="install.note">Runtime needs git only. No Node.js, pnpm or frontend build.</p>
+            <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
           </div>
 
           <div class="table-wrap">
@@ -209,30 +271,12 @@ intentflow version</code></pre>
       </div>
     </section>
 
-    <section class="section" id="data">
-      <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="data.eyebrow">Data</span>
-          <h2 class="section__title" data-i18n="data.title">Nothing leaves the machine</h2>
-          <p class="section__lead" data-i18n="data.lead">Reviews are written by the browser, not by the server.</p>
-        </header>
-
-        <ul class="notes">
-          <li data-i18n="data.reviews">Reviews live in browser localStorage, under the key intentflow.review.comparison_id.</li>
-          <li data-i18n="data.images">Comment images are inline data URLs, up to 1.5MB each, stored with the review.</li>
-          <li data-i18n="data.layout">Layout preferences use the intentflow. prefix in localStorage.</li>
-          <li data-i18n="data.server">The server writes no files. Closing it loses nothing.</li>
-        </ul>
-      </div>
-    </section>
-
     <section class="section" id="status">
       <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="status.eyebrow">Status</span>
-          <h2 class="section__title" data-i18n="status.title">What works today</h2>
-          <p class="section__lead" data-i18n="status.lead">The three-layer semantic diff and the behaviour graph are the target structure, not shipped features.</p>
-        </header>
+        <div class="section__head">
+          <h2 class="section__title" data-i18n="status.title">What ships today</h2>
+          <p class="section__lead" data-i18n="status.lead">Stage one is the tool above. Stages two to four are the target structure, not shipped features.</p>
+        </div>
 
         <div class="table-wrap">
           <table>
@@ -246,22 +290,22 @@ intentflow version</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td>1</td>
+                <td class="mono">01</td>
                 <td data-i18n="status.stage1">Text diff and a local review store</td>
                 <td><span class="tag tag--ok" data-i18n="status.available">Available</span></td>
               </tr>
               <tr>
-                <td>2</td>
+                <td class="mono">02</td>
                 <td data-i18n="status.stage2">SSA fact layer: project, logic and intent diff</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
               <tr>
-                <td>3</td>
+                <td class="mono">03</td>
                 <td data-i18n="status.stage3">Behaviour graph: trigger, decision, transform, effect</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
               <tr>
-                <td>4</td>
+                <td class="mono">04</td>
                 <td data-i18n="status.stage4">LLM narrative layer that only reads facts</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
@@ -269,31 +313,7 @@ intentflow version</code></pre>
           </table>
         </div>
 
-        <p class="hero__meta" data-i18n="status.note">The AI and SyntaxFlow tabs are placeholders and report that they are inactive.</p>
-      </div>
-    </section>
-
-    <section class="section" id="shots">
-      <div class="container">
-        <header class="section__head">
-          <span class="eyebrow" data-i18n="shots.eyebrow">Screens</span>
-          <h2 class="section__title" data-i18n="shots.title">Inside the workbench</h2>
-        </header>
-
-        <div class="strip">
-          <figure>
-            <img src="./assets/img/workbench-review.png" width="3200" height="2000" loading="lazy" data-i18n-alt="shots.reviewAlt" alt="The review panel with a file comment and an overall comment.">
-            <figcaption data-i18n="shots.review">Review panel</figcaption>
-          </figure>
-          <figure>
-            <img src="./assets/img/workbench-export.png" width="3200" height="2000" loading="lazy" data-i18n-alt="shots.exportAlt" alt="The submit menu with Markdown and JSON export rows.">
-            <figcaption data-i18n="shots.export">Markdown and JSON export</figcaption>
-          </figure>
-          <figure>
-            <img src="./assets/img/workbench-narrow.png" width="1920" height="1800" loading="lazy" data-i18n-alt="shots.narrowAlt" alt="The workbench on a narrow window, with the side panels collapsed into drawers.">
-            <figcaption data-i18n="shots.narrow">Narrow window</figcaption>
-          </figure>
-        </div>
+        <p class="fine" data-i18n="status.note">The AI and SyntaxFlow tabs are placeholders and report that they are inactive.</p>
       </div>
     </section>
   </main>
