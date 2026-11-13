@@ -14,6 +14,11 @@
  *   7. every app.js key is used by a page, so the dictionaries stay small
  *   8. theme-init.js loads before the first stylesheet
  *   9. 404.html stays self-contained, because GitHub Pages serves it at any depth
+ *  10. index.html has the four pillars, each with a heading and a screenshot
+ *  11. docs.html has a sidebar whose anchors and the body ids match both ways
+ *  12. the sidebar script exists: IntersectionObserver scroll-spy in app.js
+ *  13. no copy claims "the whole repository", because the panel only sees the
+ *      changed files of the current comparison
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -184,7 +189,109 @@ if (exists('assets/tokens.css')) {
   }
 }
 
+// ── 10. The four pillars on the home page ────────────────────────────
+
+const pillars = [
+  { id: 'copy', shot: 'workbench-export.png' },
+  { id: 'git', shot: 'workbench-diff.png' },
+  { id: 'local', shot: 'workbench-narrow.png' },
+  { id: 'symbols', shot: 'workbench-overview.png' },
+];
+
+if (pageSources.has('index.html')) {
+  const home = pageSources.get('index.html');
+  for (const pillar of pillars) {
+    const block = sectionById(home, pillar.id);
+    if (!block) {
+      fail(`index.html: the "${pillar.id}" pillar section is missing`);
+      continue;
+    }
+    if (!/class="[^"]*\bpillar\b/.test(block)) fail(`index.html: #${pillar.id} is not a pillar block`);
+    if (!/<h[12]\b[^>]*\bdata-i18n="[^"]+"/i.test(block)) {
+      fail(`index.html: #${pillar.id} has no translated heading`);
+    }
+    if (!block.includes(pillar.shot)) {
+      fail(`index.html: #${pillar.id} does not show assets/img/${pillar.shot}`);
+    }
+    const numbered = /class="pillar__num"[^>]*>\s*0[1-4]\s*</.test(block);
+    if (!numbered) fail(`index.html: #${pillar.id} has no 01-04 number`);
+  }
+}
+
+// ── 11. The docs sidebar and the body ids ────────────────────────────
+
+if (pageSources.has('docs.html')) {
+  const docs = pageSources.get('docs.html');
+  const nav = sectionByAttribute(docs, 'data-docnav-panel');
+  if (!nav) {
+    fail('docs.html: the sidebar nav (data-docnav-panel) is missing');
+  } else {
+    const navIds = [...nav.matchAll(/href="#([^"]+)"/g)].map((match) => match[1]);
+    const bodyIds = [...docs.matchAll(/(?:<h[23]|<section)\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]);
+
+    if (!navIds.length) fail('docs.html: the sidebar has no in-page links');
+    for (const id of navIds) {
+      if (!new RegExp(`\\bid="${id}"`).test(docs)) fail(`docs.html: sidebar links to #${id}, but no element has that id`);
+    }
+    for (const id of bodyIds) {
+      if (!navIds.includes(id)) fail(`docs.html: #${id} is not listed in the sidebar`);
+    }
+    if ([...docs.matchAll(/class="toc"/g)].length) fail('docs.html: the old horizontal table of contents is still there');
+  }
+
+  if (!/data-docnav-toggle/.test(docs)) fail('docs.html: the narrow-screen contents button is missing');
+  if (!/aria-expanded="false"/.test(docs)) fail('docs.html: the contents button has no aria-expanded');
+}
+
+// ── 12. The scroll-spy implementation ───────────────────────────────
+
+if (exists('assets/app.js')) {
+  const app = read('assets/app.js');
+  for (const [needle, label] of [
+    ['data-docnav-panel', 'sidebar lookup'],
+    ['new IntersectionObserver', 'scroll-spy observer'],
+    ['.observe(', 'observed headings'],
+    ['aria-current', 'current-section marker'],
+    ['Escape', 'overlay escape key'],
+  ]) {
+    if (!app.includes(needle)) fail(`assets/app.js: the sidebar script has no ${label} (${needle})`);
+  }
+}
+
+// ── 13. No claim that the symbol panel covers the whole repository ────
+
+if (exists('assets/app.js')) {
+  const source = read('assets/app.js');
+  const banned = ['全仓', '整个仓库', 'entire repository', 'whole repository'];
+  for (const lang of ['en', 'zh']) {
+    for (const [key, value] of dictionary(source, lang, 'app.js')) {
+      for (const word of banned) {
+        if (value.includes(word)) {
+          fail(`app.js: ${lang} value of "${key}" claims more coverage than the tool has (${word})`);
+        }
+      }
+    }
+  }
+}
+
 report();
+
+// sectionById returns the markup of the element with that id, up to the next
+// section or footer. It is deliberately crude: enough to prove a block exists
+// and contains what it should.
+function sectionById(html, id) {
+  return sectionByAttribute(html, `id="${id}"`);
+}
+
+function sectionByAttribute(html, attribute) {
+  const start = html.indexOf(attribute);
+  if (start < 0) return '';
+  const open = html.lastIndexOf('<', start);
+  const tag = /^<([a-z0-9]+)/i.exec(html.slice(open));
+  if (!tag) return '';
+  const close = html.indexOf(`</${tag[1]}>`, start);
+  return html.slice(open, close < 0 ? html.length : close + tag[1].length + 3);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

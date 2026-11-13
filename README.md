@@ -225,8 +225,14 @@ localStorage 行为在 `file://` 下不一致。
 默认跟随 `prefers-color-scheme`，选择存 `intentflow.theme`。中英文案只在
 `website/assets/app.js` 的字典里，HTML 里写英文作无脚本兜底。
 
+首页信息层级：一句话定位，然后是四个整幅重点块（一键复制、Git 识别、
+本地优先、符号引用），各自配一张真实截图，再往下是「还有」紧凑列表、
+安装与现状。文档页是左侧常驻目录加正文两栏，小于 900px 时目录收成
+「目录」按钮与覆盖层，当前章节由 `IntersectionObserver` 高亮。
+
 `make site-check` 校验必需文件、相对路径、只有 GitHub 外链、两种语言 key
-集合一致，以及 HTML 兜底文案与英文字典一致。改官网时先跑它。
+集合一致、HTML 兜底文案与英文字典一致，以及首页四个重点块、文档侧边栏
+锚点与正文 `id` 双向一致、滚动高亮脚本存在。改官网时先跑它。
 
 `.github/workflows/pages.yml` 在 `master` 上 `website/**` 变更后发布，
 上传前同样跑一遍校验。编辑规则见 [website/README.md](website/README.md)。
