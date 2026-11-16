@@ -213,7 +213,7 @@ make e2e E2E_URL=http://127.0.0.1:8123
 全部用相对路径（`./assets/...`）。
 
 ```bash
-make site         # python3 -m http.server --directory website 0.0.0.0 8131
+make site         # python3 -m http.server --directory website --bind 0.0.0.0 8131
 make site-check   # node scripts/check-site.mjs
 ```
 

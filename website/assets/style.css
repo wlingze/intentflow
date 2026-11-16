@@ -354,6 +354,15 @@ figcaption code {
   gap: var(--space-md);
 }
 
+/* Install pairs a command block with a table; the commands need the room.
+   Two classes beat the later plain `.split` rule in the wide breakpoint. */
+@media (min-width: 860px) {
+  .split.split--code {
+    grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
 .split > * {
   min-width: 0;
 }
@@ -385,6 +394,12 @@ figcaption code {
   padding: var(--space-xs) 10px;
   font-size: var(--text-sm);
   color: var(--ink);
+  /* Long install commands must stay readable in a half-width column.
+     break-word only splits tokens that cannot fit at all; plain spaces wrap
+     first, so a flag such as -DestinationPath is never cut in half. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 2;
 }
 
 .copy-btn {
