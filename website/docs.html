@@ -75,6 +75,7 @@
             </ul>
           </li>
           <li><a href="#export" data-i18n="docs.nav.export">Export</a></li>
+          <li><a href="#agents" data-i18n="docs.nav.agents">Agent skill</a></li>
         </ul>
 
         <p class="docs-nav__group" data-i18n="docs.group.reference">Reference</p>
@@ -159,9 +160,9 @@ intentflow --no-open --base main</code></pre>
       <section class="doc-section" id="review">
         <h2 data-i18n="docs.review.title">3. Review</h2>
         <p data-i18n="docs.review.body">Comments and marks belong to this comparison, in the browser.</p>
-        <figure class="shot">
+        <figure class="shot shot--small">
           <div class="frame">
-            <img src="./assets/img/shot-local.png" width="1102" height="665" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel with two comments on a diff, each carrying the code it quotes.">
+            <img src="./assets/img/shot-local.png" width="400" height="400" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel: one composer at the top, two comments below it.">
             <figcaption data-i18n="local.fig">Review panel</figcaption>
           </div>
         </figure>
@@ -217,20 +218,32 @@ intentflow --no-open --base main</code></pre>
             <span class="mono">review.md</span>
             <button class="copy-btn" type="button" data-copy="export-sample" data-i18n="btn.copy">Copy</button>
           </div>
-          <pre><code data-i18n="docs.export.sample" id="export-sample">## Review
+          <pre><code data-i18n="docs.export.sample" id="export-sample"># Review: main → HEAD
 
-### 1. internal/store/store.go · R15
-&gt; query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
+## Review 意见
 
-Concatenated SQL. Use a parameterised query.
+### 1. internal/store/store.go:15 · 改动后
 
-### 2. Overall
-Revert the string concatenation.</code></pre>
+&gt; query = fmt.Sprintf("... WHERE name LIKE '%s%'", name)
+
+改成参数化查询。
+
+### 2. 整体意见
+这次改动建议整体退回。</code></pre>
         </div>
       </section>
 
+      <section class="doc-section" id="agents">
+        <h2 data-i18n="docs.agents.title">6. For agents</h2>
+        <p data-i18n="docs.agents.body">The repo ships a skill at <code>skills/intentflow/SKILL.md</code>.</p>
+        <ul class="bullets">
+          <li data-i18n="docs.agents.say">Say “review my changes with intentflow”. The agent runs the command and gives you the URL.</li>
+          <li data-i18n="docs.agents.you">You still write the comments; the agent reads the Markdown you paste back.</li>
+        </ul>
+      </section>
+
       <section class="doc-section" id="data">
-        <h2 data-i18n="docs.data.title">6. Where reviews live</h2>
+        <h2 data-i18n="docs.data.title">7. Where reviews live</h2>
         <ul class="bullets">
           <li data-i18n="data.reviews">Reviews: `localStorage`, key `intentflow.review.&lt;comparison_id&gt;`.</li>
           <li data-i18n="data.images">Images: inline data URLs, up to 1.5MB each.</li>
@@ -240,7 +253,7 @@ Revert the string concatenation.</code></pre>
       </section>
 
       <section class="doc-section" id="build">
-        <h2 data-i18n="docs.build.title">7. Build</h2>
+        <h2 data-i18n="docs.build.title">8. Build</h2>
         <p data-i18n="docs.build.body">Go 1.24+, pnpm and git. `schema/openapi.yaml` generates both sides.</p>
         <div class="codeblock">
           <div class="codeblock__head">
@@ -257,7 +270,7 @@ make release-check  # cross-compile the six release targets</code></pre>
       </section>
 
       <section class="doc-section" id="design">
-        <h2 data-i18n="docs.design.title">8. Design documents</h2>
+        <h2 data-i18n="docs.design.title">9. Design documents</h2>
         <ul class="bullets">
           <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/00-thesis.md"><code>docs/00-thesis.md</code></a> — <span data-i18n="docs.design.thesis">code cannot express intent</span></li>
           <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/02-layers.md"><code>docs/02-layers.md</code></a> — <span data-i18n="docs.design.layers">the three layers</span></li>
