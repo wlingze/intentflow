@@ -60,7 +60,7 @@ release-check:
 
 # 官网本地预览。纯静态文件，不需要构建。
 site:
-	python3 -m http.server --directory website 0.0.0.0 8131
+	python3 -m http.server --directory website --bind 0.0.0.0 8131
 
 # 官网校验：文件齐全、双语文案 key 对齐、相对路径、无第三方资源。
 site-check:
