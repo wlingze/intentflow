@@ -254,6 +254,35 @@ pre,
   white-space: nowrap;
 }
 
+/* Full-width bands: the panorama under the hero and the comment editor.
+   They carry the page, so they get the whole container width. */
+.panorama {
+  padding-block: var(--space-lg) 0;
+  border-bottom: var(--hairline) solid var(--rule);
+  padding-bottom: var(--space-xl);
+}
+
+.pillar--wide .wide-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.pillar--wide .pillar__title {
+  margin: 0;
+}
+
+.pillar--wide .pillar__claim {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.pillar--wide .pillar__tags {
+  margin: 0 0 0 auto;
+}
+
 /* ── Screenshots ───────────────────────────────────────────────── */
 
 .shot {

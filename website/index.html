@@ -23,9 +23,9 @@
       </a>
 
       <nav class="site-nav" aria-label="Site">
+        <a href="#comments" data-i18n="nav.comments">Comments</a>
         <a href="#copy" data-i18n="nav.copy">Copy</a>
         <a href="#git" data-i18n="nav.git">Git ranges</a>
-        <a href="#local" data-i18n="nav.local">Local first</a>
         <a href="#symbols" data-i18n="nav.symbols">Symbols</a>
         <a href="#install" data-i18n="nav.install">Install</a>
         <a href="./docs.html" data-i18n="nav.docs">Docs</a>
@@ -58,10 +58,43 @@
       </div>
     </section>
 
-    <section class="pillar" id="copy">
+    <section class="panorama">
+      <div class="container">
+        <figure class="shot shot--band">
+          <div class="frame">
+            <img src="./assets/img/shot-panorama.png" width="2400" height="1500" loading="lazy" data-i18n-alt="panorama.alt" alt="The whole workbench: file tree, the symbol panel and the diff cards in the middle, the review panel on the right.">
+            <figcaption data-i18n="panorama.fig">The whole workbench, one binary.</figcaption>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="pillar pillar--wide" id="comments">
+      <div class="container">
+        <div class="wide-head">
+          <p class="pillar__num" aria-hidden="true">01</p>
+          <h2 class="pillar__title" data-i18n="comments.title">Comments</h2>
+          <p class="pillar__claim" data-i18n="comments.claim">Comment the exact line.</p>
+          <ul class="pillar__tags">
+            <li data-i18n="comments.tag1">line</li>
+            <li data-i18n="comments.tag2">range</li>
+            <li data-i18n="comments.tag3">resolve</li>
+          </ul>
+        </div>
+
+        <figure class="shot shot--band">
+          <div class="frame">
+            <img src="./assets/img/shot-inline.png" width="2140" height="410" loading="lazy" data-i18n-alt="comments.figAlt" alt="A blue plus button on a diff line, and the comment editor it opens right under that line.">
+            <figcaption data-i18n="comments.fig">Comment editor, on the line</figcaption>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="pillar pillar--flip" id="copy">
       <div class="container pillar__grid">
         <div class="pillar__body">
-          <p class="pillar__num" aria-hidden="true">01</p>
+          <p class="pillar__num" aria-hidden="true">02</p>
           <h2 class="pillar__title" data-i18n="copy.title">Copy</h2>
           <p class="pillar__claim" data-i18n="copy.claim">One keystroke, whole review.</p>
           <ul class="pillar__tags">
@@ -80,10 +113,10 @@
       </div>
     </section>
 
-    <section class="pillar pillar--flip" id="git">
+    <section class="pillar" id="git">
       <div class="container pillar__grid">
         <div class="pillar__body">
-          <p class="pillar__num" aria-hidden="true">02</p>
+          <p class="pillar__num" aria-hidden="true">03</p>
           <h2 class="pillar__title" data-i18n="git.title">Git ranges</h2>
           <p class="pillar__claim" data-i18n="git.claim">From history, not a picker.</p>
           <ul class="pillar__tags">
@@ -97,28 +130,6 @@
           <div class="frame">
             <img src="./assets/img/shot-git.png" width="700" height="454" loading="lazy" data-i18n-alt="git.figAlt" alt="The file tree with added and removed counts, status badges and comment counts.">
             <figcaption data-i18n="git.fig">Files and counts</figcaption>
-          </div>
-        </figure>
-      </div>
-    </section>
-
-    <section class="pillar" id="local">
-      <div class="container pillar__grid">
-        <div class="pillar__body">
-          <p class="pillar__num" aria-hidden="true">03</p>
-          <h2 class="pillar__title" data-i18n="local.title">Local first</h2>
-          <p class="pillar__claim" data-i18n="local.claim">No service, no account.</p>
-          <ul class="pillar__tags">
-            <li data-i18n="local.tag1">one binary</li>
-            <li><code>localStorage</code></li>
-            <li>1.5MB</li>
-          </ul>
-        </div>
-
-        <figure class="shot">
-          <div class="frame">
-            <img src="./assets/img/shot-local.png" width="1102" height="665" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel with two comments on a diff, each carrying the code it quotes.">
-            <figcaption data-i18n="local.fig">Review panel</figcaption>
           </div>
         </figure>
       </div>

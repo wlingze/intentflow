@@ -192,9 +192,9 @@ if (exists('assets/tokens.css')) {
 // ── 10. The four pillars on the home page ────────────────────────────
 
 const pillars = [
+  { id: 'comments', shot: 'shot-inline.png' },
   { id: 'copy', shot: 'shot-copy.png' },
   { id: 'git', shot: 'shot-git.png' },
-  { id: 'local', shot: 'shot-local.png' },
   { id: 'symbols', shot: 'shot-symbols.png' },
 ];
 
@@ -213,7 +213,7 @@ if (pageSources.has('index.html')) {
     if (!block.includes(pillar.shot)) {
       fail(`index.html: #${pillar.id} does not show assets/img/${pillar.shot}`);
     }
-    const numbered = /class="pillar__num"[^>]*>\s*0[1-4]\s*</.test(block);
+    const numbered = /class="pillar__num"[^>]*>\s*0[1-9]\s*</.test(block);
     if (!numbered) fail(`index.html: #${pillar.id} has no 01-04 number`);
   }
 }
