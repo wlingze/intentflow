@@ -274,6 +274,41 @@ if (exists('assets/app.js')) {
   }
 }
 
+// ── 14. Two ways in: the command and the agent sentence ────────────
+
+if (pageSources.has('index.html')) {
+  const home = pageSources.get('index.html');
+  const run = sectionById(home, 'run');
+  if (!run) {
+    fail('index.html: the #run section is missing');
+  } else {
+    if (!/class="term"/.test(run)) fail('index.html: #run has no command output block');
+    if (!/\$\s*intentflow\b/.test(run)) fail('index.html: #run does not show the intentflow command');
+    if (!/class="run__say"[^>]*>[^<]*<span data-i18n="run\.say"/.test(run)) {
+      fail('index.html: #run has no translated agent sentence');
+    }
+    if (!/data-i18n="run\.note"/.test(run)) fail('index.html: #run does not say what the skill does');
+  }
+
+  // The run section sits above the screenshot band.
+  const runAt = home.indexOf('id="run"');
+  const panoramaAt = home.indexOf('shot-panorama.png');
+  if (runAt < 0 || panoramaAt < 0 || runAt > panoramaAt) {
+    fail('index.html: #run must come before the workbench panorama');
+  }
+}
+
+// ── 15. Docs sections are numbered once, in order ───────────────────
+
+if (pageSources.has('docs.html')) {
+  const docs = pageSources.get('docs.html');
+  const numbers = [...docs.matchAll(/data-i18n="docs\.[a-z]+\.title"[^>]*>\s*(\d+)\./g)].map((m) => Number(m[1]));
+  if (numbers.length < 5) fail(`docs.html: expected numbered sections, found ${numbers.length}`);
+  numbers.forEach((n, i) => {
+    if (n !== i + 1) fail(`docs.html: section number ${n} is out of order (expected ${i + 1})`);
+  });
+}
+
 report();
 
 // sectionById returns the markup of the element with that id, up to the next

@@ -23,6 +23,7 @@
       </a>
 
       <nav class="site-nav" aria-label="Site">
+        <a href="#run" data-i18n="nav.run">Run</a>
         <a href="#comments" data-i18n="nav.comments">Comments</a>
         <a href="#copy" data-i18n="nav.copy">Copy</a>
         <a href="#git" data-i18n="nav.git">Git ranges</a>
@@ -58,11 +59,34 @@
       </div>
     </section>
 
+    <section class="section" id="run">
+      <div class="container">
+        <h2 class="section__title" data-i18n="run.title">Run it</h2>
+        <div class="run">
+          <div class="run__col">
+            <p class="run__label" data-i18n="run.you">You</p>
+            <pre class="term"><code>$ intentflow --base master
+· 分支 feat/site-and-tests；基线 master
+· 比较 15c4cd19 → 89268602，18 个改动文件
+review 工作台:
+  http://127.0.0.1:8123</code></pre>
+          </div>
+          <div class="run__col">
+            <p class="run__label" data-i18n="run.agent">Agent</p>
+            <p class="run__say">“<span data-i18n="run.say">review my changes with intentflow</span>”</p>
+            <p class="run__note" data-i18n="run.note">The skill runs the same command and gives you the URL.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="panorama">
       <div class="container">
         <figure class="shot shot--band">
           <div class="frame">
-            <img src="./assets/img/shot-panorama.png" width="2400" height="1500" loading="lazy" data-i18n-alt="panorama.alt" alt="The whole workbench: file tree, the symbol panel and the diff cards in the middle, the review panel on the right.">
+            <div class="panorama__scroll">
+              <img src="./assets/img/shot-panorama.png" width="2400" height="1500" loading="lazy" data-i18n-alt="panorama.alt" alt="The whole workbench: file tree, the symbol panel and the diff cards in the middle, the review panel on the right.">
+            </div>
             <figcaption data-i18n="panorama.fig">The whole workbench, one binary.</figcaption>
           </div>
         </figure>
@@ -228,7 +252,7 @@ intentflow version</code></pre>
           </table>
         </div>
 
-        <p class="fine" data-i18n="status.note">The AI and SyntaxFlow tabs report that they are inactive.</p>
+        <p class="fine" data-i18n="status.note">Stages two to four are not built.</p>
       </div>
     </section>
   </main>
