@@ -194,7 +194,7 @@ if (exists('assets/tokens.css')) {
 const pillars = [
   { id: 'copy', shot: 'workbench-export.png' },
   { id: 'git', shot: 'workbench-diff.png' },
-  { id: 'local', shot: 'workbench-narrow.png' },
+  { id: 'local', shot: 'workbench-review.png' },
   { id: 'symbols', shot: 'workbench-overview.png' },
 ];
 

@@ -135,6 +135,12 @@ pre,
   border-bottom: var(--hairline) solid var(--rule);
 }
 
+.hero__inner {
+  display: grid;
+  gap: var(--space-md);
+  align-items: end;
+}
+
 .hero__kicker {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
@@ -151,32 +157,32 @@ pre,
 }
 
 .hero__lead {
-  max-width: 62ch;
+  max-width: 54ch;
   margin-top: var(--space-sm);
   color: var(--ink-2);
   font-size: var(--text-lg);
   line-height: var(--leading-snug);
 }
 
+/* Three facts, set as a short reference list on the right of the hero at
+   wide widths. The rule above is the only decoration. */
 .hero__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3xs) var(--space-md);
-  margin-top: var(--space-md);
-  padding: var(--space-xs) 0;
-  border-block: var(--hairline) solid var(--rule);
-  list-style: none;
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--muted);
 }
 
-.hero__facts li::before {
-  content: "· ";
-  color: var(--accent);
+.hero__facts dt {
+  display: flex;
+  gap: var(--space-2xs);
 }
 
-.hero__facts li:first-child::before {
-  content: "";
+.hero__facts dt::before {
+  content: "·";
+  color: var(--accent);
 }
 
 .hero__actions {
@@ -220,38 +226,42 @@ pre,
 }
 
 .pillar__claim {
-  max-width: 54ch;
+  max-width: 42ch;
   margin-top: var(--space-2xs);
   color: var(--ink-2);
   font-size: var(--text-md);
   line-height: var(--leading-snug);
 }
 
-/* The spec list is a definition list of labelled facts, one row each.
-   Rows are separated by hairlines, so it reads as a table, not as cards. */
+/* The spec list is three labelled facts under the claim. No rules between
+   rows: the mono label column already separates them, and a rule per row
+   turned the block into a form. One hairline closes the list. */
 .spec {
   margin-top: var(--space-sm);
+  padding-top: var(--space-xs);
   border-top: var(--hairline) solid var(--rule);
+  display: grid;
+  gap: 2px;
 }
 
 .spec__row {
   display: grid;
-  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
   gap: var(--space-sm);
-  padding-block: var(--space-xs);
-  border-bottom: var(--hairline) solid var(--rule);
+  padding-block: 3px;
+  align-items: baseline;
 }
 
 .spec__row dt {
   font-size: var(--text-2xs);
-  color: var(--accent);
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
 .spec__row dd {
-  font-size: var(--text-sm);
-  color: var(--ink-2);
-  line-height: 1.5;
+  font-size: var(--text-xs);
+  color: var(--ink);
+  line-height: 1.45;
 }
 
 .spec__row dd code {
@@ -267,6 +277,8 @@ pre,
   min-width: 0;
 }
 
+/* The caption lives inside the frame border, so a screenshot costs one box
+   and one hairline, not two boxes. */
 .frame {
   border: var(--hairline) solid var(--rule);
   background: var(--paper-2);
@@ -280,11 +292,11 @@ pre,
 }
 
 figcaption {
-  padding: 6px 8px;
-  border: var(--hairline) solid var(--rule);
-  border-top: 0;
+  padding: 5px 8px;
+  border-top: var(--hairline) solid var(--rule);
   font-size: var(--text-2xs);
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 figcaption code {
@@ -304,7 +316,7 @@ figcaption code {
 }
 
 .section__head {
-  max-width: 62ch;
+  max-width: 58ch;
   margin-bottom: var(--space-md);
 }
 
@@ -324,24 +336,27 @@ figcaption code {
   display: grid;
   gap: 0;
   margin-top: var(--space-sm);
+  padding: var(--space-xs) 0 0;
+  padding-inline-start: 0;
   border-top: var(--hairline) solid var(--rule);
   list-style: none;
   counter-reset: more;
 }
 
+/* Not a grid: an inline <kbd> inside a grid container becomes its own grid
+   item and the line explodes. Absolute placement keeps the text one run. */
 .more li {
-  display: grid;
-  grid-template-columns: 2rem 1fr;
-  align-items: baseline;
-  padding-block: var(--space-2xs);
-  border-bottom: var(--hairline) solid var(--rule);
-  font-size: var(--text-sm);
+  position: relative;
+  padding: 3px 0 3px 1.9rem;
+  font-size: var(--text-xs);
   color: var(--ink-2);
   counter-increment: more;
 }
 
 .more li::before {
   content: counter(more, decimal-leading-zero);
+  position: absolute;
+  left: 0;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--muted);
@@ -773,6 +788,15 @@ kbd {
 
 /* ── Wider viewports ──────────────────────────────────────────── */
 
+@media (max-width: 639px) {
+  /* On a phone the label column would squeeze the value to two words per
+     line, so the label keeps the narrower gutter instead. */
+  .spec__row {
+    grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+    gap: var(--space-xs);
+  }
+}
+
 @media (min-width: 680px) {
   .more {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -842,8 +866,8 @@ kbd {
   }
 
   .pillar__grid {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: var(--space-xl);
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
+    gap: var(--space-2xl);
     align-items: center;
   }
 
@@ -853,6 +877,13 @@ kbd {
 
   .hero {
     padding-block: var(--space-2xl) var(--space-3xl);
+  }
+
+  /* Facts move to the right of the hero so the block fills its width
+     instead of leaving half the page empty. */
+  .hero__inner {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+    gap: var(--space-2xl);
   }
 }
 
