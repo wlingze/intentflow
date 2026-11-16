@@ -16,6 +16,22 @@ lives in their browser.
 
 Do not use it to summarise code the user did not ask to review.
 
+## 0. Install it if it is missing
+
+```bash
+command -v intentflow
+```
+
+Nothing printed means it is missing. Take the asset for the platform from
+<https://github.com/wlingze/intentflow/releases/latest>:
+`intentflow_<version>_<os>_<arch>.tar.gz` for `linux` and `darwin`, `.zip` for
+`windows`; arch is `amd64` or `arm64`. Unpack it and put `intentflow` on PATH —
+`~/.local/bin` is enough. One static binary, no root, no service, no runtime
+dependency besides `git`.
+
+Do not build it from source unless the user asks; `make build` needs Go and
+Node, the release asset does not.
+
 ## 1. Start it
 
 Run inside the repository under review:
