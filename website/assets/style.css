@@ -450,6 +450,18 @@ table {
   text-align: start;
 }
 
+/* The stage table: keep the state column tight and right-aligned. */
+table.stages th:first-child,
+table.stages td:first-child {
+  width: 4.5rem;
+}
+
+table.stages th:last-child,
+table.stages td:last-child {
+  width: 8rem;
+  text-align: end;
+}
+
 caption {
   padding: 5px 10px;
   border-bottom: var(--hairline) solid var(--rule);

@@ -44,7 +44,7 @@
         <div class="hero__main">
           <p class="hero__kicker" data-i18n="hero.kicker">Local diff workbench for coding agents</p>
           <h1 class="hero__title" data-i18n="hero.title">Read the diff. Write the note. Hand it to the agent.</h1>
-          <p class="hero__lead" data-i18n="hero.lead">Open a local repo, comment on the diff, copy one Markdown block into Claude Code, Codex or pi.</p>
+          <p class="hero__lead" data-i18n="hero.lead">Read a local diff, comment, copy one block into your agent.</p>
           <div class="hero__actions">
             <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
             <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
@@ -64,7 +64,7 @@
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">01</p>
           <h2 class="pillar__title" data-i18n="copy.title">One keystroke to the agent</h2>
-          <p class="pillar__claim" data-i18n="copy.claim">Copies the whole review as Markdown in one keystroke, quoted code included.</p>
+          <p class="pillar__claim" data-i18n="copy.claim">One keystroke copies the whole review as Markdown.</p>
 
           <dl class="spec">
             <div class="spec__row">
@@ -77,7 +77,7 @@
             </div>
             <div class="spec__row">
               <dt data-i18n="spec.formats">formats</dt>
-              <dd data-i18n="copy.d3">the same menu copies or saves Markdown and JSON</dd>
+              <dd data-i18n="copy.d3">both formats copy or save</dd>
             </div>
           </dl>
         </div>
@@ -96,7 +96,7 @@
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">02</p>
           <h2 class="pillar__title" data-i18n="git.title">Git ranges, not a file picker</h2>
-          <p class="pillar__claim" data-i18n="git.claim">Renames stay one card. Viewed marks expire when the content moves.</p>
+          <p class="pillar__claim" data-i18n="git.claim">Renames stay one card; viewed marks expire on change.</p>
 
           <dl class="spec">
             <div class="spec__row">
@@ -109,7 +109,7 @@
             </div>
             <div class="spec__row">
               <dt class="mono">git diff -M</dt>
-              <dd data-i18n="git.d3">renames read as one card, not delete plus add</dd>
+              <dd data-i18n="git.d3">renames show as one card</dd>
             </div>
           </dl>
         </div>
@@ -128,7 +128,7 @@
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">03</p>
           <h2 class="pillar__title" data-i18n="local.title">Local first, in one binary</h2>
-          <p class="pillar__claim" data-i18n="local.claim">One executable with the frontend inside. No service, no account.</p>
+          <p class="pillar__claim" data-i18n="local.claim">One binary, frontend inside. No service, no account.</p>
 
           <dl class="spec">
             <div class="spec__row">
@@ -137,7 +137,7 @@
             </div>
             <div class="spec__row">
               <dt class="mono">localStorage</dt>
-              <dd data-i18n="local.d2">drafts, marks and images stay in the browser</dd>
+              <dd data-i18n="local.d2">drafts, marks and images stay here</dd>
             </div>
             <div class="spec__row">
               <dt data-i18n="spec.disk">disk</dt>
@@ -160,7 +160,7 @@
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">04</p>
           <h2 class="pillar__title" data-i18n="symbols.title">Every reference, without a language server</h2>
-          <p class="pillar__claim" data-i18n="symbols.claim">Click an identifier to see every place it appears in this comparison.</p>
+          <p class="pillar__claim" data-i18n="symbols.claim">Click a word to see every place it appears.</p>
 
           <dl class="spec">
             <div class="spec__row">
@@ -173,7 +173,7 @@
             </div>
             <div class="spec__row">
               <dt class="mono">$hit → 1457</dt>
-              <dd data-i18n="symbols.d3">rows for one identifier in one comparison</dd>
+              <dd data-i18n="symbols.d3">rows in one comparison</dd>
             </div>
           </dl>
         </div>
@@ -229,7 +229,6 @@ intentflow version</code></pre>
 .\intentflow.exe version</code></pre>
             </div>
 
-            <p class="fine" data-i18n="install.note">Runtime needs git only.</p>
             <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
           </div>
 
@@ -260,11 +259,10 @@ intentflow version</code></pre>
       <div class="container">
         <div class="section__head">
           <h2 class="section__title" data-i18n="status.title">What ships today</h2>
-          <p class="section__lead" data-i18n="status.lead">Stage one ships. Stages two to four are the target structure.</p>
-        </div>
+          </div>
 
         <div class="table-wrap">
-          <table>
+          <table class="stages">
             <caption data-i18n="status.table.caption">Stages</caption>
             <thead>
               <tr>
@@ -312,7 +310,7 @@ intentflow version</code></pre>
         <a href="https://github.com/wlingze/intentflow/releases" data-i18n="footer.releases">Releases</a>
         <a href="https://github.com/wlingze/intentflow/blob/master/LICENSE" data-i18n="footer.license">Apache-2.0</a>
       </nav>
-      <p data-i18n="footer.note">Static site: no build step, no analytics, no third-party requests.</p>
+      <p data-i18n="footer.note">No analytics, no third-party requests.</p>
     </div>
   </footer>
 
