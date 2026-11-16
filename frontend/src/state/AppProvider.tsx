@@ -27,7 +27,6 @@ export interface AppState {
   revisionId: string;
   revisionLoading: string | null;
   panels: { files: boolean; right: boolean };
-  rightTab: 'ai' | 'signals' | 'review';
   drawer: 'left' | 'right' | null;
   comments: Comment[];
   viewed: string[];
@@ -48,7 +47,6 @@ export type Action =
   | { type: 'revision/loading'; id: string }
   | { type: 'revision/error'; error: string }
   | { type: 'panel/toggle'; panel: 'files' | 'right' }
-  | { type: 'tab/set'; tab: AppState['rightTab'] }
   | { type: 'drawer/set'; drawer: 'left' | 'right' | null }
   | { type: 'comment/add'; comment: Comment }
   | { type: 'comment/update'; id: string; text: string }
@@ -74,7 +72,7 @@ export type Action =
 const prefs = loadPrefs();
 const initialState: AppState = {
   payload: null, loading: true, error: null, revisions: null, revisionId: '', revisionLoading: null,
-  panels: { files: prefs.files, right: prefs.right }, rightTab: 'review', drawer: null,
+  panels: { files: prefs.files, right: prefs.right }, drawer: null,
   comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
   saveStatus: 'saved', saveError: '',
   code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '', visible: [], mounted: [] }, treeFocus: null, toast: null, toastSeq: 0,
@@ -129,7 +127,6 @@ function reducer(state: AppState, action: Action): AppState {
     case 'revision/loading': return { ...state, revisionLoading: action.id };
     case 'revision/error': return { ...state, revisionLoading: null };
     case 'panel/toggle': return { ...state, panels: { ...state.panels, [action.panel]: !state.panels[action.panel] } };
-    case 'tab/set': return { ...state, rightTab: action.tab };
     case 'drawer/set': return { ...state, drawer: action.drawer };
     case 'comment/add': return changed({ comments: [...state.comments, action.comment] });
     case 'comment/update': return changed({ comments: state.comments.map((c) => c.id === action.id ? { ...c, text: action.text } : c) });
