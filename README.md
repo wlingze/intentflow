@@ -116,7 +116,9 @@ intentflow --before ./a --after ./b    # 两个目录
 - **Markdown**：`复制` 直接进剪贴板，`保存文件` 存成 `.md`。
 - **JSON**：`复制` 或 `保存文件`，含完整结构，适合程序读取。
 
-复制出的 Markdown 粘贴给编码代理即可。每条评论带文件路径、左右侧、行号，
+仓库自带 `skills/intentflow/SKILL.md`：代理读到这份 skill 后，自己起
+`intentflow --no-open --base <分支>`、等你评审完、再按粘贴或 `review.md`
+的路径逐条改。不开 skill 也能用，把 Markdown 粘贴给代理即可。每条评论带文件路径、左右侧、行号，
 引用的代码一并附上：
 
 ```markdown
@@ -252,6 +254,7 @@ internal/version/     版本号、提交、构建时间
 frontend/             React + TypeScript + Vite
 examples/demo-go/     单文件 demo
 docs/                 设计文档
+skills/intentflow/    给代理用的 skill
 website/              静态官网（GitHub Pages）
 ```
 
