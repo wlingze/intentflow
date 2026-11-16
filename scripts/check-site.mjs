@@ -19,6 +19,9 @@
  *  12. the sidebar script exists: IntersectionObserver scroll-spy in app.js
  *  13. no copy claims "the whole repository", because the panel only sees the
  *      changed files of the current comparison
+ *  14. the command and agent sentence come before the workbench panorama
+ *  15. docs section numbers are consecutive
+ *  16. both pages link to the repository from the top header
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -288,9 +291,6 @@ if (pageSources.has('index.html')) {
       fail('index.html: #run has no translated agent sentence');
     }
     if (!/data-i18n="run\.note"/.test(run)) fail('index.html: #run does not say what the skill does');
-    if (!/https:\/\/github\.com\/wlingze\/intentflow/.test(run)) {
-      fail('index.html: #run has no link to the source repository');
-    }
     if (!/install/i.test(run)) fail('index.html: #run never says the agent can install it');
   }
 
@@ -311,6 +311,15 @@ if (pageSources.has('docs.html')) {
   numbers.forEach((n, i) => {
     if (n !== i + 1) fail(`docs.html: section number ${n} is out of order (expected ${i + 1})`);
   });
+}
+
+// ── 16. The repository link belongs in the top header ───────────────
+
+for (const [page, source] of pageSources) {
+  const header = sectionByAttribute(source, 'class="site-header"');
+  if (!/<a\b[^>]*\bhref="https:\/\/github\.com\/wlingze\/intentflow"[^>]*>/.test(header)) {
+    fail(`${page}: the top header has no link to the source repository`);
+  }
 }
 
 report();

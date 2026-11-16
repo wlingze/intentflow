@@ -32,6 +32,7 @@ pre,
 .site-header__inner {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-md);
   min-height: var(--header-h);
 }
@@ -59,8 +60,8 @@ pre,
 
 .site-nav {
   display: none;
-  gap: var(--space-sm);
-  margin-inline-start: var(--space-sm);
+  gap: var(--space-md);
+  margin-inline-start: auto;
 }
 
 .site-nav a {
@@ -73,11 +74,75 @@ pre,
   color: var(--accent);
 }
 
+.site-nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
 .header-tools {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: var(--space-3xs);
-  margin-inline-start: auto;
+  gap: var(--space-2xs);
+}
+
+.header-github {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  line-height: 1;
+  text-decoration: none;
+}
+
+.header-github:hover {
+  background: var(--paper-3);
+  color: var(--accent);
+}
+
+/* The global focus ring squares off 2px corners; the pill keeps its shape. */
+.header-github:focus-visible {
+  border-radius: 999px;
+}
+
+.header-github svg {
+  flex: none;
+}
+
+.header-tools .header-download {
+  margin-inline-start: var(--space-2xs);
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+@media (max-width: 639px) {
+  .site-header__inner {
+    gap: var(--space-xs);
+  }
+
+  /* The download button lives in the hero on a phone. */
+  .header-tools .header-download {
+    display: none;
+  }
+
+  .header-github {
+    padding: 8px 9px;
+  }
+}
+
+/* Below this width the word leaves the pill so the controls stay on one row. */
+@media (max-width: 359px) {
+  .header-github {
+    padding: 10px;
+  }
+
+  .header-github span {
+    display: none;
+  }
 }
 
 .tool-btn {
@@ -287,17 +352,6 @@ pre,
   background: var(--surface-2);
   font-size: var(--text-md);
   line-height: var(--leading-body);
-}
-
-.run__src {
-  margin-top: var(--space-xs);
-  font-size: var(--text-2xs);
-  color: var(--muted);
-}
-
-.run__src a {
-  margin-inline-start: 0.3em;
-  color: var(--ink-2);
 }
 
 .run__note {
