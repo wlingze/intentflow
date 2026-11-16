@@ -288,6 +288,10 @@ if (pageSources.has('index.html')) {
       fail('index.html: #run has no translated agent sentence');
     }
     if (!/data-i18n="run\.note"/.test(run)) fail('index.html: #run does not say what the skill does');
+    if (!/https:\/\/github\.com\/wlingze\/intentflow/.test(run)) {
+      fail('index.html: #run has no link to the source repository');
+    }
+    if (!/install/i.test(run)) fail('index.html: #run never says the agent can install it');
   }
 
   // The run section sits above the screenshot band.
