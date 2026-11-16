@@ -233,41 +233,25 @@ pre,
   line-height: var(--leading-snug);
 }
 
-/* The spec list is three labelled facts under the claim. No rules between
-   rows: the mono label column already separates them, and a rule per row
-   turned the block into a form. One hairline closes the list. */
-.spec {
+/* Three short tags under the claim. They replace the old definition list:
+   the same facts, one line instead of twelve. */
+.pillar__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
   margin-top: var(--space-sm);
-  padding-top: var(--space-xs);
-  border-top: var(--hairline) solid var(--rule);
-  display: grid;
-  gap: 2px;
+  padding: 0;
+  list-style: none;
 }
 
-.spec__row {
-  display: grid;
-  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
-  gap: var(--space-sm);
-  padding-block: 3px;
-  align-items: baseline;
-}
-
-.spec__row dt {
+.pillar__tags li {
+  padding: 2px 7px;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.spec__row dd {
-  font-size: var(--text-xs);
-  color: var(--ink);
-  line-height: 1.45;
-}
-
-.spec__row dd code {
-  color: var(--ink);
-  background: var(--paper-3);
-  padding: 0 3px;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
 /* ── Screenshots ───────────────────────────────────────────────── */
@@ -289,6 +273,15 @@ pre,
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* Crops smaller than the column keep their natural size, centred, so the UI
+   inside them stays crisp instead of being upscaled. The figure fills the
+   column and the frame centres inside it. */
+.shot--small .frame {
+  width: max-content;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 figcaption {
@@ -369,14 +362,23 @@ figcaption code {
   gap: var(--space-md);
 }
 
-/* Install pairs a command block with a table; the commands need the room.
-   Two classes beat the later plain `.split` rule in the wide breakpoint. */
-@media (min-width: 860px) {
-  .split.split--code {
-    grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
-    align-items: start;
-  }
+.install {
+  margin-top: var(--space-md);
 }
+
+.install__code {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.install__line {
+  margin-top: var(--space-sm);
+  font-size: var(--text-2xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+
 
 .split > * {
   min-width: 0;
@@ -821,9 +823,8 @@ kbd {
     gap: var(--space-lg);
   }
 
-  /* Alternate: pillars 02 and 04 put the screenshot on the left.
-     Use explicit column placement so the reading order in the HTML
-     (argument first, then screenshot) stays valid without `order`. */
+  /* Alternate: pillars 02 and 04 put the screenshot on the left. Explicit
+     placement keeps the HTML reading order valid. */
   .pillar--flip .pillar__body {
     grid-column: 2;
   }
@@ -878,9 +879,15 @@ kbd {
   }
 
   .pillar__grid {
-    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 460px;
     gap: var(--space-2xl);
     align-items: center;
+  }
+
+  /* The columns swap with the figure, so text keeps its measure and the
+     screenshot keeps its width on both sides of the page. */
+  .pillar--flip .pillar__grid {
+    grid-template-columns: 460px minmax(0, 1fr);
   }
 
   .section {

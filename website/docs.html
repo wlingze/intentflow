@@ -109,8 +109,6 @@ intentflow --no-open --base main</code></pre>
 
       <section class="doc-section" id="range">
         <h2 data-i18n="docs.range.title">2. Pick a range</h2>
-        <p data-i18n="docs.range.body">Ranges come from Git, or from two directories.</p>
-
         <h3 id="range-commands" data-i18n="docs.range.commandsTitle">Common ranges</h3>
         <div class="table-wrap">
           <table>
@@ -161,16 +159,20 @@ intentflow --no-open --base main</code></pre>
       <section class="doc-section" id="review">
         <h2 data-i18n="docs.review.title">3. Review</h2>
         <p data-i18n="docs.review.body">Comments and marks belong to this comparison, in the browser.</p>
+        <figure class="shot">
+          <div class="frame">
+            <img src="./assets/img/shot-local.png" width="1102" height="665" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel with two comments on a diff, each carrying the code it quotes.">
+            <figcaption data-i18n="local.fig">Review panel</figcaption>
+          </div>
+        </figure>
         <ul class="bullets">
           <li data-i18n="docs.review.line">Comment a line, or drag a range.</li>
-          <li data-i18n="docs.review.hunk">Fold a hunk; expand five lines at a time.</li>
-          <li data-i18n="docs.review.tree">The tree folds by directory and counts comments.</li>
           <li data-i18n="docs.review.search">`Ctrl`+`F` searches every file, with case and whole-word switches.</li>
           <li data-i18n="docs.review.rename">A rename is one card: old path, arrow, new name.</li>
         </ul>
 
         <h3 id="review-marks" data-i18n="docs.review.marksTitle">Viewed marks</h3>
-        <p data-i18n="docs.review.marksBody">A hunk is keyed by file, row and content digest, so an edited hunk loses its mark.</p>
+        <p data-i18n="docs.review.marksBody">Keyed by file, row and content digest, so an edited hunk loses its mark.</p>
         <ul class="bullets">
           <li data-i18n="docs.review.marksFile">Marking a file marks its hunks.</li>
           <li data-i18n="docs.review.marksTree">A viewed file greys out and collapses.</li>
@@ -185,10 +187,16 @@ intentflow --no-open --base main</code></pre>
           <p><strong data-i18n="docs.symbols.scopeTitle">Scope:</strong> <span data-i18n="docs.symbols.scopeBody">changed files of this comparison, both sides. No index, no language server.</span></p>
         </div>
 
+        <figure class="shot shot--small">
+          <div class="frame">
+            <img src="./assets/img/shot-symbols.png" width="312" height="292" loading="lazy" data-i18n-alt="symbols.figAlt" alt="The symbol panel listing every reference of $hit, grouped by file with line numbers.">
+            <figcaption data-i18n="symbols.fig">Reference list</figcaption>
+          </div>
+        </figure>
+
         <h3 id="symbols-usage" data-i18n="docs.symbols.usageTitle">How to use it</h3>
         <ol class="steps">
           <li data-i18n="docs.symbols.step1">Click a word to open the panel.</li>
-          <li data-i18n="docs.symbols.step2">Rows group by file, with a line number and one of three colours.</li>
           <li data-i18n="docs.symbols.step3">Click a row to jump to that line.</li>
           <li data-i18n="docs.symbols.step4">Whole word by default: `hit` does not match `hits`.</li>
         </ol>
@@ -203,7 +211,6 @@ intentflow --no-open --base main</code></pre>
           <li data-i18n="docs.export.markdown">Markdown: path, side, line, quoted code.</li>
           <li data-i18n="docs.export.json">JSON: the full document.</li>
           <li data-i18n="docs.export.shortcut">`Ctrl`+`Enter` copies Markdown without the menu.</li>
-          <li data-i18n="docs.export.usage">Paste into Claude Code, Codex or pi. Nothing is sent.</li>
         </ul>
         <div class="codeblock">
           <div class="codeblock__head">

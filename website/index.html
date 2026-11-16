@@ -42,9 +42,8 @@
     <section class="hero">
       <div class="container hero__inner">
         <div class="hero__main">
-          <p class="hero__kicker" data-i18n="hero.kicker">Local diff workbench for coding agents</p>
           <h1 class="hero__title" data-i18n="hero.title">Read the diff. Write the note. Hand it to the agent.</h1>
-          <p class="hero__lead" data-i18n="hero.lead">Read a local diff, comment, copy one block into your agent.</p>
+          <p class="hero__lead" data-i18n="hero.lead">Local diff review for coding agents.</p>
           <div class="hero__actions">
             <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
             <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
@@ -63,29 +62,19 @@
       <div class="container pillar__grid">
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">01</p>
-          <h2 class="pillar__title" data-i18n="copy.title">One keystroke to the agent</h2>
-          <p class="pillar__claim" data-i18n="copy.claim">One keystroke copies the whole review as Markdown.</p>
-
-          <dl class="spec">
-            <div class="spec__row">
-              <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt>
-              <dd data-i18n="copy.d1">copies without opening the menu</dd>
-            </div>
-            <div class="spec__row">
-              <dt data-i18n="spec.quote">quoted code</dt>
-              <dd data-i18n="copy.d2">every comment carries the lines it quotes</dd>
-            </div>
-            <div class="spec__row">
-              <dt data-i18n="spec.formats">formats</dt>
-              <dd data-i18n="copy.d3">both formats copy or save</dd>
-            </div>
-          </dl>
+          <h2 class="pillar__title" data-i18n="copy.title">Copy</h2>
+          <p class="pillar__claim" data-i18n="copy.claim">One keystroke, whole review.</p>
+          <ul class="pillar__tags">
+            <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd></li>
+            <li>Markdown</li>
+            <li>JSON</li>
+          </ul>
         </div>
 
         <figure class="shot">
           <div class="frame">
-            <img src="./assets/img/workbench-export.png" width="3200" height="2000" loading="lazy" data-i18n-alt="copy.figAlt" alt="The submit menu open on the review panel, with Markdown and JSON rows.">
-            <figcaption data-i18n="copy.fig">Submit menu: Markdown and JSON.</figcaption>
+            <img src="./assets/img/shot-copy.png" width="760" height="475" loading="lazy" data-i18n-alt="copy.figAlt" alt="The submit menu with a Markdown row and a JSON row, each with copy and save buttons.">
+            <figcaption data-i18n="copy.fig">Submit menu</figcaption>
           </div>
         </figure>
       </div>
@@ -95,29 +84,19 @@
       <div class="container pillar__grid">
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">02</p>
-          <h2 class="pillar__title" data-i18n="git.title">Git ranges, not a file picker</h2>
-          <p class="pillar__claim" data-i18n="git.claim">Renames stay one card; viewed marks expire on change.</p>
-
-          <dl class="spec">
-            <div class="spec__row">
-              <dt data-i18n="spec.range">range</dt>
-              <dd data-i18n="git.d1">any branch, tag, commit or worktree</dd>
-            </div>
-            <div class="spec__row">
-              <dt data-i18n="spec.detect">detection</dt>
-              <dd data-i18n="git.d2">nearest ancestor; never `HEAD~1`</dd>
-            </div>
-            <div class="spec__row">
-              <dt class="mono">git diff -M</dt>
-              <dd data-i18n="git.d3">renames show as one card</dd>
-            </div>
-          </dl>
+          <h2 class="pillar__title" data-i18n="git.title">Git ranges</h2>
+          <p class="pillar__claim" data-i18n="git.claim">From history, not a picker.</p>
+          <ul class="pillar__tags">
+            <li><code>--base</code></li>
+            <li><code>--head</code></li>
+            <li><code>WORKTREE</code></li>
+          </ul>
         </div>
 
         <figure class="shot">
           <div class="frame">
-            <img src="./assets/img/workbench-diff.png" width="3200" height="2000" loading="lazy" data-i18n-alt="git.figAlt" alt="A diff card in split view with a hunk header, a viewed checkbox and an inline comment.">
-            <figcaption data-i18n="git.fig">Split view: hunk header, viewed mark, line comment.</figcaption>
+            <img src="./assets/img/shot-git.png" width="700" height="454" loading="lazy" data-i18n-alt="git.figAlt" alt="The file tree with added and removed counts, status badges and comment counts.">
+            <figcaption data-i18n="git.fig">Files and counts</figcaption>
           </div>
         </figure>
       </div>
@@ -127,29 +106,19 @@
       <div class="container pillar__grid">
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">03</p>
-          <h2 class="pillar__title" data-i18n="local.title">Local first, in one binary</h2>
-          <p class="pillar__claim" data-i18n="local.claim">One binary, frontend inside. No service, no account.</p>
-
-          <dl class="spec">
-            <div class="spec__row">
-              <dt class="mono">./intentflow</dt>
-              <dd data-i18n="local.d1">runtime needs `git` only</dd>
-            </div>
-            <div class="spec__row">
-              <dt class="mono">localStorage</dt>
-              <dd data-i18n="local.d2">drafts, marks and images stay here</dd>
-            </div>
-            <div class="spec__row">
-              <dt data-i18n="spec.disk">disk</dt>
-              <dd data-i18n="local.d3">the server writes no files</dd>
-            </div>
-          </dl>
+          <h2 class="pillar__title" data-i18n="local.title">Local first</h2>
+          <p class="pillar__claim" data-i18n="local.claim">No service, no account.</p>
+          <ul class="pillar__tags">
+            <li data-i18n="local.tag1">one binary</li>
+            <li><code>localStorage</code></li>
+            <li>1.5MB</li>
+          </ul>
         </div>
 
         <figure class="shot">
           <div class="frame">
-            <img src="./assets/img/workbench-review.png" width="3200" height="2000" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel with two comments on a diff, each carrying the code it quotes.">
-            <figcaption data-i18n="local.fig">Review panel: comments stay in this browser.</figcaption>
+            <img src="./assets/img/shot-local.png" width="1102" height="665" loading="lazy" data-i18n-alt="local.figAlt" alt="The review panel with two comments on a diff, each carrying the code it quotes.">
+            <figcaption data-i18n="local.fig">Review panel</figcaption>
           </div>
         </figure>
       </div>
@@ -159,57 +128,30 @@
       <div class="container pillar__grid">
         <div class="pillar__body">
           <p class="pillar__num" aria-hidden="true">04</p>
-          <h2 class="pillar__title" data-i18n="symbols.title">Every reference, without a language server</h2>
-          <p class="pillar__claim" data-i18n="symbols.claim">Click a word to see every place it appears.</p>
-
-          <dl class="spec">
-            <div class="spec__row">
-              <dt data-i18n="spec.scope">scope</dt>
-              <dd data-i18n="symbols.d1">changed files, both sides; no index, no LSP</dd>
-            </div>
-            <div class="spec__row">
-              <dt data-i18n="spec.match">match</dt>
-              <dd data-i18n="symbols.d2">whole word: `hit` does not match `hits`</dd>
-            </div>
-            <div class="spec__row">
-              <dt class="mono">$hit → 1457</dt>
-              <dd data-i18n="symbols.d3">rows in one comparison</dd>
-            </div>
-          </dl>
+          <h2 class="pillar__title" data-i18n="symbols.title">Symbols</h2>
+          <p class="pillar__claim" data-i18n="symbols.claim">No index, no LSP.</p>
+          <ul class="pillar__tags">
+            <li data-i18n="symbols.tag1">whole word</li>
+            <li data-i18n="symbols.tag2">changed files</li>
+            <li><code>$hit → 1457</code></li>
+          </ul>
         </div>
 
-        <figure class="shot">
+        <figure class="shot shot--small">
           <div class="frame">
-            <img src="./assets/img/workbench-overview.png" width="2000" height="1083" loading="lazy" data-i18n-alt="symbols.figAlt" alt="The full workbench: file tree and the symbol panel on the left, diff cards in the middle, review panel on the right.">
-            <figcaption data-i18n="symbols.fig">Left, lower panel: the reference list for `$hit`, 1457 rows.</figcaption>
+            <img src="./assets/img/shot-symbols.png" width="312" height="292" loading="lazy" data-i18n-alt="symbols.figAlt" alt="The symbol panel listing every reference of $hit, grouped by file with line numbers.">
+            <figcaption data-i18n="symbols.fig">Reference list</figcaption>
           </div>
         </figure>
       </div>
     </section>
 
-    <section class="section section--tight" id="more">
-      <div class="container">
-        <h2 class="section__title" data-i18n="more.title">Also in the workbench</h2>
-        <ul class="more">
-          <li data-i18n="more.i1">File tree with comment counts</li>
-          <li data-i18n="more.i2">Line and multi-line comments</li>
-          <li data-i18n="more.i3">Search with case and whole-word switches</li>
-          <li data-i18n="more.i4">Split or unified view, with wrapping</li>
-          <li data-i18n="more.i5">Virtualised rows for long diffs</li>
-          <li data-i18n="more.i6">`Ctrl`+`F` search, arrow keys, `Ctrl`+`Enter` copy</li>
-        </ul>
-      </div>
-    </section>
-
     <section class="section" id="install">
       <div class="container">
-        <div class="section__head">
-          <h2 class="section__title" data-i18n="install.title">Install</h2>
-          <p class="section__lead" data-i18n="install.lead">Six v0.1.0 archives, one executable each.</p>
-        </div>
+        <h2 class="section__title" data-i18n="install.title">Install</h2>
 
-        <div class="split split--code">
-          <div>
+        <div class="install">
+          <div class="install__code">
             <div class="codeblock">
               <div class="codeblock__head">
                 <span data-i18n="install.unix">Linux / macOS</span>
@@ -228,38 +170,17 @@ intentflow version</code></pre>
               <pre><code data-i18n="install.windowsCmd" id="install-windows">Expand-Archive intentflow_0.1.0_windows_amd64.zip -DestinationPath .
 .\intentflow.exe version</code></pre>
             </div>
-
-            <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
           </div>
 
-          <div class="table-wrap">
-            <table>
-              <caption data-i18n="install.table.caption">Platform archives</caption>
-              <thead>
-                <tr>
-                  <th scope="col" data-i18n="install.table.platform">Platform</th>
-                  <th scope="col" data-i18n="install.table.file">Archive</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td>Linux x86-64</td><td><code>intentflow_0.1.0_linux_amd64.tar.gz</code></td></tr>
-                <tr><td>Linux ARM64</td><td><code>intentflow_0.1.0_linux_arm64.tar.gz</code></td></tr>
-                <tr><td>macOS Intel</td><td><code>intentflow_0.1.0_darwin_amd64.tar.gz</code></td></tr>
-                <tr><td>macOS Apple Silicon</td><td><code>intentflow_0.1.0_darwin_arm64.tar.gz</code></td></tr>
-                <tr><td>Windows x86-64</td><td><code>intentflow_0.1.0_windows_amd64.zip</code></td></tr>
-                <tr><td>Windows ARM64</td><td><code>intentflow_0.1.0_windows_arm64.zip</code></td></tr>
-              </tbody>
-            </table>
-          </div>
+          <p class="install__line"><code>intentflow_0.1.0_{linux,darwin,windows}_{amd64,arm64}</code></p>
+          <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
         </div>
       </div>
     </section>
 
     <section class="section" id="status">
       <div class="container">
-        <div class="section__head">
-          <h2 class="section__title" data-i18n="status.title">What ships today</h2>
-          </div>
+        <h2 class="section__title" data-i18n="status.title">What ships today</h2>
 
         <div class="table-wrap">
           <table class="stages">
@@ -279,17 +200,17 @@ intentflow version</code></pre>
               </tr>
               <tr>
                 <td class="mono">02</td>
-                <td data-i18n="status.stage2">SSA fact layer: project, logic and intent diff</td>
+                <td data-i18n="status.stage2">SSA fact layer</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
               <tr>
                 <td class="mono">03</td>
-                <td data-i18n="status.stage3">Behaviour graph: trigger, decision, transform, effect</td>
+                <td data-i18n="status.stage3">Behaviour graph</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
               <tr>
                 <td class="mono">04</td>
-                <td data-i18n="status.stage4">LLM narrative layer that only reads facts</td>
+                <td data-i18n="status.stage4">LLM narrative layer</td>
                 <td><span class="tag tag--todo" data-i18n="status.todo">Not started</span></td>
               </tr>
             </tbody>

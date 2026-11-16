@@ -192,10 +192,10 @@ if (exists('assets/tokens.css')) {
 // ── 10. The four pillars on the home page ────────────────────────────
 
 const pillars = [
-  { id: 'copy', shot: 'workbench-export.png' },
-  { id: 'git', shot: 'workbench-diff.png' },
-  { id: 'local', shot: 'workbench-review.png' },
-  { id: 'symbols', shot: 'workbench-overview.png' },
+  { id: 'copy', shot: 'shot-copy.png' },
+  { id: 'git', shot: 'shot-git.png' },
+  { id: 'local', shot: 'shot-local.png' },
+  { id: 'symbols', shot: 'shot-symbols.png' },
 ];
 
 if (pageSources.has('index.html')) {
