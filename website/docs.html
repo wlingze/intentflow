@@ -50,7 +50,7 @@
       <nav class="docs-nav" id="doc-nav" aria-label="Contents" data-docnav-panel>
         <p class="docs-nav__group" data-i18n="docs.group.start">Getting started</p>
         <ul class="docs-nav__list">
-          <li><a href="#start" data-i18n="docs.nav.start">Start the workbench</a></li>
+          <li><a href="#start" data-i18n="docs.nav.start">Start</a></li>
           <li>
             <a href="#range" data-i18n="docs.nav.range">Pick a range</a>
             <ul class="docs-nav__sub">
@@ -63,13 +63,13 @@
         <p class="docs-nav__group" data-i18n="docs.group.review">Reviewing</p>
         <ul class="docs-nav__list">
           <li>
-            <a href="#review" data-i18n="docs.nav.review">Review a diff</a>
+            <a href="#review" data-i18n="docs.nav.review">Review</a>
             <ul class="docs-nav__sub">
               <li><a href="#review-marks" data-i18n="docs.nav.reviewMarks">Viewed marks</a></li>
             </ul>
           </li>
           <li>
-            <a href="#symbols" data-i18n="docs.nav.symbols">The symbol panel</a>
+            <a href="#symbols" data-i18n="docs.nav.symbols">Symbols</a>
             <ul class="docs-nav__sub">
               <li><a href="#symbols-usage" data-i18n="docs.nav.symbolsUsage">How to use it</a></li>
             </ul>
@@ -80,7 +80,7 @@
         <p class="docs-nav__group" data-i18n="docs.group.reference">Reference</p>
         <ul class="docs-nav__list">
           <li><a href="#data" data-i18n="docs.nav.data">Where reviews live</a></li>
-          <li><a href="#build" data-i18n="docs.nav.build">Build from source</a></li>
+          <li><a href="#build" data-i18n="docs.nav.build">Build</a></li>
           <li><a href="#design" data-i18n="docs.nav.design">Design documents</a></li>
         </ul>
       </nav>
@@ -90,12 +90,12 @@
       <header class="docs-head">
         <p class="docs-head__kicker" data-i18n="docs.head.kicker">Reference</p>
         <h1 class="docs-head__title" data-i18n="docs.head.title">Intentflow docs</h1>
-        <p class="docs-head__lead" data-i18n="docs.head.lead">Start the workbench, pick a Git range, review, export. The symbol panel and the build commands come after.</p>
+        <p class="docs-head__lead" data-i18n="docs.head.lead">Install, pick a range, review, export.</p>
       </header>
 
       <section class="doc-section" id="start">
-        <h2 data-i18n="docs.start.title">1. Start the workbench</h2>
-        <p data-i18n="docs.start.body">Run inside the repository you want to review. The terminal prints the address and opens the browser. With `--no-open` it only prints the address.</p>
+        <h2 data-i18n="docs.start.title">1. Start</h2>
+        <p data-i18n="docs.start.body">Run it in the repo you want to review. It opens the browser.</p>
         <div class="codeblock">
           <div class="codeblock__head">
             <span class="mono">shell</span>
@@ -105,17 +105,16 @@
 intentflow --base main
 intentflow --no-open --base main</code></pre>
         </div>
-        <p class="note" data-i18n="docs.start.note">No binary yet? Run `./scripts/build.sh`, or `make serve` to start the bundled demo under `examples/demo-go`.</p>
       </section>
 
       <section class="doc-section" id="range">
         <h2 data-i18n="docs.range.title">2. Pick a range</h2>
-        <p data-i18n="docs.range.body">The comparison always comes from Git history or from two directories. There is no file picker and no staging area.</p>
+        <p data-i18n="docs.range.body">Ranges come from Git, or from two directories.</p>
 
         <h3 id="range-commands" data-i18n="docs.range.commandsTitle">Common ranges</h3>
         <div class="table-wrap">
           <table>
-            <caption data-i18n="docs.range.table.caption">Common ranges</caption>
+            <caption class="sr-only" data-i18n="docs.range.table.caption">Common ranges</caption>
             <thead>
               <tr>
                 <th scope="col" data-i18n="docs.range.table.command">Command</th>
@@ -124,9 +123,9 @@ intentflow --no-open --base main</code></pre>
             </thead>
             <tbody>
               <tr><td><code>intentflow --base main</code></td><td data-i18n="docs.range.all">main to HEAD</td></tr>
-              <tr><td><code>intentflow --base main --head WORKTREE</code></td><td data-i18n="docs.range.worktree">main to the worktree, including untracked files</td></tr>
-              <tr><td><code>intentflow --base v1.0 --head HEAD</code></td><td data-i18n="docs.range.commits">A tag or commit range</td></tr>
-              <tr><td><code>intentflow --before ./a --after ./b</code></td><td data-i18n="docs.range.folders">Two directories, no Git needed</td></tr>
+              <tr><td><code>intentflow --base main --head WORKTREE</code></td><td data-i18n="docs.range.worktree">main to the worktree, with untracked files</td></tr>
+              <tr><td><code>intentflow --base v1.0 --head HEAD</code></td><td data-i18n="docs.range.commits">tag or commit range</td></tr>
+              <tr><td><code>intentflow --before ./a --after ./b</code></td><td data-i18n="docs.range.folders">two directories, no Git</td></tr>
             </tbody>
           </table>
         </div>
@@ -134,7 +133,7 @@ intentflow --no-open --base main</code></pre>
         <h3 id="range-flags" data-i18n="docs.range.flagsTitle">Flags</h3>
         <div class="table-wrap">
           <table>
-            <caption data-i18n="docs.params.caption">Flags</caption>
+            <caption class="sr-only" data-i18n="docs.params.caption">Flags</caption>
             <thead>
               <tr>
                 <th scope="col" data-i18n="docs.params.flag">Flag</th>
@@ -142,72 +141,69 @@ intentflow --no-open --base main</code></pre>
               </tr>
             </thead>
             <tbody>
-              <tr><td><code>-t, --target</code></td><td data-i18n="params.target">Repository directory, default `.`; a subdirectory keeps paths relative to it</td></tr>
-              <tr><td><code>--base</code></td><td data-i18n="params.base">Baseline; the nearest of main, master, origin/main, origin/master by default</td></tr>
-              <tr><td><code>--head</code></td><td data-i18n="params.head">End point, default `HEAD`; `WORKTREE` adds uncommitted and untracked files</td></tr>
-              <tr><td><code>--before, --after</code></td><td data-i18n="params.beforeAfter">Compare two directories instead of a Git range</td></tr>
-              <tr><td><code>--host</code></td><td data-i18n="params.host">Listen address, default `0.0.0.0`; `127.0.0.1` keeps it on this machine</td></tr>
-              <tr><td><code>--port</code></td><td data-i18n="params.port">Port; `0` lets the system pick a free one</td></tr>
-              <tr><td><code>--out</code></td><td data-i18n="params.out">Directory where `intentflow diff` writes `review.json`</td></tr>
-              <tr><td><code>--dist</code></td><td data-i18n="params.dist">Override the embedded frontend, debug only</td></tr>
-              <tr><td><code>--no-open</code></td><td data-i18n="params.noOpen">Do not open the browser</td></tr>
-              <tr><td><code>-v</code></td><td data-i18n="params.verbose">Print progress</td></tr>
+              <tr><td><code>-t, --target</code></td><td data-i18n="params.target">repo directory, default `.`</td></tr>
+              <tr><td><code>--base</code></td><td data-i18n="params.base">baseline; nearest of main, master, origin/main, origin/master</td></tr>
+              <tr><td><code>--head</code></td><td data-i18n="params.head">end point, default `HEAD`; `WORKTREE` adds uncommitted files</td></tr>
+              <tr><td><code>--before, --after</code></td><td data-i18n="params.beforeAfter">two directories instead of a Git range</td></tr>
+              <tr><td><code>--host</code></td><td data-i18n="params.host">listen address, default `0.0.0.0`</td></tr>
+              <tr><td><code>--port</code></td><td data-i18n="params.port">port; `0` picks a free one</td></tr>
+              <tr><td><code>--out</code></td><td data-i18n="params.out">where `intentflow diff` writes `review.json`</td></tr>
+              <tr><td><code>--dist</code></td><td data-i18n="params.dist">override the embedded frontend, debug only</td></tr>
+              <tr><td><code>--no-open</code></td><td data-i18n="params.noOpen">do not open the browser</td></tr>
+              <tr><td><code>-v</code></td><td data-i18n="params.verbose">print progress</td></tr>
             </tbody>
           </table>
         </div>
 
-        <p class="note" data-i18n="docs.range.note">With no `--base`, intentflow looks for main, master, origin/main and origin/master in the current HEAD history and takes the nearest one. If none of them is an ancestor, it stops and asks for an explicit base. It never falls back to `HEAD~1`.</p>
+        <p class="note" data-i18n="docs.range.note">With no `--base` it takes the nearest ancestor and never falls back to `HEAD~1`.</p>
       </section>
 
       <section class="doc-section" id="review">
-        <h2 data-i18n="docs.review.title">3. Review a diff</h2>
-        <p data-i18n="docs.review.body">Every mark and comment belongs to the review document of the current comparison. Nothing is written on the server.</p>
+        <h2 data-i18n="docs.review.title">3. Review</h2>
+        <p data-i18n="docs.review.body">Comments and marks belong to this comparison, in the browser.</p>
         <ul class="bullets">
-          <li data-i18n="docs.review.line">Add a line comment from the plus button, or select several lines to comment on a range.</li>
-          <li data-i18n="docs.review.hunk">Fold a hunk down, expand it five lines at a time, or open the whole file from the card header.</li>
-          <li data-i18n="docs.review.tree">The file tree folds by directory and shows added and removed lines plus the comment count per file.</li>
-          <li data-i18n="docs.review.search">Search every diff file with `Ctrl`+`F`, or `Cmd`+`F` on macOS, with case and whole-word switches.</li>
-          <li data-i18n="docs.review.rename">A rename shows as one card: the old path struck through, an arrow, then the new name.</li>
+          <li data-i18n="docs.review.line">Comment a line, or drag a range.</li>
+          <li data-i18n="docs.review.hunk">Fold a hunk; expand five lines at a time.</li>
+          <li data-i18n="docs.review.tree">The tree folds by directory and counts comments.</li>
+          <li data-i18n="docs.review.search">`Ctrl`+`F` searches every file, with case and whole-word switches.</li>
+          <li data-i18n="docs.review.rename">A rename is one card: old path, arrow, new name.</li>
         </ul>
 
         <h3 id="review-marks" data-i18n="docs.review.marksTitle">Viewed marks</h3>
-        <p data-i18n="docs.review.marksBody">A hunk header carries a viewed checkbox. The key is the file, the row and a digest of the hunk, so when the file content changes the old mark drops instead of hiding a new hunk.</p>
+        <p data-i18n="docs.review.marksBody">A hunk is keyed by file, row and content digest, so an edited hunk loses its mark.</p>
         <ul class="bullets">
-          <li data-i18n="docs.review.marksFile">Marking a file marks every hunk in it; clearing the file clears them too.</li>
-          <li data-i18n="docs.review.marksTree">A fully viewed file turns grey in the tree and collapses its card; a directory shows a tick when all of its files are done.</li>
-          <li data-i18n="docs.review.marksKeep">Expanding a card again does not undo the mark.</li>
+          <li data-i18n="docs.review.marksFile">Marking a file marks its hunks.</li>
+          <li data-i18n="docs.review.marksTree">A viewed file greys out and collapses.</li>
         </ul>
       </section>
 
       <section class="doc-section" id="symbols">
-        <h2 data-i18n="docs.symbols.title">4. The symbol panel</h2>
-        <p data-i18n="docs.symbols.body">Click any identifier in the diff. The left panel lists every place that word appears and jumps there when you pick a row.</p>
+        <h2 data-i18n="docs.symbols.title">4. Symbols</h2>
+        <p data-i18n="docs.symbols.body">Click an identifier to list every place it appears.</p>
 
         <div class="callout">
-          <p><strong data-i18n="docs.symbols.scopeTitle">Scope.</strong> <span data-i18n="docs.symbols.scopeBody">Every changed file in the current comparison, both sides. This is not a repository index, and it is not a language server: nothing is resolved, indexed or installed.</span></p>
+          <p><strong data-i18n="docs.symbols.scopeTitle">Scope:</strong> <span data-i18n="docs.symbols.scopeBody">changed files of this comparison, both sides. No index, no language server.</span></p>
         </div>
 
         <h3 id="symbols-usage" data-i18n="docs.symbols.usageTitle">How to use it</h3>
         <ol class="steps">
-          <li data-i18n="docs.symbols.step1">Click a word in the code. The panel opens with the word it picked up.</li>
-          <li data-i18n="docs.symbols.step2">Rows are grouped by file. Each row shows a line number and one of three colours: added, removed or context.</li>
-          <li data-i18n="docs.symbols.step3">Click a row to move the diff view to that line.</li>
-          <li data-i18n="docs.symbols.step4">Whole-word matching is on by default, so `hit` does not match `hits`. Toggle the case switch when the case matters.</li>
+          <li data-i18n="docs.symbols.step1">Click a word to open the panel.</li>
+          <li data-i18n="docs.symbols.step2">Rows group by file, with a line number and one of three colours.</li>
+          <li data-i18n="docs.symbols.step3">Click a row to jump to that line.</li>
+          <li data-i18n="docs.symbols.step4">Whole word by default: `hit` does not match `hits`.</li>
         </ol>
 
-        <p data-i18n="docs.symbols.scale">The list is not truncated to one screen: the workbench screenshot shows `$hit` returning 1457 references inside a single comparison. Large counts are exactly what this panel is for, because a plain-text match over the changed files needs no symbol resolution.</p>
-
-        <p class="note" data-i18n="docs.symbols.note">The same search engine backs `Ctrl`+`F`, so the rows and colours match the global search exactly.</p>
+        <p data-i18n="docs.symbols.scale">`$hit` returned 1457 rows in one comparison.</p>
       </section>
 
       <section class="doc-section" id="export">
         <h2 data-i18n="docs.export.title">5. Export</h2>
-        <p data-i18n="docs.export.body">The submit menu has two rows. Each one copies to the clipboard or saves a file.</p>
+        <p data-i18n="docs.export.body">Two rows: copy to the clipboard or save a file.</p>
         <ul class="bullets">
-          <li data-i18n="docs.export.markdown">Markdown: comments with path, side, line numbers, and the quoted code under each one.</li>
-          <li data-i18n="docs.export.json">JSON: the full document, for tools that read it.</li>
-          <li data-i18n="docs.export.shortcut">`Ctrl`+`Enter` or `Cmd`+`Enter` copies Markdown without opening the menu. It stays quiet while the focus is in an input or a dialog.</li>
-          <li data-i18n="docs.export.usage">Paste the result into Claude Code, Codex or pi. Nothing is submitted automatically.</li>
+          <li data-i18n="docs.export.markdown">Markdown: path, side, line, quoted code.</li>
+          <li data-i18n="docs.export.json">JSON: the full document.</li>
+          <li data-i18n="docs.export.shortcut">`Ctrl`+`Enter` copies Markdown without the menu.</li>
+          <li data-i18n="docs.export.usage">Paste into Claude Code, Codex or pi. Nothing is sent.</li>
         </ul>
         <div class="codeblock">
           <div class="codeblock__head">
@@ -219,27 +215,26 @@ intentflow --no-open --base main</code></pre>
 ### 1. internal/store/store.go · R15
 &gt; query = fmt.Sprintf("SELECT id FROM users WHERE name LIKE '%%%s%%'", name)
 
-User input is concatenated into SQL. Use a parameterised query: WHERE name LIKE ?, and pass the wildcard as a parameter.
+Concatenated SQL. Use a parameterised query.
 
 ### 2. Overall
-This change replaces parameterised queries with string concatenation. I would revert it.</code></pre>
+Revert the string concatenation.</code></pre>
         </div>
       </section>
 
       <section class="doc-section" id="data">
         <h2 data-i18n="docs.data.title">6. Where reviews live</h2>
-        <p data-i18n="docs.data.body">The server keeps no review state. Everything below is written by the browser.</p>
         <ul class="bullets">
-          <li data-i18n="data.reviews">Reviews live in browser localStorage, under the key `intentflow.review.&lt;comparison_id&gt;`.</li>
-          <li data-i18n="data.images">Comment images are inline data URLs, up to 1.5MB each, stored with the review.</li>
-          <li data-i18n="data.layout">Layout preferences use the `intentflow.` prefix in localStorage.</li>
-          <li data-i18n="data.server">The server writes no files. Closing it loses nothing.</li>
+          <li data-i18n="data.reviews">Reviews: `localStorage`, key `intentflow.review.&lt;comparison_id&gt;`.</li>
+          <li data-i18n="data.images">Images: inline data URLs, up to 1.5MB each.</li>
+          <li data-i18n="data.layout">Layout preferences: the same store, `intentflow.` prefix.</li>
+          <li data-i18n="data.server">The server writes no files.</li>
         </ul>
       </section>
 
       <section class="doc-section" id="build">
-        <h2 data-i18n="docs.build.title">7. Build from source</h2>
-        <p data-i18n="docs.build.body">Build needs Go 1.24 or later, pnpm and git. `schema/openapi.yaml` is the only data contract; the Go and TypeScript type files are both generated from it.</p>
+        <h2 data-i18n="docs.build.title">7. Build</h2>
+        <p data-i18n="docs.build.body">Go 1.24+, pnpm and git. `schema/openapi.yaml` generates both sides.</p>
         <div class="codeblock">
           <div class="codeblock__head">
             <span class="mono">make</span>
@@ -251,19 +246,18 @@ make check          # go vet, Go tests, tsc, Vitest
 make build          # frontend build and static binary
 make release-check  # cross-compile the six release targets</code></pre>
         </div>
-        <p class="note" data-i18n="docs.build.site">The website is plain files: `make site` serves it on port 8131, `make site-check` validates it.</p>
+        <p class="note" data-i18n="docs.build.site">No binary yet? Run `./scripts/build.sh`. Site: `make site`, port 8131.</p>
       </section>
 
       <section class="doc-section" id="design">
         <h2 data-i18n="docs.design.title">8. Design documents</h2>
-        <p data-i18n="docs.design.body">The thesis, the layer model, the contract rules and the review platform notes live in `docs/`.</p>
         <ul class="bullets">
           <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/00-thesis.md"><code>docs/00-thesis.md</code></a> — <span data-i18n="docs.design.thesis">code cannot express intent</span></li>
-          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/02-layers.md"><code>docs/02-layers.md</code></a> — <span data-i18n="docs.design.layers">the three layers and their identity keys</span></li>
-          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/05-frontend.md"><code>docs/05-frontend.md</code></a> — <span data-i18n="docs.design.frontend">workbench layout and interaction</span></li>
-          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/07-behavior-model.md"><code>docs/07-behavior-model.md</code></a> — <span data-i18n="docs.design.behavior">behaviour view and diff rules</span></li>
-          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/08-contract.md"><code>docs/08-contract.md</code></a> — <span data-i18n="docs.design.contract">one OpenAPI definition, generated on both sides</span></li>
-          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/10-release.md"><code>docs/10-release.md</code></a> — <span data-i18n="docs.design.release">version, artifacts and checksums</span></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/02-layers.md"><code>docs/02-layers.md</code></a> — <span data-i18n="docs.design.layers">the three layers</span></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/05-frontend.md"><code>docs/05-frontend.md</code></a> — <span data-i18n="docs.design.frontend">workbench layout</span></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/07-behavior-model.md"><code>docs/07-behavior-model.md</code></a> — <span data-i18n="docs.design.behavior">behaviour view</span></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/08-contract.md"><code>docs/08-contract.md</code></a> — <span data-i18n="docs.design.contract">one schema, both languages</span></li>
+          <li><a href="https://github.com/wlingze/intentflow/blob/master/docs/10-release.md"><code>docs/10-release.md</code></a> — <span data-i18n="docs.design.release">artifacts and checksums</span></li>
         </ul>
       </section>
 
@@ -282,7 +276,7 @@ make release-check  # cross-compile the six release targets</code></pre>
         <a href="https://github.com/wlingze/intentflow/releases" data-i18n="footer.releases">Releases</a>
         <a href="https://github.com/wlingze/intentflow/blob/master/LICENSE" data-i18n="footer.license">Apache-2.0</a>
       </nav>
-      <p data-i18n="footer.note">Static site: no build step, no analytics, no third-party requests.</p>
+      <p data-i18n="footer.note">No analytics, no third-party requests.</p>
     </div>
   </footer>
 
