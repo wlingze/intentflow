@@ -72,6 +72,26 @@ intentflow version
 
 构建依赖 Go 1.24+、pnpm、Git；运行只依赖 Git。
 
+## 更新
+
+已安装的二进制自己升级，不用重新下载解压：
+
+```bash
+intentflow update                  # 升级到最新 release
+intentflow update --check          # 只看当前与最新版本，不下载
+intentflow update --version v0.2.0 # 装指定版本
+intentflow update --force          # 同版本也重装
+intentflow update --repo me/fork   # 从 fork 的 release 升级
+```
+
+- 按 `runtime.GOOS` / `GOARCH` 选资产，只认 release.yml 产出的六个平台压缩包。
+- 下载 `checksums.txt` 并校验 sha256；不匹配立即中止，磁盘不改动。
+- 先写同目录临时文件、`chmod 0755`，再 `rename` 覆盖。Windows 先把旧文件改名，失败回滚。
+- 完成后打印旧版本 → 新版本。
+- `--check` 退出码：已是最新 `0`，有新版本 `2`，出错 `1`。
+- 代理走环境变量 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`。
+- 设置 `GITHUB_TOKEN`（或 `GH_TOKEN`）可避免 API 限流；token 只发给 API，不打印。
+
 ## 用法
 
 ### 1. 启动
