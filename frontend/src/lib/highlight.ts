@@ -1,10 +1,247 @@
-const KEYWORDS = new Set([
-  'break', 'case', 'chan', 'const', 'continue', 'default', 'defer', 'else',
-  'fallthrough', 'for', 'func', 'go', 'goto', 'if', 'import', 'interface',
-  'map', 'package', 'range', 'return', 'select', 'struct', 'switch', 'type', 'var',
-]);
+import hljs from 'highlight.js/lib/core';
+import c from 'highlight.js/lib/languages/c';
+import cmake from 'highlight.js/lib/languages/cmake';
+import cpp from 'highlight.js/lib/languages/cpp';
+import csharp from 'highlight.js/lib/languages/csharp';
+import css from 'highlight.js/lib/languages/css';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import go from 'highlight.js/lib/languages/go';
+import groovy from 'highlight.js/lib/languages/groovy';
+import ini from 'highlight.js/lib/languages/ini';
+import java from 'highlight.js/lib/languages/java';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import kotlin from 'highlight.js/lib/languages/kotlin';
+import lua from 'highlight.js/lib/languages/lua';
+import makefile from 'highlight.js/lib/languages/makefile';
+import markdown from 'highlight.js/lib/languages/markdown';
+import php from 'highlight.js/lib/languages/php';
+import protobuf from 'highlight.js/lib/languages/protobuf';
+import python from 'highlight.js/lib/languages/python';
+import ruby from 'highlight.js/lib/languages/ruby';
+import rust from 'highlight.js/lib/languages/rust';
+import scala from 'highlight.js/lib/languages/scala';
+import scss from 'highlight.js/lib/languages/scss';
+import shell from 'highlight.js/lib/languages/bash';
+import sql from 'highlight.js/lib/languages/sql';
+import swift from 'highlight.js/lib/languages/swift';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
+import yaml from 'highlight.js/lib/languages/yaml';
+import type { LanguageFn } from 'highlight.js';
 
-const LITERALS = new Set(['nil', 'true', 'false', 'iota']);
+export interface EmphasisRange { start: number; end: number }
+
+// Only these grammars are ever registered, so the bundle stays proportional to
+// the languages the diff can actually show. A missing id renders as plain text.
+const GRAMMARS: Record<string, LanguageFn> = {
+  // XML must exist before the JS/TS grammars compile their JSX sub-language.
+  xml,
+  c,
+  cpp,
+  csharp,
+  go,
+  rust,
+  java,
+  kotlin,
+  scala,
+  python,
+  javascript,
+  typescript,
+  php,
+  ruby,
+  swift,
+  lua,
+  shell,
+  sql,
+  yaml,
+  json,
+  toml: ini,
+  css,
+  scss,
+  markdown,
+  docker: dockerfile,
+  makefile,
+  cmake,
+  groovy,
+  protobuf,
+};
+
+// Backend language ids win; these aliases only smooth over extension-like ids.
+const ALIASES: Record<string, string> = {
+  'c++': 'cpp',
+  cxx: 'cpp',
+  hpp: 'cpp',
+  'c#': 'csharp',
+  cs: 'csharp',
+  golang: 'go',
+  rs: 'rust',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  py: 'python',
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  sh: 'shell',
+  bash: 'shell',
+  zsh: 'shell',
+  shellscript: 'shell',
+  yml: 'yaml',
+  md: 'markdown',
+  dockerfile: 'docker',
+  make: 'makefile',
+  mk: 'makefile',
+  cmakelists: 'cmake',
+  proto: 'protobuf',
+  htm: 'xml',
+  html: 'xml',
+  xhtml: 'xml',
+  sass: 'scss',
+  gradle: 'groovy',
+  'gradle-kts': 'kotlin',
+};
+
+function normalizeLanguage(language?: string): string {
+  const key = language?.trim().toLowerCase() ?? '';
+  return ALIASES[key] ?? key;
+}
+
+type TokenClass = 'tok-comment' | 'tok-string' | 'tok-number' | 'tok-keyword' | 'tok-literal';
+
+interface Span { start: number; end: number; cls: TokenClass }
+
+// Map highlight.js scopes onto the five colours already defined in global.css.
+// Containers (function, class, params, punctuation) stay unstyled; the text
+// inside them is painted by the inner scope.
+const SCOPES: Record<string, TokenClass | undefined> = {
+  'hljs-keyword': 'tok-keyword',
+  'hljs-built_in': 'tok-keyword',
+  'hljs-type': 'tok-keyword',
+  'hljs-title': 'tok-keyword',
+  'hljs-section': 'tok-keyword',
+  'hljs-tag': 'tok-keyword',
+  'hljs-name': 'tok-keyword',
+  'hljs-selector-tag': 'tok-keyword',
+  'hljs-attribute': 'tok-keyword',
+  'hljs-meta-keyword': 'tok-keyword',
+  'hljs-string': 'tok-string',
+  'hljs-regexp': 'tok-string',
+  'hljs-code': 'tok-string',
+  'hljs-formula': 'tok-string',
+  'hljs-comment': 'tok-comment',
+  'hljs-quote': 'tok-comment',
+  'hljs-doctag': 'tok-comment',
+  'hljs-meta': 'tok-comment',
+  'hljs-number': 'tok-number',
+  'hljs-literal': 'tok-literal',
+  'hljs-symbol': 'tok-literal',
+  'hljs-bullet': 'tok-literal',
+  'hljs-link': 'tok-literal',
+  'hljs-attr': 'tok-literal',
+  'hljs-property': 'tok-literal',
+  'hljs-variable': 'tok-literal',
+  'hljs-template-variable': 'tok-literal',
+  'hljs-selector-class': 'tok-literal',
+  'hljs-selector-id': 'tok-literal',
+  'hljs-emphasis': 'tok-literal',
+  'hljs-strong': 'tok-literal',
+  'hljs-addition': 'tok-literal',
+  'hljs-deletion': 'tok-comment',
+};
+
+const ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#x27;': "'",
+  '&#39;': "'",
+};
+
+function decode(text: string): string {
+  return text.replace(/&(?:amp|lt|gt|quot|#x27|#39);/g, (entity) => ENTITIES[entity] ?? entity);
+}
+
+function scopeClass(attribute: string): TokenClass | undefined {
+  for (const name of attribute.split(/\s+/)) {
+    const cls = SCOPES[name];
+    if (cls) return cls;
+  }
+  return undefined;
+}
+
+/**
+ * highlight.js returns flat text plus nested <span class="hljs-..."> nodes.
+ * Walk it once to recover character offsets, then paint with our own colours.
+ * If the shape is unexpected, return null so the caller can fall back to text.
+ */
+function readSpans(html: string, code: string): Span[] | null {
+  const spans: Span[] = [];
+  const stack: Array<TokenClass | undefined> = [];
+  let offset = 0;
+  for (const match of html.matchAll(/<span class="([^"]*)">|<\/span>|([^<]+)/g)) {
+    if (match[1] !== undefined) {
+      stack.push(scopeClass(match[1]));
+      continue;
+    }
+    if (match[0] === '</span>') {
+      stack.pop();
+      continue;
+    }
+    const text = decode(match[2]);
+    if (text) {
+      const lead = text.length - text.trimStart().length;
+      const trail = text.length - text.trimEnd().length;
+      const start = offset + lead;
+      const end = offset + text.length - trail;
+      const cls = [...stack].reverse().find(Boolean);
+      if (cls && end > start) {
+        const last = spans.at(-1);
+        // Adjacent scopes (tag < + name project) read as one token.
+        if (last && last.end === start && last.cls === cls) last.end = end;
+        else spans.push({ start, end, cls });
+      }
+      offset += text.length;
+    }
+  }
+  return offset === code.length ? spans : null;
+}
+
+const CACHE_LIMIT = 4000;
+const cache = new Map<string, Span[]>();
+
+// Importing is on demand; registering is cheap and must be complete before the
+// first highlight so JSX can resolve its XML sub-language.
+for (const [id, grammar] of Object.entries(GRAMMARS)) hljs.registerLanguage(id, grammar);
+
+function spansFor(code: string, language?: string): Span[] {
+  const id = normalizeLanguage(language);
+  const grammar = GRAMMARS[id];
+  if (!grammar || !code) return [];
+  const key = `${id}\u0000${code}`;
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  let spans: Span[] = [];
+  try {
+    const result = hljs.highlight(code, { language: id, ignoreIllegals: true });
+    spans = readSpans(result.value, code) ?? [];
+  } catch {
+    spans = [];
+  }
+  cache.set(key, spans);
+  if (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  return spans;
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -15,112 +252,72 @@ function escapeHtml(text: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function markText(text: string, word: string): string {
-  if (!word) return escapeHtml(text);
-  const token = /[\p{L}\p{N}_$]+/gu;
-  let out = '';
-  let last = 0;
-  for (const match of text.matchAll(token)) {
+const WORD = /[\p{L}\p{N}_$]+/gu;
+
+function ranges(text: string, word: string): EmphasisRange[] {
+  const out: EmphasisRange[] = [];
+  if (!word) return out;
+  for (const match of text.matchAll(WORD)) {
     if (match[0] !== word) continue;
-    const index = match.index ?? 0;
-    out += escapeHtml(text.slice(last, index));
-    out += `<mark>${escapeHtml(match[0])}</mark>`;
-    last = index + match[0].length;
-  }
-  return out + escapeHtml(text.slice(last));
-}
-
-export interface EmphasisRange { start: number; end: number }
-
-const GO_TOKEN = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|`[^`]*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-const WORD_TOKEN = /[\p{L}\p{N}_$]+/gu;
-
-function tokenClass(text: string): string {
-  if (text.startsWith('//') || text.startsWith('/*')) return 'tok-comment';
-  if (text.startsWith('"') || text.startsWith('`')) return 'tok-string';
-  if (KEYWORDS.has(text)) return 'tok-keyword';
-  if (LITERALS.has(text)) return 'tok-literal';
-  if (/^\d/.test(text)) return 'tok-number';
-  return '';
-}
-
-function paint(text: string, flags: (index: number) => { token: string; changed: boolean; word: boolean }): string {
-  let out = '';
-  let index = 0;
-  while (index < text.length) {
-    const current = flags(index);
-    let end = index + 1;
-    while (end < text.length) {
-      const next = flags(end);
-      if (next.token !== current.token || next.changed !== current.changed || next.word !== current.word) break;
-      end++;
-    }
-    let chunk = escapeHtml(text.slice(index, end));
-    if (current.word) chunk = `<mark>${chunk}</mark>`;
-    if (current.changed) chunk = `<span class="chg">${chunk}</span>`;
-    if (current.token) chunk = `<span class="${current.token}">${chunk}</span>`;
-    out += chunk;
-    index = end;
+    const start = match.index ?? 0;
+    out.push({ start, end: start + match[0].length });
   }
   return out;
 }
 
-/** Same shading, plus the exact characters that changed inside a line. */
-function highlightChanged(code: string, language: string | undefined, word: string, emphasis: EmphasisRange[]): string {
-  const tokens: string[] = new Array(code.length).fill('');
-  if (language === 'go') {
-    for (const match of code.matchAll(GO_TOKEN)) {
-      const start = match.index ?? 0;
-      const cls = tokenClass(match[0]);
-      if (!cls) continue;
-      for (let i = start; i < start + match[0].length; i++) tokens[i] = cls;
-    }
+function clip(code: string, rangesToClip: EmphasisRange[]): EmphasisRange[] {
+  const out: EmphasisRange[] = [];
+  for (const range of rangesToClip) {
+    const start = Math.max(0, Math.min(code.length, range.start));
+    const end = Math.max(0, Math.min(code.length, range.end));
+    if (end > start) out.push({ start, end });
   }
-  const changed: boolean[] = new Array(code.length).fill(false);
-  for (const range of emphasis) {
-    for (let i = Math.max(0, range.start); i < Math.min(code.length, range.end); i++) changed[i] = true;
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** Paint token spans, the selected word, and the changed characters in one pass. */
+function paint(code: string, spans: Span[], word: string, emphasis: EmphasisRange[]): string {
+  const changes = clip(code, emphasis);
+  const words = ranges(code, word);
+  const points = new Set<number>([0, code.length]);
+  const add = (value: number) => {
+    if (value > 0 && value < code.length) points.add(value);
+  };
+  for (const span of spans) {
+    add(span.start);
+    add(span.end);
   }
-  const marked: boolean[] = new Array(code.length).fill(false);
-  if (word) {
-    for (const match of code.matchAll(WORD_TOKEN)) {
-      if (match[0] !== word) continue;
-      const start = match.index ?? 0;
-      for (let i = start; i < start + match[0].length; i++) marked[i] = true;
-    }
+  for (const range of [...changes, ...words]) {
+    add(range.start);
+    add(range.end);
   }
-  return paint(code, (index) => ({ token: tokens[index], changed: changed[index], word: marked[index] }));
+  const marks = [...points].sort((a, b) => a - b);
+  let spanIndex = 0;
+  let changeIndex = 0;
+  let wordIndex = 0;
+  let out = '';
+  for (let i = 0; i < marks.length - 1; i++) {
+    const start = marks[i];
+    const end = marks[i + 1];
+    while (spanIndex < spans.length && spans[spanIndex].end <= start) spanIndex++;
+    const cls = spanIndex < spans.length && spans[spanIndex].start <= start ? spans[spanIndex].cls : undefined;
+    while (changeIndex < changes.length && changes[changeIndex].end <= start) changeIndex++;
+    const changed = changeIndex < changes.length && changes[changeIndex].start <= start && changes[changeIndex].end >= end;
+    while (wordIndex < words.length && words[wordIndex].end <= start) wordIndex++;
+    const marked = wordIndex < words.length && words[wordIndex].start <= start && words[wordIndex].end >= end;
+    let chunk = escapeHtml(code.slice(start, end));
+    if (marked) chunk = `<mark>${chunk}</mark>`;
+    if (changed) chunk = `<span class="chg">${chunk}</span>`;
+    if (cls) chunk = `<span class="${cls}">${chunk}</span>`;
+    out += chunk;
+  }
+  return out;
 }
 
 /**
- * 轻量 Go 高亮。只做词法级着色，不追求完整语法树。
- * 输入先分词再转义，避免把代码注入 HTML。
+ * 语法着色使用 highlight.js；只注册需要的语言，未注册的 id 退化为纯文本。
+ * 选词 <mark> 与行内改动的 .chg 在同一遍里叠加，转义始终发生在注入之前。
  */
 export function highlight(code: string, language?: string, word = '', emphasis: EmphasisRange[] = []): string {
-  if (emphasis.length) return highlightChanged(code, language, word, emphasis);
-  if (language !== 'go') return markText(code, word);
-
-  const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|`[^`]*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
-  let out = '';
-  let last = 0;
-  for (const match of code.matchAll(token)) {
-    const index = match.index ?? 0;
-    out += markText(code.slice(last, index), word);
-    const text = match[0];
-    if (text.startsWith('//') || text.startsWith('/*')) {
-      out += `<span class="tok-comment">${markText(text, word)}</span>`;
-    } else if (text.startsWith('"') || text.startsWith('`')) {
-      out += `<span class="tok-string">${markText(text, word)}</span>`;
-    } else if (KEYWORDS.has(text)) {
-      out += `<span class="tok-keyword">${markText(text, word)}</span>`;
-    } else if (LITERALS.has(text)) {
-      out += `<span class="tok-literal">${markText(text, word)}</span>`;
-    } else if (/^\d/.test(text)) {
-      out += `<span class="tok-number">${markText(text, word)}</span>`;
-    } else {
-      out += markText(text, word);
-    }
-    last = index + text.length;
-  }
-  out += markText(code.slice(last), word);
-  return out;
+  return paint(code, spansFor(code, language), word, emphasis);
 }

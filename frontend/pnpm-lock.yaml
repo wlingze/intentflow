@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      highlight.js:
+        specifier: ^11.12.0
+        version: 11.12.0
       material-file-icons:
         specifier: 2.4.0
         version: 2.4.0
@@ -621,6 +624,10 @@ packages:
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
+
+  highlight.js@11.12.0:
+    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
+    engines: {node: '>=12.0.0'}
 
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
@@ -1407,6 +1414,8 @@ snapshots:
     optional: true
 
   gensync@1.0.0-beta.2: {}
+
+  highlight.js@11.12.0: {}
 
   https-proxy-agent@7.0.6(supports-color@10.2.2):
     dependencies:

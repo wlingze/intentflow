@@ -279,9 +279,24 @@ var languages = map[string]string{
 	".h":      "c",
 	".cc":     "cpp",
 	".cpp":    "cpp",
+	".cxx":    "cpp",
 	".hpp":    "cpp",
+	".cs":     "csharp",
 	".sh":     "shell",
+	".bash":   "shell",
+	".zsh":    "shell",
 	".sql":    "sql",
+	".swift":  "swift",
+	".rb":     "ruby",
+	".php":    "php",
+	".scala":  "scala",
+	".lua":    "lua",
+	".cmake":  "cmake",
+	".gradle": "groovy",
+	".kts":    "kotlin",
+	".tf":     "hcl",
+	".tfvars": "hcl",
+	".mk":     "makefile",
 	".proto":  "protobuf",
 	".txt":    "text",
 	".xml":    "xml",
@@ -289,16 +304,18 @@ var languages = map[string]string{
 }
 
 func languageOf(p string) string {
-	ext := strings.ToLower(filepath.Ext(p))
-	if lang, ok := languages[ext]; ok {
-		return lang
-	}
 	base := strings.ToLower(filepath.Base(p))
 	switch base {
 	case "dockerfile":
 		return "docker"
 	case "makefile":
 		return "makefile"
+	case "cmakelists.txt":
+		return "cmake"
+	}
+	ext := strings.ToLower(filepath.Ext(p))
+	if lang, ok := languages[ext]; ok {
+		return lang
 	}
 	if ext == "" {
 		return "text"
