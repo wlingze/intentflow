@@ -216,6 +216,7 @@ make schema   # schema/openapi.yaml → Go + TypeScript 类型
 make check    # go vet、Go 测试、tsc、Vitest
 make build    # 前端构建 + 静态二进制
 make e2e      # 真实布局下的滚动、行内标记、跳转检查
+make e2e-tree # 文件树展开结构（脚本自己启动工作台）
 make release-check  # 六个平台交叉编译验证
 make site     # 官网本地预览，http://127.0.0.1:8131/
 ```
@@ -226,6 +227,8 @@ make site     # 官网本地预览，http://127.0.0.1:8131/
 make serve                 # 用 examples/demo-go 启动
 make e2e E2E_URL=http://127.0.0.1:8123
 ```
+
+`make e2e-tree` 用 `scripts/e2e/fixtures/tree` 的固定目录对，先 `make build` 再运行。
 
 `schema/openapi.yaml` 是唯一数据契约，两侧类型都由它生成。
 

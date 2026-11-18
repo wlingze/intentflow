@@ -7,10 +7,11 @@ DEMO_AFTER ?= examples/demo-go/after
 DEMO_OUT ?= examples/demo-go/out
 ADDR ?= 127.0.0.1:8123
 E2E_URL ?= http://127.0.0.1:8123
+TREE_BIN ?= bin/intentflow
 # e2e 需要 Playwright。NODE_PATH 指向全局安装的包，没有就退回本地解析。
 PLAYWRIGHT_PATH ?= $(HOME)/.local/lib/node_modules/@playwright/cli/node_modules
 
-.PHONY: tools schema frontend build check e2e demo serve release-check site site-check clean
+.PHONY: tools schema frontend build check e2e e2e-tree demo serve release-check site site-check clean
 
 # 一次性安装生成器。oapi-codegen 固定在 v2.4.1，避免生成物漂移。
 tools:
@@ -38,6 +39,10 @@ check:
 # 需要已启动的服务，以及 Playwright（全局或本地安装均可，用 PLAYWRIGHT_PATH 覆盖）。
 e2e:
 	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/render.mjs $(E2E_URL)
+
+# 文件树默认展开：脚本自己用固定夹具起一个工作台，不需要预先启动服务。
+e2e-tree:
+	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/tree.mjs $(TREE_BIN)
 
 # 生成 demo 的 review.json。
 demo:
