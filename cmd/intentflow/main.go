@@ -3,8 +3,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,12 +25,23 @@ import (
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var status *exitStatus
+		if errors.As(err, &status) {
+			os.Exit(status.code)
+		}
 		fmt.Fprintln(os.Stderr, "intentflow:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "-help", "help":
+			usage()
+			return nil
+		}
+	}
 	command := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command, args = args[0], args[1:]
@@ -38,11 +51,10 @@ func run(args []string) error {
 		return runServe(args)
 	case "diff":
 		return runDiff(args)
+	case "update":
+		return runUpdate(args)
 	case "version", "--version", "-version":
 		fmt.Println(version.String())
-		return nil
-	case "help", "--help", "-h":
-		usage()
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", command)
@@ -50,11 +62,16 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `intentflow — 本地 diff + PR review
+	usageTo(os.Stderr)
+}
+
+func usageTo(w io.Writer) {
+	fmt.Fprint(w, `intentflow — 本地 diff + PR review
 
   intentflow -t . --base main
   intentflow -t . --head WORKTREE
   intentflow diff -t . --base main
+  intentflow update [--check] [--version v0.2.0] [--force] [--repo owner/name]
   intentflow version
 
   --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
@@ -65,6 +82,10 @@ func usage() {
   --port         默认由系统分配空闲端口
   --before/after 目录比较
   --dist         覆盖内嵌前端，仅调试用
+
+  update --check     只打印当前与最新版本；有新版本时退出码 2
+  update --version   安装指定版本；--force 同版本也重装
+  update --repo      release 仓库，默认 wlingze/intentflow
 `)
 }
 
