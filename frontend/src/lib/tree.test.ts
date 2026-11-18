@@ -1,10 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { allDirs, buildTree, countFiles, countViewed, dirAncestors, flattenTree } from './tree';
+import { allDirs, autoExpanded, buildTree, countFiles, countViewed, dirAncestors, flattenTree } from './tree';
 import type { CodeFile, CodeStatus } from '../types';
 
 function file(path: string, status: CodeStatus = 'modified'): CodeFile {
   return { path, status, language: 'go', before: '', after: '' };
 }
+
+describe('default expansion', () => {
+  const treeOf = (paths: string[]) => buildTree(paths.map((path) => file(path)), true);
+
+  it('opens a single-directory chain down to the first level with files', () => {
+    const tree = treeOf([
+      'common/yak/reify/README.md',
+      'common/yak/reify/reify.go',
+      'common/yak/reify/cmd/reify/main.go',
+      'common/yak/reify/core/engine.go',
+    ]);
+    expect([...autoExpanded(tree)].sort()).toEqual(['common', 'common/yak', 'common/yak/reify']);
+  });
+
+  it('leaves several top-level directories closed', () => {
+    expect([...autoExpanded(treeOf(['cmd/main.go', 'docs/a.md', 'README.md']))]).toEqual([]);
+  });
+
+  it('opens a directory with direct files and leaves its branches closed', () => {
+    expect([...autoExpanded(treeOf(['src/main.go', 'src/lib/a.go']))]).toEqual(['src']);
+  });
+
+  it('stays closed at a branch point without files', () => {
+    expect([...autoExpanded(treeOf(['src/a/one.go', 'src/b/two.go']))]).toEqual([]);
+  });
+
+  it('expands nothing when there are no files', () => {
+    expect(autoExpanded([])).toEqual(new Set<string>());
+  });
+});
 
 describe('sidebar order', () => {
   it('flattens to directories first, then names, at each level', () => {
