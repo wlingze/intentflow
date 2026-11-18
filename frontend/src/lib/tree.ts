@@ -64,6 +64,27 @@ export function dirAncestors(path: string): string[] {
   return dirs;
 }
 
+/**
+ * Directories open on first load: follow a single-directory chain down to the
+ * first level that holds changed files. The directory with files opens, its
+ * branches stay closed. A branch point without files is ambiguous, so it stays
+ * closed too.
+ */
+export function autoExpanded(nodes: TreeNode[]): Set<string> {
+  const open = new Set<string>();
+  let level = nodes;
+  while (level.length === 1 && level[0].type === 'dir') {
+    const dir = level[0];
+    const hasFiles = dir.children.some((child) => child.type === 'file');
+    const dirs = dir.children.filter((child): child is TreeDir => child.type === 'dir');
+    if (!hasFiles && dirs.length !== 1) break;
+    open.add(dir.path);
+    if (hasFiles) break;
+    level = dirs;
+  }
+  return open;
+}
+
 // Every directory path in the tree; used by expand/collapse-all.
 export function allDirs(nodes: TreeNode[]): Set<string> {
   const dirs = new Set<string>();
