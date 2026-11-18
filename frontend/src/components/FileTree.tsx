@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { allDirs, buildTree, countChanged, countFiles, countViewed, dirAncestors, fileRowTone, type TreeNode } from '../lib/tree';
+import { initialExpanded, saveTreeOpen, toggleDir } from '../lib/treeExpand';
 import { useApp, useAppDispatch } from '../state/AppProvider';
 import { useReviewData } from '../state/selectors';
 import type { DiffStats } from '../lib/diff';
@@ -61,7 +62,7 @@ function FileRows({ nodes, stats, digests, viewed, commentCounts, expanded, onTo
               open={expanded.has(node.path)}
               onToggle={(event) => onToggle(node.path, event.currentTarget.open)}
             >
-              <summary className={`${styles.dirRow} ${allViewed ? styles.dirRowDone : ''}`} style={{ paddingLeft: 6 + depth * 12 }}>
+              <summary data-tree-dir={node.path} className={`${styles.dirRow} ${allViewed ? styles.dirRowDone : ''}`} style={{ paddingLeft: 6 + depth * 12 }}>
                 <IconChevronRight className={styles.chevron} width={12} height={12} />
                 <IconFolder width={13} height={13} className={styles.folder} />
                 <span className={styles.dirName}>{node.name}</span>
@@ -145,7 +146,7 @@ function collectStats(nodes: TreeNode[], stats: Map<string, DiffStats>): { adds:
 }
 
 export function FileTree() {
-  const { viewed, comments, code, treeFocus } = useApp();
+  const { viewed, comments, code, treeFocus, payload } = useApp();
   const { files, stats, digests } = useReviewData();
   const commentCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -156,40 +157,55 @@ export function FileTree() {
     return counts;
   }, [comments]);
   const [filter, setFilter] = useState('');
-  // Directories start collapsed; jumps and filtering open what is needed.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // Last manual layout of this diff; null until a folder is opened or closed.
+  const [manual, setManual] = useState<{ comparison: string; dirs: Set<string> } | null>(null);
   const [flash, setFlash] = useState('');
   const scroller = useRef<HTMLDivElement>(null);
+  const comparison = payload?.session.context.comparison_id ?? '';
+  const baseTree = useMemo(() => buildTree(files, true), [files]);
+  const seeded = useMemo(() => initialExpanded(comparison, baseTree), [comparison, baseTree]);
   const tree = useMemo(
     () => buildTree(files.filter((file) => file.path.toLowerCase().includes(filter.toLowerCase())), true),
     [files, filter],
   );
-  const totals = collectStats(buildTree(files, true), stats);
+  const totals = collectStats(baseTree, stats);
   const visibleDirs = useMemo(() => filter ? allDirs(tree) : null, [filter, tree]);
+  const expanded = manual?.comparison === comparison ? manual.dirs : seeded;
   const open = visibleDirs ?? expanded;
   const dirs = useMemo(() => allDirs(tree), [tree]);
   const allOpen = dirs.size > 0 && [...dirs].every((dir) => expanded.has(dir));
 
-  const toggleAll = () => setExpanded((prev) => {
-    const list = allDirs(tree);
-    const every = list.size > 0 && [...list].every((dir) => prev.has(dir));
-    return every ? new Set<string>() : list;
-  });
+  // Every tree change goes through here, so a reload restores the last layout.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const applyOpen = (update: (prev: Set<string>) => Set<string>) => {
+    const prev = expandedRef.current;
+    const next = update(prev);
+    if (next === prev) return;
+    expandedRef.current = next;
+    saveTreeOpen(comparison, next);
+    setManual({ comparison, dirs: next });
+  };
 
-  const onToggle = (path: string, isOpen: boolean) => setExpanded((prev) => {
-    if (prev.has(path) === isOpen) return prev;
-    const next = new Set(prev);
-    if (isOpen) next.add(path);
-    else next.delete(path);
-    return next;
-  });
+  const toggleAll = () => {
+    const list = allDirs(tree);
+    const every = list.size > 0 && [...list].every((dir) => expanded.has(dir));
+    applyOpen(() => (every ? new Set<string>() : list));
+  };
+
+  const onToggle = (path: string, isOpen: boolean) => {
+    // While filtering, the filter decides what is open; a click there must not
+    // overwrite the remembered layout.
+    if (filter) return;
+    applyOpen((prev) => toggleDir(prev, path, isOpen));
+  };
 
   // 「在文件列表定位」从 diff 卡片跳到左栏：清掉过滤词、展开祖先目录、闪一下行。
   useEffect(() => {
     if (!treeFocus) return;
     setFilter('');
     const ancestors = dirAncestors(treeFocus.path);
-    setExpanded((prev) => {
+    applyOpen((prev) => {
       if (ancestors.every((dir) => prev.has(dir))) return prev;
       const next = new Set(prev);
       for (const dir of ancestors) next.add(dir);
@@ -198,7 +214,7 @@ export function FileTree() {
     setFlash(treeFocus.path);
     const timer = window.setTimeout(() => setFlash(''), 1600);
     return () => window.clearTimeout(timer);
-  }, [treeFocus]);
+  }, [treeFocus, comparison]);
 
   useEffect(() => {
     if (!flash) return;
@@ -212,13 +228,13 @@ export function FileTree() {
     if (!reveal) return;
     const dirs = dirAncestors(reveal);
     if (!dirs.length) return;
-    setExpanded((prev) => {
+    applyOpen((prev) => {
       if (dirs.every((dir) => prev.has(dir))) return prev;
       const next = new Set(prev);
       for (const dir of dirs) next.add(dir);
       return next;
     });
-  }, [reveal, code.revealToken]);
+  }, [reveal, code.revealToken, comparison]);
 
   return (
     <div className={styles.panel}>
