@@ -28,12 +28,62 @@ const LANGUAGE = {
   '.json': 'json',
   '.yaml': 'yaml',
   '.yml': 'yaml',
+  '.toml': 'toml',
   '.ts': 'typescript',
   '.tsx': 'tsx',
   '.js': 'javascript',
+  '.jsx': 'jsx',
+  '.mjs': 'javascript',
+  '.cjs': 'javascript',
   '.css': 'css',
+  '.scss': 'scss',
   '.html': 'html',
+  '.c': 'c',
+  '.h': 'c',
+  '.cc': 'cpp',
+  '.cpp': 'cpp',
+  '.cxx': 'cpp',
+  '.hpp': 'cpp',
+  '.cs': 'csharp',
+  '.rs': 'rust',
+  '.java': 'java',
+  '.kt': 'kotlin',
+  '.kts': 'kotlin',
+  '.scala': 'scala',
+  '.py': 'python',
+  '.php': 'php',
+  '.rb': 'ruby',
+  '.swift': 'swift',
+  '.lua': 'lua',
+  '.sh': 'shell',
+  '.bash': 'shell',
+  '.zsh': 'shell',
+  '.sql': 'sql',
+  '.xml': 'xml',
+  '.cmake': 'cmake',
+  '.gradle': 'groovy',
+  '.tf': 'hcl',
+  '.tfvars': 'hcl',
+  '.mk': 'makefile',
+  '.proto': 'protobuf',
+  '.txt': 'text',
+  '.docker': 'docker',
 };
+
+// Keep this in sync with languageOf in internal/payload/payload.go.
+const FILENAMES = {
+  dockerfile: 'docker',
+  makefile: 'makefile',
+  'cmakelists.txt': 'cmake',
+};
+
+function languageOf(rel) {
+  const base = path.basename(rel).toLowerCase();
+  if (FILENAMES[base]) return FILENAMES[base];
+  const ext = path.extname(rel).toLowerCase();
+  if (LANGUAGE[ext]) return LANGUAGE[ext];
+  return ext ? ext.slice(1) : 'text';
+}
 
 async function walk(root) {
   const out = new Map();
@@ -86,7 +136,7 @@ async function main() {
     files.push({
       path: rel,
       status: statusOf(beforeText, afterText),
-      language: LANGUAGE[path.extname(rel)] ?? 'text',
+      language: languageOf(rel),
       before: beforeText ?? '',
       after: afterText ?? '',
     });
