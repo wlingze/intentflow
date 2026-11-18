@@ -167,6 +167,65 @@ function findChrome() {
   results.deepJumps = deep;
   await page.keyboard.press('Escape');
 
+  // 7. Symbol panel collapses, stays anchored, and remembers the choice.
+  const panelState = () => page.evaluate(() => {
+    const sidebar = document.querySelector('#file-sidebar');
+    const panel = document.querySelector('section[aria-label="符号引用"]');
+    const toggle = panel?.querySelector('[aria-controls="symbol-body"]');
+    const scroller = document.querySelector('[data-review-scroll]');
+    if (!sidebar || !panel || !toggle || !scroller) return null;
+    const side = sidebar.getBoundingClientRect();
+    const head = toggle.getBoundingClientRect();
+    const diff = scroller.getBoundingClientRect();
+    return {
+      expanded: toggle.getAttribute('aria-expanded'),
+      body: Boolean(document.querySelector('#symbol-body')),
+      stored: localStorage.getItem('intentflow.symbol-open'),
+      sidebarWidth: Math.round(side.width),
+      sidebarBottom: Math.round(side.bottom),
+      headWidth: Math.round(head.width),
+      headBottom: Math.round(head.bottom),
+      diffWidth: Math.round(diff.width),
+      diffTop: Math.round(diff.top),
+      treeRows: document.querySelectorAll('[data-tone]').length,
+    };
+  });
+  const toggle = page.locator('[aria-controls="symbol-body"]');
+  if (await toggle.count()) {
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+      await toggle.click();
+      await page.waitForTimeout(250);
+    }
+    const opened = await panelState();
+    await toggle.click();
+    await page.waitForTimeout(250);
+    const closed = await panelState();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.querySelectorAll('[data-virtual-row]').length > 0, { timeout: 120000 });
+    await page.waitForTimeout(800);
+    const restored = await panelState();
+    await toggle.click();
+    await page.waitForTimeout(250);
+    const reopened = await panelState();
+    results.symbolPanel = { opened, closed, restored, reopened };
+    assert(closed, 'symbol panel not found after collapse');
+    assert.equal(closed.expanded, 'false', 'symbol panel did not collapse');
+    assert.equal(closed.body, false, 'collapsed symbol panel still renders its body');
+    assert.equal(closed.stored, '0', 'collapse was not persisted');
+    assert.equal(closed.sidebarWidth, opened.sidebarWidth, 'sidebar width changed on collapse');
+    assert.equal(closed.headWidth, opened.headWidth, 'symbol header width changed on collapse');
+    assert.equal(closed.diffWidth, opened.diffWidth, 'diff width changed on collapse');
+    assert.equal(closed.diffTop, opened.diffTop, 'diff moved on collapse');
+    assert(Math.abs(closed.headBottom - closed.sidebarBottom) <= 1, 'symbol header is not anchored to the sidebar bottom');
+    assert(closed.treeRows > 0, 'file tree disappeared on collapse');
+    assert.equal(restored.expanded, 'false', 'collapse did not survive reload');
+    assert.equal(restored.body, false, 'reloaded panel reopened its body');
+    assert.equal(restored.stored, '0', 'persisted collapse changed after reload');
+    assert.equal(reopened.expanded, 'true', 'symbol panel did not expand again');
+    assert.equal(reopened.body, true, 'expanded symbol panel has no body');
+    assert.equal(reopened.stored, '1', 'expansion was not persisted');
+  }
+
   results.errors = errors;
   console.log(JSON.stringify(results, null, 1));
 
