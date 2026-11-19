@@ -98,6 +98,7 @@ func TestAPIErrorAndRateLimit(t *testing.T) {
 			return
 		}
 		w.Header().Set("X-RateLimit-Reset", "1700000000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "API rate limit exceeded"})
 	}))
@@ -106,7 +107,7 @@ func TestAPIErrorAndRateLimit(t *testing.T) {
 
 	_, err := client.Pull(context.Background(), "o", "r", 1)
 	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != 403 || apiErr.RateLimitReset.IsZero() {
+	if !errors.As(err, &apiErr) || apiErr.Status != 403 || !apiErr.RateLimited || apiErr.RateLimitReset.IsZero() {
 		t.Fatalf("rate limit error = %v", err)
 	}
 	if !strings.Contains(err.Error(), "限流") {
@@ -163,6 +164,20 @@ func TestAPIErrorStringDetails(t *testing.T) {
 	defer server.Close()
 	_, err := NewClient(server.URL, "secret").SubmitReview(context.Background(), "o", "r", 1, SubmitRequest{Event: "APPROVE"})
 	if err == nil || !strings.Contains(err.Error(), "Can not approve your own pull request") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAPIErrorPermissionIsNotRateLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Reset", "1700000000")
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Resource not accessible by integration"})
+	}))
+	defer server.Close()
+	_, err := NewClient(server.URL, "secret").Pull(context.Background(), "o", "r", 1)
+	if err == nil || strings.Contains(err.Error(), "限流") || !strings.Contains(err.Error(), "Resource not accessible") {
 		t.Fatalf("err = %v", err)
 	}
 }
