@@ -236,6 +236,17 @@ export interface components {
             symbols: components["schemas"]["SymbolGraph"];
             scan: components["schemas"]["ScanState"];
             findings: components["schemas"]["Finding"][];
+            /** @description Human label */
+            baseLabel: string;
+            /**
+             * Format: int32
+             * @description Commits the base lacks from baseUpstream.
+             */
+            baseBehind: number;
+            /** @description Main ref used for the behind count */
+            baseUpstream: string;
+            /** @description HEAD does not contain the latest commit of baseUpstream. */
+            needsRebase: boolean;
         };
         /** @enum {string} */
         ComparisonMode: "folder" | "git";

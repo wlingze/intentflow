@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -111,5 +112,41 @@ func TestGeneratedTypesAreNotHandWritten(t *testing.T) {
 		if !strings.Contains(gen, want) {
 			t.Fatalf("types.gen.go lost the %q marker; it must stay generated output", want)
 		}
+	}
+}
+
+// 基线状态四个字段必须进入 JSON 契约，前端靠它们显示落后提示。
+func TestReviewBaseStatusSerializes(t *testing.T) {
+	want := Review{
+		BaseLabel:    "merge-base(origin/main@abc12345)",
+		BaseBehind:   3,
+		BaseUpstream: "origin/main",
+		NeedsRebase:  true,
+	}
+	buf, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(buf, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]any{
+		"baseLabel":    want.BaseLabel,
+		"baseBehind":   float64(want.BaseBehind),
+		"baseUpstream": want.BaseUpstream,
+		"needsRebase":  want.NeedsRebase,
+	} {
+		if raw[key] != value {
+			t.Errorf("%s = %v, want %v", key, raw[key], value)
+		}
+	}
+	var round Review
+	if err := json.Unmarshal(buf, &round); err != nil {
+		t.Fatal(err)
+	}
+	if round.BaseLabel != want.BaseLabel || round.BaseBehind != want.BaseBehind ||
+		round.BaseUpstream != want.BaseUpstream || round.NeedsRebase != want.NeedsRebase {
+		t.Fatalf("round trip = %+v", round)
 	}
 }
