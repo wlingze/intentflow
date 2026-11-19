@@ -22,7 +22,7 @@
 
 下面逐条列出能力：
 
-- 读任意 Git 范围或两个目录的文本 diff。
+- 读任意 Git 范围、两个目录，或一份 patch 文件的文本 diff。
 - 左侧文件树，按目录折叠，带文件类型图标和评论数。
 - 逐 hunk 标记「已查看」；文件改过之后旧标记自动失效。
 - 行级评论、跨行选区评论、不绑定文件的总评。
@@ -169,6 +169,68 @@ intentflow --rebase                     # 先 rebase 到基线，冲突自动回
 在 diff 区域按 `Ctrl+Enter` / `Cmd+Enter` 等同于菜单里的「复制 Markdown」，
 不打开菜单。焦点在输入框或对话框里时不触发。
 
+### 4. 只有一份 diff
+
+不需要 Git 仓库，也不需要先 clone。给一个 patch 文件，直接起工作台：
+
+```bash
+intentflow diff fix.patch
+```
+
+从 stdin 读，或复制粘贴后按 `Ctrl-D`：
+
+```bash
+cat fix.patch | intentflow diff -
+intentflow diff -              # 粘贴补丁，Ctrl-D 结束
+intentflow diff --patch fix.patch
+```
+
+补丁解析规则、`.patch` 多提交如何合并、展开 gap 为什么是空行，见
+[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)。
+
+### 5. 纯静态导出
+
+```bash
+intentflow export --diff fix.patch --out site
+python3 -m http.server --directory site 8000
+# 打开 http://127.0.0.1:8000/
+```
+
+产物是纯静态文件：`index.html`、`assets/`、`api/payload.json`、
+`api/revisions.json`。可以放进任意静态服务器、对象存储或 CDN。
+必须用 HTTP 打开，`file://` 会拦截 ES module。
+
+静态化后，看 diff、搜索、符号引用、写评论、复制 Markdown 都可用。
+失效的是切换比较范围：静态包只有一份 patch，revision 列表只有 `range`。
+评论仍然只存浏览器 localStorage。
+
+### 6. 按 PR 路径浏览
+
+```bash
+intentflow serve --pr-dir /srv/intentflow/prs --host 127.0.0.1 --port 8080
+# 索引页：http://127.0.0.1:8080/
+# 单个 PR：http://127.0.0.1:8080/pr/wlingze/intentflow/4/
+```
+
+目录约定：
+
+```
+/srv/intentflow/prs/
+  wlingze/
+    intentflow/
+      4.patch          # 主约定
+      4.diff           # 备选；与 4.patch 同时存在时优先 .patch
+      4.json           # 可选：{"title": "索引页显示的标题"}
+```
+
+本地没有补丁时默认回退抓取
+`https://github.com/<owner>/<repo>/pull/<number>.diff`，公开仓库不需要 token。
+抓到的补丁缓存为 `<number>.diff`。只读本地目录用 `--no-github`。
+私有仓库设置 `GITHUB_TOKEN` 或 `GH_TOKEN`。
+
+索引页、路由、静态化边界与部署示例见
+[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)。
+
 ## 截图
 
 | 评审面板 | 导出 | 窄屏 |
@@ -186,7 +248,11 @@ intentflow --rebase                     # 先 rebase 到基线，冲突自动回
 | `--before, --after` | 两个目录比较 |
 | `--host` | 默认 `0.0.0.0`；仅本机可设 `127.0.0.1` |
 | `--port` | 默认由系统分配空闲端口 |
-| `--out` | `review.json` 导出目录 |
+| `--out` | `review.json` 导出目录；`export` 时是静态站点目录 |
+| `--diff`, `--patch` | 补丁文件；`-` 表示 stdin |
+| `--pr-dir` | PR 目录，按 `/pr/<owner>/<repo>/<number>` 路由 |
+| `--no-github` | 只读本地 PR 目录，不回退抓取 GitHub |
+| `--force` | `export` 时允许输出目录非空 |
 | `--dist` | 覆盖内嵌前端，仅调试用 |
 | `--no-open` | 不自动打开浏览器 |
 | `-v` | 打印进度 |
@@ -285,7 +351,10 @@ cmd/intentflow/       CLI 入口
 schema/openapi.yaml   唯一数据契约
 internal/contract/    生成：Go JSON 类型
 internal/gitcompare/  Git 比较范围与提交
+internal/patch/       unified diff 解析与多提交合并
 internal/payload/     源码包：before/after 文本与文件状态
+internal/prdiff/      补丁 → payload / revision 列表
+internal/export/      纯静态站点导出
 internal/reviewctx/   评审身份：session 与比较范围摘要
 internal/serve/       HTTP 服务与内嵌前端
 internal/version/     版本号、提交、构建时间
@@ -308,6 +377,7 @@ website/              静态官网（GitHub Pages）
 | [docs/08-contract.md](docs/08-contract.md) | OpenAPI 单一定义与生成 |
 | [docs/09-review-platform.md](docs/09-review-platform.md) | 评审存储与匹配规则 |
 | [docs/10-release.md](docs/10-release.md) | 版本号、发布产物与校验 |
+| [docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md) | 单 diff、静态导出、PR 路由与 GitHub 兼容 |
 | [docs/third-party.md](docs/third-party.md) | 第三方许可 |
 
 ## 许可
