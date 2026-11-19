@@ -3,6 +3,7 @@ import { RevisionPicker } from './RevisionPicker';
 import { useReviewData } from '../state/selectors';
 import { SubmitMenu } from './SubmitMenu';
 import { IconBranch, IconFiles, IconPanel, IconSearch } from './Icons';
+import { baseSummary } from '../lib/baseStatus';
 import styles from './TopBar.module.css';
 
 export function TopBar({ onSearch }: { onSearch: () => void }) {
@@ -10,6 +11,8 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
   const dispatch = useAppDispatch();
   const { files, stats } = useReviewData();
   const ctx = payload?.session.context;
+  const review = payload?.review;
+  const baseHint = review && review.comparison.mode === 'git' && review.baseLabel ? baseSummary(review) : '';
   const adds = [...stats.values()].reduce((sum, stat) => sum + stat.adds, 0);
   const dels = [...stats.values()].reduce((sum, stat) => sum + stat.dels, 0);
   return <header className={styles.top}>
@@ -19,6 +22,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
       <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>本地 PR</span></div>
     </div>
     <RevisionPicker />
+    {baseHint && <div className={styles.base} data-warn={review?.needsRebase || undefined} title={baseHint}>{baseHint}</div>}
     <div className={styles.stats}><span>{viewed.length}/{files.length} 已查看</span><b className={styles.plus}>+{adds}</b><b className={styles.minus}>−{dels}</b></div>
     <div className={styles.actions}>
       <div className={styles.searchWrap}>
