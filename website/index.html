@@ -66,8 +66,9 @@
         <div class="run">
           <div class="run__col">
             <p class="run__label" data-i18n="run.you">You</p>
-            <pre class="term"><code>$ intentflow --base master
-· 分支 feat/site-and-tests；基线 master
+            <pre class="term"><code>$ intentflow
+· 分支 feat/site-and-tests；基线 merge-base(master@15c4cd19)（领先 4 个提交）
+  已包含 master 最新提交
 · 比较 15c4cd19 → 89268602，18 个改动文件
 review 工作台:
   http://127.0.0.1:8123</code></pre>
@@ -146,6 +147,7 @@ review 工作台:
           <p class="pillar__claim" data-i18n="git.claim">From history, not a picker.</p>
           <ul class="pillar__tags">
             <li><code>--base</code></li>
+            <li><code>--rebase</code></li>
             <li><code>--head</code></li>
             <li><code>WORKTREE</code></li>
           </ul>

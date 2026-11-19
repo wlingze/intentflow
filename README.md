@@ -98,7 +98,7 @@ intentflow update --repo me/fork   # 从 fork 的 release 升级
 
 ```bash
 cd /path/to/your/repo
-intentflow --base main
+intentflow
 ```
 
 终端打印地址并自动打开浏览器，默认 `http://127.0.0.1:<随机端口>/`。
@@ -107,14 +107,25 @@ intentflow --base main
 常用范围：
 
 ```bash
-intentflow --base main                 # main → HEAD
-intentflow --base main --head WORKTREE # main → 工作区，含未跟踪文件
-intentflow --base v1.0 --head HEAD     # 指定提交范围
-intentflow --before ./a --after ./b    # 两个目录
+intentflow                              # 自动基线 → HEAD
+intentflow --base main                  # main → HEAD
+intentflow --base main --head WORKTREE  # main → 工作区，含未跟踪文件
+intentflow --base v1.0 --head HEAD      # 指定提交范围
+intentflow --before ./a --after ./b     # 两个目录
+intentflow --rebase                     # 先 rebase 到基线，冲突自动回退
 ```
 
-没有 `--base` 时，只接受当前 HEAD 历史里的 `main`、`master`、`origin/main`、
-`origin/master`，取最近的一个。都不在历史里就要求显式指定，不会退回 `HEAD~1`。
+没有 `--base` 时，对 `main`、`master`、`origin/main`、`origin/master`
+逐个计算 `git merge-base HEAD <ref>`，取距 HEAD 最近的一个作为基线。
+当前分支不必是 main 的后代，从其他分支分出的分支也能直接启动。
+如果这些 ref 都不存在，再尝试 `origin/HEAD` 和当前分支上游；
+最后才报错，并提示用 `--base <ref>` 指定。
+
+启动时打印基线、落后量和是否需要 rebase，页面顶栏同步显示。
+落后只提示，不阻断启动。`--rebase` 默认关闭；显式传入才执行
+`git rebase <基线 ref>`。发生冲突时立即 `git rebase --abort`，
+退回 merge-base 基线继续启动。工作区有未提交改动时跳过 rebase，
+不会自动 stash。
 
 ### 2. 读改动、写评论
 
@@ -167,7 +178,8 @@ intentflow --before ./a --after ./b    # 两个目录
 | 参数 | 说明 |
 | --- | --- |
 | `-t, --target` | Git 仓库目录，默认 `.` |
-| `--base` | Git 基线，默认按祖先关系检测 |
+| `--base` | Git 基线；默认取 main/master/origin/main/origin/master 的最近 merge-base |
+| `--rebase` | 先 rebase 到基线；冲突自动 abort 并改用 merge-base，默认关闭 |
 | `--head` | Git 终点，默认 `HEAD`；`WORKTREE` 表示工作区 |
 | `--before, --after` | 两个目录比较 |
 | `--host` | 默认 `0.0.0.0`；仅本机可设 `127.0.0.1` |
