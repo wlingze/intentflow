@@ -14,9 +14,17 @@
 
 1. 纯静态导出解决「只有一份 diff、想发给别人看」。
 2. `serve --pr-dir` 解决「一台服务器上按路径浏览多个 PR」。
-3. GitHub 兼容不另做插件，复用服务端抓取 `pull/<number>.diff`。公开仓库不需要 token；需要私有仓库时设置 `GITHUB_TOKEN` 或 `GH_TOKEN`。
+3. GitHub 双向采用 B（REST API）；A（Actions）作为发布层；C（浏览器注入）暂不做。
 
-插件方案在当前阶段不划算：它多一套运行环境，却没有增加 diff 能力。工作台真正需要的数据已经由 patch 解析得到，浏览器里再抓一次 DOM 只会增加耦合。
+### 1.1 GitHub 接入路线
+
+| 路线 | 数据需求 | 部署成本 | 能力 | 限制 | 取舍 |
+| --- | --- | --- | --- | --- | --- |
+| A. GitHub Actions | PR 事件、PR diff、Pages 或 artifact 权限 | 中：一个 workflow + Pages 设置 | PR 打开/更新时生成静态 review 页，自动回贴链接 | Fork PR 的 `GITHUB_TOKEN` 只读；Pages 需要仓库设置；无法写回行级评论 | 采用为发布层，不替代 API |
+| B. GitHub REST 双向 | PR 元数据、聚合 diff、已有 review 评论、写 review 权限 | 低：一个命令 + 环境变量 token | 拉 patch 与评论；把本地评论映射成行级 comment；提交 comment / approve / request changes | 需要 token；受权限、限流、outdated 行约束；当前是 CLI 提交，未做按钮 | **最小闭环，采用** |
+| C. 浏览器注入 | PR 页 DOM 或 GitHub API、扩展权限 | 高：扩展商店/油猴安装、权限、DOM 维护 | 在 PR 页内直接看 diff、写回评论 | GitHub DOM 变更会破坏；安装门槛高；审核与跨域成本高 | 暂不做 |
+
+Actions 和 API 不是二选一：Actions 负责「让每个人打开一个链接」，API 负责「把 review 写回 PR」。插件方案在当前阶段不划算：它多一套运行环境，却没有增加 diff 能力。
 
 ## 2. 数据流
 
@@ -34,7 +42,8 @@ internal/prdiff      补丁身份、Comparison、ReviewSession
         │
         ├── internal/export   写 index.html + assets + api/*.json
         ├── serve.Listen      单补丁工作台
-        └── serve.ListenPR    /pr/<owner>/<repo>/<number> 多 PR 工作台
+        ├── serve.ListenPR    /pr/<owner>/<repo>/<number> 多 PR 工作台
+        └── internal/ghreview  GitHub REST：读 PR/diff/评论，写 review
 ```
 
 前端只认两种 JSON：
@@ -146,17 +155,118 @@ location /pr/ {
 
 二进制本身只监听一个端口；静态资源和 API 都由它提供，不需要额外的 web 服务器目录。
 
-## 6. GitHub 兼容取舍
+## 6. GitHub API 模式（已实现）
 
-选了「服务端按 PR 抓 `.diff`」：
+```bash
+export GITHUB_TOKEN=...                 # 只从环境变量读，不落盘
+intentflow github open --repo owner/repo --pr 4
+# 在浏览器里写评论，用「提交 Review」导出 JSON
+intentflow github submit --repo owner/repo --pr 4 --review intentflow-review-....json --event comment
+intentflow github submit --repo owner/repo --pr 4 --body "LGTM" --event approve
+intentflow github submit --repo owner/repo --pr 4 --body "请先修这个" --event request-changes
+intentflow github submit --repo owner/repo --pr 4 --review review.json --event comment --dry-run
+```
 
-- 优点：与本地补丁同一个渲染路径；不需要用户装扩展；抓到的补丁落盘，第二次访问不再请求 GitHub；公开仓库零配置。
-- 缺点：只读公开仓库时可用；GitHub 限流会返回错误；没有 PR 标题、作者、评论等元数据（可选 `4.json` 补标题）；不能像油猴脚本那样在 github.com 页面内直接注入。
-- 未做：GitHub API 拉取 base/head SHA、PR 描述、review comment 同步。这些需要 token 与更完整的 API 客户端，超出最小闭环。
+读取：
 
-如果以后要做浏览器插件，建议只做「打开当前 PR 的工作台」这一跳转，不复制 diff 渲染逻辑。
+- `GET /repos/{owner}/{repo}/pulls/{number}`：标题、base/head SHA、状态。
+- 同一路径加 `Accept: application/vnd.github.v3.diff`：整个 PR 的聚合 diff，不是每个 commit 一段。
+- `GET /repos/{owner}/{repo}/pulls/{number}/comments`：行级 review 评论，每页 100 条，最多 10 页。
 
-## 7. 验证记录
+写入：
+
+- `POST /repos/{owner}/{repo}/pulls/{number}/reviews`。
+- `commit_id` 取提交时重新读取的 PR head SHA；不提供覆盖，避免行号按旧 diff 映射。
+- `event`：`comment` → `COMMENT`，`approve` → `APPROVE`，`request-changes` → `REQUEST_CHANGES`。
+
+### 6.1 行号映射
+
+intentflow 的评论引用是 `quote.file` + `quote.side` + `start..end`。映射到 GitHub：
+
+| intentflow | GitHub review comment |
+| --- | --- |
+| `quote.file` | `path` |
+| `quote.side = after` | `side = RIGHT` |
+| `quote.side = before` | `side = LEFT` |
+| `start = end` | 只发 `line` |
+| `start < end` | 发 `start_line` + `line` + `start_side` |
+| 标题 + 正文 | `body`，标题加粗 |
+
+`position` 是旧的 diff 行偏移，跨 hunk 与多行评论都容易算错；这里不用它。GitHub 当前的 review API 接受 `line`/`side`/`start_line`/`start_side`，语义比 `position` 稳定。
+
+outdated 行处理：
+
+1. 提交时重新抓当前 PR diff，不信任打开工作台时的旧 diff。
+2. 只有落在某个 hunk 的旧侧/新侧范围内的行才发成 inline comment。
+3. 落不到当前 diff 的评论，写入 review body 的「未映射到当前 diff 的评论」一节，不会让整个 review 因 422 失败。
+4. 已有 GitHub 评论（ID 以 `gh-` 开头）会在提交时跳过，不重复提交；界面里仍可本地编辑，但改动不会写回 GitHub。本地标记为已解决的评论不提交。
+
+### 6.2 权限与 token
+
+| 场景 | 需要的权限 |
+| --- | --- |
+| 公开仓库，只读 patch/评论 | 匿名也可，但限流很紧；建议 token |
+| 公开仓库，提交 review | classic PAT 的 `public_repo`，或 fine-grained 的 `Pull requests: Read and write` |
+| 私有仓库，读 + 提交 | classic PAT 的 `repo`，或 fine-grained 的 `Pull requests: Read and write` + `Contents: Read` + `Metadata: Read` |
+| GitHub Actions | `permissions: pull-requests: write`、`contents: read`；`GITHUB_TOKEN` 自动注入 |
+
+- token 只从 `GITHUB_TOKEN` 或 `GH_TOKEN` 读，不写配置文件、不写 URL、不打印。
+- GitHub Enterprise 用 `GITHUB_API_URL` 覆盖 API 根地址。
+- 不要给 review 任务 `admin`、`delete_repo` 等无关 scope。
+
+### 6.3 失败与限流
+
+| 状态 | 行为 |
+| --- | --- |
+| 401 | 提示 token 无效或过期；不重试 |
+| 403 / 429 | 读到 `X-RateLimit-Reset` 或 `Retry-After` 时打印重置时间；不自动重试 |
+| 404 | 提示仓库/PR 不存在或 token 无权访问 |
+| 422 | 打印 GitHub 的 `message` 与 `errors`（含「不能 approve 自己的 PR」这类原因）；`--dry-run` 可先检查映射 |
+| 5xx / 网络错误 | 直接失败并保留原因；用户自行重试 |
+
+限制：单次响应上限 32 MiB；review JSON 上限 8 MiB；评论最多读 1000 条。没有实现自动 backoff、条件请求或分页重试。
+
+### 6.4 自己不能 approve 自己
+
+GitHub 拒绝 PR 作者对自己的 PR 执行 `APPROVE` 或 `REQUEST_CHANGES`（HTTP 422）。验证时用一个由 `github-actions[bot]` 创建的临时 PR 验证了这两个事件。实际使用中，审批人必须是另一个账号。
+
+## 7. GitHub Actions 用法
+
+示例工作流在 [docs/examples/github-actions-review.yml](examples/github-actions-review.yml)。它做四件事：
+
+1. `pull_request` 触发，`gh pr diff` 取聚合 diff。
+2. 下载 intentflow release，`intentflow export --diff pr.diff --out site`。
+3. 上传 Pages artifact 并部署。
+4. 用 `gh pr comment` 回贴访问链接。
+
+关键权限：
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+  pages: write
+  id-token: write
+```
+
+注意：
+
+- 来自 fork 的 `pull_request` 使用只读 `GITHUB_TOKEN`，回贴评论会失败。需要评论时用同仓库分支，或单独用 `pull_request_target` / `workflow_run` 只做评论；后者不要 checkout 并执行不可信代码。
+- Pages 需要在仓库设置里选择 GitHub Actions 作为 source。
+- 不想开 Pages 时，把 `actions/deploy-pages` 换成 `actions/upload-artifact`，评论里贴 artifact 链接；artifact 需要登录，体验不如 Pages。
+- 示例只是模板，本仓库没有启用该 workflow。
+
+## 8. 不推荐的做法
+
+- 把 token 写进 URL、命令行参数、`.env`、仓库变量或日志。URL 和进程列表会泄漏。
+- 用 `admin:repo_hook`、`delete_repo` 等宽 scope 只为了发 review。
+- 用 `position` 猜行号；跨 hunk、多行评论和 outdated 行都会错。
+- 把 GitHub HTML 当 API 抓取；页面结构变化就失效。
+- 自动 approve / 自动 request changes 的机器人；评审应该由人决定。
+- 为了测试在别人的真实 PR 上提交 review；用临时仓库或自己的测试 PR。
+- 在 `pull_request_target` 里 checkout 并运行 PR 作者的代码，同时给它写 token。
+
+## 9. 验证记录
 
 静态导出：
 
@@ -175,12 +285,25 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://127.0.0.1:8134/p
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8134/pr/wlingze/intentflow/4/api/payload.json
 ```
 
-浏览器检查：Playwright 打开页面后，`/api/payload.json` 与 `/api/revisions.json` 都返回 200，22 个改动文件渲染，无 console error。
+GitHub API（临时公开仓库，PR 已关闭、分支已删除，仓库已归档）：
 
-## 8. 遗留问题
+- PR #1（作者 wlingze）：`intentflow github open` 读到 1 个文件、0 条初始评论；提交 `comment` review 成功，返回 `COMMENTED`。GitHub 上只有 1 条 inline comment；2 条越界评论进入 review body。
+- `curl GET /repos/.../pulls/1/reviews` 返回 200，review id `5971092846`，state `COMMENTED`。
+- `curl GET /repos/.../pulls/1/comments` 返回 200，inline comment 在 `demo.txt:2`、side `RIGHT`。
+- 重新编译后再提交一次：review id `5971188100`，state `COMMENTED`，inline comment 在 `demo.txt:3`。
+- PR #2（作者 `github-actions[bot]`）：`approve` 成功，state `APPROVED`；`request-changes` 成功，state `CHANGES_REQUESTED`。
+- `curl GET /repos/.../pulls/2/reviews` 返回 200，两个 state 都存在；重编译后的 id 为 `5971190430` / `5971192511`。
+- 对作者自己的 PR 发 `approve` / `request-changes`：HTTP 422，错误文本为 `Can not approve your own pull request` / `Can not request changes on your own pull request`。
+- 清理：PR 已关闭、分支已删除。验证 token 没有 `delete_repo` scope，临时仓库被归档而不是删除；需要时在 GitHub 设置里手动删除。
+
+## 10. 遗留问题
 
 - patch 之外的未改源码不可恢复；展开 gap 是空占位行。要显示真实上下文，需要同时提供仓库或 base/head 源码。
 - 静态导出不生成多 PR 索引；多 PR 需要 `serve --pr-dir`。
 - 服务模式默认不提供评论持久化；评论仍在浏览器。
-- GitHub 抓取只认公开仓库或带 token 的请求；没有 ETag/条件请求，缓存更新靠删除本地文件。
+- GitHub 模式当前是 CLI 提交，前端没有「提交到 GitHub」按钮。按钮需要额外做 CSRF 防护与写接口。
+- 导入的 GitHub 评论不能在线程里回复；提交时会跳过，本地编辑不会写回。
+- 同一浏览器里已有本地草稿时，localStorage 会覆盖新导入的 GitHub 评论；清掉该草稿后才能看到最新导入结果。
+- 没有导入 PR 的 issue 评论、review 摘要、check 状态；只导入行级 review 评论。
+- 没有自动重试/backoff、ETag、GitHub Enterprise 实机验证。
 - 单补丁模式的 identity 固定为 `patch` / `patch`；不同补丁在同一浏览器里会共用 session 前缀，但 `comparison_id` 由 diff 摘要决定，不会串行号。

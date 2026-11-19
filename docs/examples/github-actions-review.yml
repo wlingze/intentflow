@@ -1,0 +1,79 @@
+# Template: publish a static intentflow review page on every PR.
+#
+# Copy to .github/workflows/intentflow-review.yml in the reviewed repository.
+# Requirements:
+#   - repository setting: Pages -> Source = GitHub Actions
+#   - same-repository branches (fork PRs get a read-only token; see docs)
+#
+# This file is documentation, not an active workflow in this repository.
+name: intentflow review page
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: intentflow-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Fork PRs get a read-only GITHUB_TOKEN. Pages deploy and commenting will
+  # fail there; use a same-repository branch or a separate workflow_run job.
+  preview:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the aggregate PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" > pr.diff
+
+      - name: Install the latest intentflow release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release view --repo wlingze/intentflow --json tagName --jq .tagName)"
+          version="${tag#v}"
+          curl -fsSL \
+            "https://github.com/wlingze/intentflow/releases/download/${tag}/intentflow_${version}_linux_amd64.tar.gz" \
+            | tar -xz
+          sudo install -m755 intentflow /usr/local/bin/intentflow
+          intentflow version
+
+      - name: Export the static workbench
+        run: |
+          intentflow export --diff pr.diff --out site \
+            --title "${{ github.event.pull_request.title }}"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Same-repository PRs only: fork PRs receive a read-only GITHUB_TOKEN.
+      - name: Comment the review link
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "intentflow review: ${REVIEW_URL}"
