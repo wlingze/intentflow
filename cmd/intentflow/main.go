@@ -15,9 +15,11 @@ import (
 	"github.com/wlingze/intentflow/frontend"
 	"github.com/wlingze/intentflow/internal/contract"
 	"github.com/wlingze/intentflow/internal/emit"
+	"github.com/wlingze/intentflow/internal/export"
 	"github.com/wlingze/intentflow/internal/gitcompare"
 	"github.com/wlingze/intentflow/internal/model"
 	"github.com/wlingze/intentflow/internal/payload"
+	"github.com/wlingze/intentflow/internal/prdiff"
 	"github.com/wlingze/intentflow/internal/reviewctx"
 	"github.com/wlingze/intentflow/internal/serve"
 	"github.com/wlingze/intentflow/internal/version"
@@ -54,6 +56,8 @@ func run(args []string) error {
 		return runServe(args)
 	case "diff":
 		return runDiff(args)
+	case "export":
+		return runExport(args)
 	case "update":
 		return runUpdate(args)
 	default:
@@ -71,6 +75,9 @@ func usageTo(w io.Writer) {
   intentflow -t . --base main
   intentflow -t . --head WORKTREE
   intentflow diff -t . --base main
+  intentflow diff <patch|->         从补丁启动工作台，不需要 Git 仓库
+  intentflow export --diff <patch> --out <dir>
+  intentflow serve --pr-dir <dir> [--no-github]
   intentflow update [--check] [--version v0.2.0] [--force] [--repo owner/name]
   intentflow version
 
@@ -83,6 +90,9 @@ func usageTo(w io.Writer) {
   --port         默认由系统分配空闲端口
   --before/after 目录比较
   --dist         覆盖内嵌前端，仅调试用
+  --patch        补丁文件；- 表示 stdin
+  --pr-dir       PR 目录；按 /pr/<owner>/<repo>/<number> 路由
+  --no-github    只读本地 PR 目录，不回退抓取 GitHub
 
   update --check     只打印当前与最新版本；有新版本时退出码 2
   update --version   安装指定版本；--force 同版本也重装
@@ -95,6 +105,7 @@ type options struct {
 	before, after                      string
 	beforeLabel, afterLabel            string
 	out                                string
+	patch                              string
 	verbose                            bool
 	rebase                             bool
 }
@@ -113,6 +124,7 @@ func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.beforeLabel, "before-label", "", "改动前标签")
 	fs.StringVar(&o.afterLabel, "after-label", "", "改动后标签")
 	fs.StringVar(&o.out, "out", "./intentflow-out", "Markdown 导出目录")
+	fs.StringVar(&o.patch, "patch", "", "补丁文件；- 表示 stdin")
 	fs.BoolVar(&o.verbose, "v", false, "打印进度")
 }
 
@@ -133,8 +145,30 @@ func runServe(args []string) error {
 	port := fs.Int("port", 0, "HTTP 端口；0 自动分配")
 	dist := fs.String("dist", "", "覆盖内嵌前端")
 	noOpen := fs.Bool("no-open", false, "不自动打开浏览器")
+	prDir := fs.String("pr-dir", "", "PR 目录；按 /pr/<owner>/<repo>/<number> 路由")
+	noGitHub := fs.Bool("no-github", false, "只读本地 PR 目录，不回退抓取 GitHub")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("serve 不接受位置参数；补丁用 --patch，PR 目录用 --pr-dir")
+	}
+	if *prDir != "" && opt.patch != "" {
+		return fmt.Errorf("--pr-dir 与 --patch 不能同时使用")
+	}
+	run := serveRunOptions{host: *host, port: *port, dist: *dist, open: !*noOpen && isTerminal(os.Stdout)}
+	if *prDir != "" {
+		source, err := serve.NewPRSource(serve.PRSourceConfig{Dir: *prDir, GitHub: !*noGitHub})
+		if err != nil {
+			return err
+		}
+		return serve.ListenPR(serve.PRConfig{
+			Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
+			Source: source, OpenBrowser: run.open,
+		})
+	}
+	if opt.patch != "" {
+		return servePatch(opt.patch, patchLabels{}, run)
 	}
 	a, err := newApp(opt)
 	if err != nil {
@@ -144,7 +178,7 @@ func runServe(args []string) error {
 	return serve.Listen(serve.Config{
 		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
 		Payload: a.payload, Revisions: a.revisions, Load: a.load,
-		OpenBrowser: !*noOpen && isTerminal(os.Stdout),
+		OpenBrowser: run.open,
 	})
 }
 
@@ -152,8 +186,24 @@ func runDiff(args []string) error {
 	var opt options
 	fs := flag.NewFlagSet("intentflow diff", flag.ContinueOnError)
 	opt.register(fs)
+	host := fs.String("host", "0.0.0.0", "HTTP 监听地址")
+	port := fs.Int("port", 0, "HTTP 端口；0 自动分配")
+	dist := fs.String("dist", "", "覆盖内嵌前端")
+	noOpen := fs.Bool("no-open", false, "不自动打开浏览器")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if fs.NArg() > 1 {
+		return fmt.Errorf("diff 只接受一个补丁路径")
+	}
+	patchPath := opt.patch
+	if patchPath == "" && fs.NArg() == 1 {
+		patchPath = fs.Arg(0)
+	} else if patchPath != "" && fs.NArg() == 1 {
+		return fmt.Errorf("补丁路径重复：位置参数 %q 与 --patch %q", fs.Arg(0), patchPath)
+	}
+	if patchPath != "" {
+		return servePatch(patchPath, patchLabels{}, serveRunOptions{host: *host, port: *port, dist: *dist, open: !*noOpen && isTerminal(os.Stdout)})
 	}
 	a, err := newApp(opt)
 	if err != nil {
@@ -166,6 +216,144 @@ func runDiff(args []string) error {
 		fmt.Println("→", path)
 	}
 	return err
+}
+
+type patchLabels struct {
+	before, after, title string
+}
+
+type serveRunOptions struct {
+	host string
+	port int
+	dist string
+	open bool
+}
+
+func servePatch(path string, labels patchLabels, run serveRunOptions) error {
+	data, err := readPatch(path)
+	if err != nil {
+		return err
+	}
+	payload, revisions, err := prdiff.Build(data, prdiff.Params{
+		Repository: "patch", Branch: "patch", Before: labels.before, After: labels.after,
+		Title: labels.title, Mode: contract.Folder,
+		Note: "补丁模式：只含改动 hunk；展开的未改区间是空占位行。",
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("· 补丁 %s，%d 个改动文件\n", displayPatch(path), len(payload.Code.Files))
+	return serve.Listen(serve.Config{
+		Host: run.host, Port: run.port, DistDir: run.dist, DistFS: frontend.Dist(),
+		Payload:     func() contract.Payload { return payload },
+		Revisions:   func() (contract.RevisionList, error) { return revisions, nil },
+		OpenBrowser: run.open,
+	})
+}
+
+func runExport(args []string) error {
+	fs := flag.NewFlagSet("intentflow export", flag.ContinueOnError)
+	var diffPath, out, dist, beforeLabel, afterLabel, title string
+	fs.StringVar(&diffPath, "diff", "", "补丁文件；- 表示 stdin")
+	fs.StringVar(&diffPath, "patch", "", "补丁文件；- 表示 stdin")
+	fs.StringVar(&out, "out", "intentflow-static", "静态站点输出目录")
+	fs.StringVar(&dist, "dist", "", "覆盖内嵌前端，仅调试用")
+	fs.StringVar(&beforeLabel, "before-label", "", "补丁前标签")
+	fs.StringVar(&afterLabel, "after-label", "", "补丁后标签")
+	fs.StringVar(&title, "title", "", "补丁标题")
+	force := fs.Bool("force", false, "输出目录非空时覆盖同名文件")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 1 {
+		return fmt.Errorf("export 只接受一个补丁路径")
+	}
+	if diffPath == "" && fs.NArg() == 1 {
+		diffPath = fs.Arg(0)
+	} else if diffPath != "" && fs.NArg() == 1 {
+		return fmt.Errorf("补丁路径重复：位置参数 %q 与 --diff %q", fs.Arg(0), diffPath)
+	}
+	if diffPath == "" {
+		return fmt.Errorf("缺少补丁：用 --diff <patch|-> 或位置参数")
+	}
+	data, err := readPatch(diffPath)
+	if err != nil {
+		return err
+	}
+	payload, revisions, err := prdiff.Build(data, prdiff.Params{
+		Repository: "patch", Branch: "patch", Before: beforeLabel, After: afterLabel,
+		Title: title, Mode: contract.Folder,
+		Note: "静态导出：只含改动 hunk；展开的未改区间是空占位行。",
+	})
+	if err != nil {
+		return err
+	}
+	distFS := frontend.Dist()
+	if dist != "" {
+		info, err := os.Stat(dist)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("--dist 目录不存在: %s", dist)
+		}
+		distFS = os.DirFS(dist)
+	}
+	if err := export.Write(out, distFS, payload, revisions, *force); err != nil {
+		return err
+	}
+	abs, _ := filepath.Abs(out)
+	fmt.Println("→", abs)
+	fmt.Printf("  %d 个改动文件；用任意静态服务器打开，例如：\n", len(payload.Code.Files))
+	fmt.Printf("  python3 -m http.server --directory %s 8000\n", abs)
+	return nil
+}
+
+const maxPatchBytes = 32 << 20
+
+func readPatch(path string) ([]byte, error) {
+	if path == "-" {
+		if isTerminal(os.Stdin) {
+			fmt.Fprintln(os.Stderr, "粘贴补丁，Ctrl-D 结束：")
+		}
+		return readLimited(os.Stdin)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s 是目录；需要补丁文件", path)
+	}
+	if info.Size() > maxPatchBytes {
+		return nil, fmt.Errorf("补丁超过 %d 字节", maxPatchBytes)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("补丁为空: %s", path)
+	}
+	return raw, nil
+}
+
+func readLimited(reader io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(reader, maxPatchBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxPatchBytes {
+		return nil, fmt.Errorf("补丁超过 %d 字节", maxPatchBytes)
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("补丁为空")
+	}
+	return raw, nil
+}
+
+func displayPatch(path string) string {
+	if path == "-" {
+		return "stdin"
+	}
+	return displayPath(path)
 }
 
 type revision struct {
