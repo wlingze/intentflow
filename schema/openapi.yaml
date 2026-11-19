@@ -307,7 +307,7 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [before, after, project, logic, intent, signals, notes, behavior, ai, comparison, symbols, scan, findings]
+      required: [before, after, project, logic, intent, signals, notes, behavior, ai, comparison, symbols, scan, findings, baseLabel, baseBehind, baseUpstream, needsRebase]
       properties:
         before: { type: string }
         after: { type: string }
@@ -328,6 +328,11 @@ components:
         findings:
           type: array
           items: { $ref: '#/components/schemas/Finding' }
+        # 基线状态：不阻断启动，只给前端提示。
+        baseLabel: { type: string, description: Human label, e.g. merge-base(origin/main@abc1234) or an explicit --base ref. }
+        baseBehind: { type: integer, format: int32, description: Commits the base lacks from baseUpstream. }
+        baseUpstream: { type: string, description: Main ref used for the behind count, e.g. origin/main. }
+        needsRebase: { type: boolean, description: HEAD does not contain the latest commit of baseUpstream. }
 
     ComparisonMode:
       type: string

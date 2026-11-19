@@ -374,19 +374,31 @@ type Quote struct {
 
 // Review defines model for Review.
 type Review struct {
-	After      string        `json:"after"`
-	Ai         AiSummary     `json:"ai"`
-	Before     string        `json:"before"`
-	Behavior   BehaviorGraph `json:"behavior"`
-	Comparison Comparison    `json:"comparison"`
-	Findings   []Finding     `json:"findings"`
-	Intent     Delta         `json:"intent"`
-	Logic      Delta         `json:"logic"`
-	Notes      []string      `json:"notes"`
-	Project    Delta         `json:"project"`
-	Scan       ScanState     `json:"scan"`
-	Signals    []Signal      `json:"signals"`
-	Symbols    SymbolGraph   `json:"symbols"`
+	After string    `json:"after"`
+	Ai    AiSummary `json:"ai"`
+
+	// BaseBehind Commits the base lacks from baseUpstream.
+	BaseBehind int32 `json:"baseBehind"`
+
+	// BaseLabel Human label
+	BaseLabel string `json:"baseLabel"`
+
+	// BaseUpstream Main ref used for the behind count
+	BaseUpstream string        `json:"baseUpstream"`
+	Before       string        `json:"before"`
+	Behavior     BehaviorGraph `json:"behavior"`
+	Comparison   Comparison    `json:"comparison"`
+	Findings     []Finding     `json:"findings"`
+	Intent       Delta         `json:"intent"`
+	Logic        Delta         `json:"logic"`
+
+	// NeedsRebase HEAD does not contain the latest commit of baseUpstream.
+	NeedsRebase bool        `json:"needsRebase"`
+	Notes       []string    `json:"notes"`
+	Project     Delta       `json:"project"`
+	Scan        ScanState   `json:"scan"`
+	Signals     []Signal    `json:"signals"`
+	Symbols     SymbolGraph `json:"symbols"`
 }
 
 // ReviewContext defines model for ReviewContext.
