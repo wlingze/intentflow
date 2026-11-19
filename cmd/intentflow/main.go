@@ -76,7 +76,8 @@ func usageTo(w io.Writer) {
 
   --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
   --no-open      不自动打开浏览器
-  --base         基线；默认取当前分支历史中的 main / master
+  --base         基线；默认对 main/master/origin/main/origin/master 取最近 merge-base
+  --rebase       先 rebase 到基线；冲突自动 abort，改用 merge-base 继续
   --head         终点，默认 HEAD；WORKTREE 包含未提交改动
   --host         监听地址，默认 0.0.0.0
   --port         默认由系统分配空闲端口
@@ -95,6 +96,7 @@ type options struct {
 	beforeLabel, afterLabel            string
 	out                                string
 	verbose                            bool
+	rebase                             bool
 }
 
 func (o *options) register(fs *flag.FlagSet) {
@@ -102,7 +104,8 @@ func (o *options) register(fs *flag.FlagSet) {
 	fs.StringVar(&o.target, "target", ".", "Git 代码目录")
 	fs.StringVar(&o.language, "l", "go", "兼容参数；diff 支持所有文本语言")
 	fs.StringVar(&o.language, "language", "go", "兼容参数；不编译源码")
-	fs.StringVar(&o.base, "base", "", "Git 基线；默认找 main / master")
+	fs.StringVar(&o.base, "base", "", "Git 基线；默认取最近 merge-base")
+	fs.BoolVar(&o.rebase, "rebase", false, "先 rebase 到基线；冲突自动 abort 并继续")
 	fs.StringVar(&o.head, "head", "HEAD", "Git 终点；WORKTREE 表示工作区")
 	fs.StringVar(&o.mode, "mode", "diff", "仅支持 diff")
 	fs.StringVar(&o.before, "before", "", "改动前目录")
@@ -175,6 +178,7 @@ type app struct {
 	opt                               options
 	repo                              *gitcompare.Repo
 	branch, baseRef, baseSHA, headSHA string
+	base                              baseInfo
 	headIsWorktree                    bool
 	folder                            bool
 	current                           *revision
@@ -188,6 +192,9 @@ func newApp(opt options) (*app, error) {
 	}
 	if opt.head == "" {
 		opt.head = "HEAD"
+	}
+	if opt.rebase && (opt.before != "" || opt.after != "") {
+		return nil, fmt.Errorf("--rebase 只适用于 Git 比较；目录比较请去掉该参数")
 	}
 	a := &app{opt: opt, cache: map[string]*revision{}}
 	var err error
@@ -244,20 +251,40 @@ func newApp(opt options) (*app, error) {
 		return nil, err
 	}
 	a.baseRef = opt.base
-	if a.baseRef == "" {
-		var distance int
-		a.baseRef, a.baseSHA, distance, err = detectBase(a.repo, a.headSHA)
+	if a.baseRef != "" {
+		a.base, err = resolveExplicitBase(a.repo, a.baseRef, a.headSHA)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("· 分支 %s；基线 %s（%s，领先 %d 个提交）\n", a.branch, a.baseRef, shortSHA(a.baseSHA), distance)
+		a.baseSHA = a.base.SHA
 	} else {
-		a.baseSHA, err = a.repo.Resolve(a.baseRef)
+		a.base, err = detectBase(a.repo, a.headSHA)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("· 分支 %s；基线 %s\n", a.branch, a.baseRef)
+		a.baseRef, a.baseSHA = a.base.Ref, a.base.SHA
 	}
+	if opt.rebase {
+		if err := a.tryRebase(a.base); err != nil {
+			return nil, err
+		}
+		// rebase 成功或冲突回退后都重算，避免沿用旧 HEAD 的距离。
+		if opt.base != "" {
+			a.base, err = resolveExplicitBase(a.repo, a.baseRef, a.headSHA)
+			if err != nil {
+				return nil, err
+			}
+			a.baseSHA = a.base.SHA
+		} else {
+			var next baseInfo
+			next, err = detectBase(a.repo, a.headSHA)
+			if err != nil {
+				return nil, err
+			}
+			a.base, a.baseRef, a.baseSHA = next, next.Ref, next.SHA
+		}
+	}
+	a.printBase()
 	dirty, err := a.repo.StatusFiles()
 	if err != nil {
 		return nil, err
@@ -273,11 +300,79 @@ func newApp(opt options) (*app, error) {
 	return a, nil
 }
 
+// tryRebase 只在显式 --rebase 时调用。冲突或无法执行时保持原 HEAD，
+// 继续用 merge-base 基线启动；只有 git rebase --abort 失败才终止。
+func (a *app) tryRebase(base baseInfo) error {
+	target := base.Ref
+	if target == "" {
+		return nil
+	}
+	if !a.headIsWorktree && !strings.EqualFold(a.opt.head, "HEAD") && a.opt.head != "." {
+		fmt.Printf("· --rebase：--head %s 不是当前分支，跳过\n", a.opt.head)
+		return nil
+	}
+	tip := base.UpstreamSHA
+	if !base.MergeBase {
+		tip = base.SHA
+	}
+	if tip != "" && a.repo.IsAncestor(tip, a.headSHA) {
+		fmt.Printf("· --rebase：HEAD 已包含 %s，跳过\n", target)
+		return nil
+	}
+	dirty, err := a.repo.StatusFiles()
+	if err != nil {
+		return err
+	}
+	if len(dirty) > 0 {
+		fmt.Printf("· --rebase：工作区有 %d 个未提交改动，跳过（不会自动 stash）\n", len(dirty))
+		return nil
+	}
+	res, err := a.repo.Rebase(target)
+	if err != nil {
+		return err
+	}
+	if !res.Rebased {
+		if res.Conflict {
+			fmt.Printf("· --rebase 冲突，已自动 git rebase --abort；继续用 merge-base 基线\n")
+		} else {
+			fmt.Printf("· --rebase 未执行：%s；继续用 merge-base 基线\n", res.Detail)
+		}
+	} else {
+		fmt.Printf("· --rebase：已 rebase 到 %s\n", target)
+	}
+	head, err := a.repo.Resolve("HEAD")
+	if err != nil {
+		return err
+	}
+	a.headSHA = head
+	return nil
+}
+
+func (a *app) printBase() {
+	b := a.base
+	fmt.Printf("· 分支 %s；基线 %s（%s，领先 %d 个提交）\n", a.branch, b.label(), shortSHA(b.SHA), b.Ahead)
+	if b.Upstream == "" {
+		return
+	}
+	switch {
+	case b.Behind > 0 && !b.Contains:
+		fmt.Printf("  落后 %s %d 个提交，建议 rebase\n", b.Upstream, b.Behind)
+	case b.Behind > 0:
+		fmt.Printf("  基线与 %s 相差 %d 个提交\n", b.Upstream, b.Behind)
+	case !b.Contains:
+		fmt.Printf("  未包含 %s 最新提交，建议 rebase\n", b.Upstream)
+	default:
+		fmt.Printf("  已包含 %s 最新提交\n", b.Upstream)
+	}
+}
+
 func (a *app) newPayload(comparison model.Comparison, code contract.CodeBundle, ctx contract.ReviewContext) (contract.Payload, error) {
 	return contract.Payload{Code: code, Session: reviewctx.Empty(ctx), Review: model.Review{
 		Before: comparison.BeforeLabel, After: comparison.AfterLabel, Comparison: comparison,
 		Notes: []string{}, Signals: []model.Signal{}, Findings: []contract.Finding{},
-		Scan: contract.ScanState{Mode: contract.ScanModeDiff, Status: contract.ScanStatusSkipped},
+		Scan:       contract.ScanState{Mode: contract.ScanModeDiff, Status: contract.ScanStatusSkipped},
+		BaseLabel:  a.base.label(),
+		BaseBehind: int32(a.base.Behind), BaseUpstream: a.base.Upstream, NeedsRebase: a.base.needsRebase(),
 	}}, nil
 }
 
@@ -443,25 +538,100 @@ func ensureRoot(dir string) (string, error) {
 	return abs, nil
 }
 
-func detectBase(repo *gitcompare.Repo, head string) (string, string, int, error) {
-	ref, sha, distance := "", "", 0
-	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
-		s, err := repo.Resolve(candidate)
-		if err != nil || !repo.IsAncestor(s, head) {
-			continue
+// mainRefCandidates 是自动基线的首选 ref，顺序决定距离相同时的优先级。
+var mainRefCandidates = []string{"main", "master", "origin/main", "origin/master"}
+
+// baseInfo 描述一次比较所用的基线，以及它与主分支最新提交的关系。
+type baseInfo struct {
+	Ref         string // 选中的 ref，例如 origin/main 或显式 --base
+	SHA         string // 实际基线提交；自动模式是 merge-base
+	Ahead       int    // HEAD 比基线多出的提交数
+	Upstream    string // 计算落后量所用的主分支 ref
+	UpstreamSHA string // 主分支 ref 的最新提交
+	Behind      int    // 基线落后主分支的提交数
+	Contains    bool   // HEAD 是否已包含主分支最新提交
+	MergeBase   bool   // SHA 是否来自 git merge-base
+}
+
+func (b baseInfo) label() string {
+	if b.MergeBase {
+		return "merge-base(" + b.Ref + "@" + shortSHA(b.SHA) + ")"
+	}
+	return b.Ref
+}
+
+func (b baseInfo) needsRebase() bool { return b.Upstream != "" && !b.Contains }
+
+// nearestMain 依次尝试主分支 ref，选 merge-base 距 HEAD 最近的一个。
+// 距离相同时取落后主分支更多（更新）的 ref，避免选中过期的本地 main。
+func nearestMain(repo *gitcompare.Repo, head string) (baseInfo, bool) {
+	groups := [][]string{mainRefCandidates, fallbackRefs(repo)}
+	for _, candidates := range groups {
+		if best, found := pickNearest(repo, head, candidates); found {
+			return best, true
 		}
-		d, err := repo.Distance(s, head)
+	}
+	return baseInfo{}, false
+}
+
+func fallbackRefs(repo *gitcompare.Repo) []string {
+	refs := []string{"origin/HEAD"}
+	if up := repo.Upstream(); up != "" && up != "origin/HEAD" {
+		refs = append(refs, up)
+	}
+	return refs
+}
+
+func pickNearest(repo *gitcompare.Repo, head string, candidates []string) (baseInfo, bool) {
+	var best baseInfo
+	found := false
+	for _, candidate := range candidates {
+		tip, err := repo.Resolve(candidate)
 		if err != nil {
 			continue
 		}
-		if ref == "" || d < distance {
-			ref, sha, distance = candidate, s, d
+		mb, err := repo.MergeBase(head, tip)
+		if err != nil {
+			continue
 		}
+		distance, err := repo.Distance(mb, head)
+		if err != nil {
+			continue
+		}
+		behind, _ := repo.Distance(mb, tip)
+		if found && (distance > best.Ahead || (distance == best.Ahead && behind <= best.Behind)) {
+			continue
+		}
+		best = baseInfo{Ref: candidate, SHA: mb, Ahead: distance, Upstream: candidate, UpstreamSHA: tip, Behind: behind, MergeBase: true}
+		found = true
 	}
-	if ref == "" {
-		return "", "", 0, fmt.Errorf("当前分支不在 main / master / origin/main / origin/master 之上；用 --base 指定基线")
+	return best, found
+}
+
+func detectBase(repo *gitcompare.Repo, head string) (baseInfo, error) {
+	info, ok := nearestMain(repo, head)
+	if !ok {
+		return baseInfo{}, fmt.Errorf("找不到可用基线：main / master / origin/main / origin/master / origin/HEAD / 当前分支上游都不可用；用 --base <ref> 指定基线")
 	}
-	return ref, sha, distance, nil
+	info.Behind, _ = repo.Distance(info.SHA, info.UpstreamSHA)
+	info.Contains = repo.IsAncestor(info.UpstreamSHA, head)
+	return info, nil
+}
+
+// resolveExplicitBase 保留用户指定的基线，只补充与主分支的差距。
+func resolveExplicitBase(repo *gitcompare.Repo, ref, head string) (baseInfo, error) {
+	sha, err := repo.Resolve(ref)
+	if err != nil {
+		return baseInfo{}, err
+	}
+	info := baseInfo{Ref: ref, SHA: sha}
+	info.Ahead, _ = repo.Distance(sha, head)
+	if upstream, ok := nearestMain(repo, head); ok {
+		info.Upstream, info.UpstreamSHA = upstream.Ref, upstream.UpstreamSHA
+		info.Behind, _ = repo.Distance(sha, upstream.UpstreamSHA)
+		info.Contains = repo.IsAncestor(upstream.UpstreamSHA, head)
+	}
+	return info, nil
 }
 
 func openTarget(target string) (*gitcompare.Repo, error) {
