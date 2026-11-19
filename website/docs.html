@@ -106,8 +106,8 @@
             <button class="copy-btn" type="button" data-copy="start-cmd" data-i18n="btn.copy">Copy</button>
           </div>
           <pre><code data-i18n="docs.start.cmd" id="start-cmd">cd /path/to/your/repo
-intentflow --base main
-intentflow --no-open --base main</code></pre>
+intentflow
+intentflow --no-open</code></pre>
         </div>
       </section>
 
@@ -124,7 +124,8 @@ intentflow --no-open --base main</code></pre>
               </tr>
             </thead>
             <tbody>
-              <tr><td><code>intentflow --base main</code></td><td data-i18n="docs.range.all">main to HEAD</td></tr>
+              <tr><td><code>intentflow</code></td><td data-i18n="docs.range.all">auto base to HEAD</td></tr>
+              <tr><td><code>intentflow --base main</code></td><td data-i18n="docs.range.main">main to HEAD</td></tr>
               <tr><td><code>intentflow --base main --head WORKTREE</code></td><td data-i18n="docs.range.worktree">main to the worktree, with untracked files</td></tr>
               <tr><td><code>intentflow --base v1.0 --head HEAD</code></td><td data-i18n="docs.range.commits">tag or commit range</td></tr>
               <tr><td><code>intentflow --before ./a --after ./b</code></td><td data-i18n="docs.range.folders">two directories, no Git</td></tr>
@@ -144,7 +145,8 @@ intentflow --no-open --base main</code></pre>
             </thead>
             <tbody>
               <tr><td><code>-t, --target</code></td><td data-i18n="params.target">repo directory, default `.`</td></tr>
-              <tr><td><code>--base</code></td><td data-i18n="params.base">baseline; nearest of main, master, origin/main, origin/master</td></tr>
+              <tr><td><code>--base</code></td><td data-i18n="params.base">baseline; nearest merge-base of main, master, origin/main, origin/master</td></tr>
+              <tr><td><code>--rebase</code></td><td data-i18n="params.rebase">rebase onto the baseline first; abort on conflict and continue with merge-base</td></tr>
               <tr><td><code>--head</code></td><td data-i18n="params.head">end point, default `HEAD`; `WORKTREE` adds uncommitted files</td></tr>
               <tr><td><code>--before, --after</code></td><td data-i18n="params.beforeAfter">two directories instead of a Git range</td></tr>
               <tr><td><code>--host</code></td><td data-i18n="params.host">listen address, default `0.0.0.0`</td></tr>
@@ -157,7 +159,7 @@ intentflow --no-open --base main</code></pre>
           </table>
         </div>
 
-        <p class="note" data-i18n="docs.range.note">With no `--base` it takes the nearest ancestor and never falls back to `HEAD~1`.</p>
+        <p class="note" data-i18n="docs.range.note">With no `--base` it uses the nearest merge-base; the branch does not need to be a descendant of main.</p>
       </section>
 
       <section class="doc-section" id="review">

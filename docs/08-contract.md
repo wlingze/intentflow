@@ -22,6 +22,7 @@ Payload
 ├── review : Review
 │   ├── before / after
 │   ├── comparison : Comparison
+│   ├── baseLabel / baseBehind / baseUpstream / needsRebase
 │   └── notes : string[]
 ├── code : CodeBundle
 │   ├── root
@@ -33,6 +34,15 @@ Payload
 
 `Review` 仍保留早期语义分析的占位字段（`scan`、`findings`、`ai` 等）。当前版本固定为
 `scan.status = skipped`，`findings = []`，前端不读取。
+
+基线状态四个字段只用于提示，不阻断启动：
+
+- `baseLabel`：自动模式为 `merge-base(<ref>@<short sha>)`，显式 `--base` 时为该 ref。
+- `baseUpstream`：计算落后量所用的主分支 ref，例如 `origin/main`；未知时为空。
+- `baseBehind`：`base..baseUpstream` 的提交数，即基线落后多少提交。
+- `needsRebase`：HEAD 是否尚未包含 `baseUpstream` 的最新提交。
+
+目录比较没有 Git 基线，四个字段分别为空、0、空、false。
 
 ### CodeFile
 

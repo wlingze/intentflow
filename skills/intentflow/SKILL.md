@@ -37,7 +37,7 @@ Node, the release asset does not.
 Run inside the repository under review:
 
 ```bash
-intentflow --no-open --base main
+intentflow --no-open
 ```
 
 It prints the workbench URL and keeps serving until you stop it. Give that
@@ -53,9 +53,12 @@ Ranges:
 | one commit | `--base <sha>~1 --head <sha>` |
 | two directories, no Git | `--before ./a --after ./b` |
 
-With no `--base`, it takes the nearest of main / master / origin/main /
-origin/master in HEAD history. It never falls back to `HEAD~1`, and it stops and
-asks when none of them is an ancestor. Pass `--base` explicitly then.
+With no `--base`, it picks the nearest `git merge-base HEAD <ref>` among
+main / master / origin/main / origin/master. The branch does not need to be a
+descendant of main. If none exist it tries `origin/HEAD` and the branch
+upstream, then asks for `--base`. Add `--rebase` only when the user asks to
+move the branch; conflicts are aborted automatically and the merge-base range
+still starts.
 
 ## 2. Wait for the review
 
