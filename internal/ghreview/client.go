@@ -146,6 +146,7 @@ type APIError struct {
 	Details        []string
 	RateLimitReset time.Time
 	RetryAfter     time.Duration
+	RateLimited    bool
 	URL            string
 }
 
@@ -163,9 +164,9 @@ func (e *APIError) Error() string {
 		return "GitHub token 无效或已过期（HTTP 401）"
 	case e.Status == http.StatusNotFound:
 		return "仓库或 PR 不存在，或 token 没有权限（HTTP 404）"
-	case (e.Status == http.StatusForbidden || e.Status == http.StatusTooManyRequests) && !e.RateLimitReset.IsZero():
+	case e.RateLimited && !e.RateLimitReset.IsZero():
 		return fmt.Sprintf("GitHub API 限流（HTTP %d），重置时间 %s", e.Status, e.RateLimitReset.Format(time.RFC3339))
-	case e.RetryAfter > 0:
+	case e.RateLimited && e.RetryAfter > 0:
 		return fmt.Sprintf("GitHub API 限流（HTTP %d），%s 后重试", e.Status, e.RetryAfter)
 	case e.Status == http.StatusUnprocessableEntity:
 		detail := e.Message
@@ -366,6 +367,9 @@ func parseAPIError(response *http.Response, raw []byte, target string) error {
 			}
 		}
 	}
+	apiErr.RateLimited = response.StatusCode == http.StatusTooManyRequests ||
+		response.Header.Get("X-RateLimit-Remaining") == "0" ||
+		response.Header.Get("Retry-After") != ""
 	if reset := response.Header.Get("X-RateLimit-Reset"); reset != "" {
 		if epoch, err := strconv.ParseInt(reset, 10, 64); err == nil {
 			apiErr.RateLimitReset = time.Unix(epoch, 0)
