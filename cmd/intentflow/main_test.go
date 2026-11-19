@@ -16,10 +16,20 @@ func TestDefaultIsPureDiff(t *testing.T) {
 	if opt.mode != "diff" {
 		t.Fatalf("default mode = %q", opt.mode)
 	}
+	if opt.rebase {
+		t.Fatal("--rebase must default to off; it moves the worktree")
+	}
 	for _, mode := range []string{"scan", "review"} {
 		if _, err := newApp(options{mode: mode}); err == nil {
 			t.Fatalf("accepted mode %q", mode)
 		}
+	}
+}
+
+func TestRebaseOnlyAppliesToGitComparisons(t *testing.T) {
+	before, after := t.TempDir(), t.TempDir()
+	if _, err := newApp(options{before: before, after: after, rebase: true}); err == nil {
+		t.Fatal("--rebase must be rejected for folder comparisons")
 	}
 }
 
@@ -91,4 +101,3 @@ func TestBranchSessionsDoNotMix(t *testing.T) {
 		t.Fatal("same commit on two branches shares one session id")
 	}
 }
-
