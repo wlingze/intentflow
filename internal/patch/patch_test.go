@@ -119,7 +119,9 @@ rename to to.txt
 }
 
 func TestMergeCommitSeries(t *testing.T) {
-	parsed := mustParse(t, `From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
+	// A blank context line in a unified diff is one space. Keep the source
+	// clean and substitute the marker instead of leaving trailing whitespace.
+	source := `From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001
 Subject: [PATCH 1/3] add file
 
 diff --git a/app.go b/app.go
@@ -138,7 +140,7 @@ diff --git a/app.go b/app.go
 +++ b/app.go
 @@ -1,3 +1,4 @@
  package app
- 
+@@BLANK@@
 -var value = 1
 +var value = 2
 +var other = 3
@@ -153,11 +155,12 @@ rename to main.go
 +++ b/main.go
 @@ -1,4 +1,4 @@
  package app
- 
+@@BLANK@@
 -var value = 2
 +var value = 4
  var other = 3
-`)
+`
+	parsed := mustParse(t, strings.ReplaceAll(source, "@@BLANK@@", " "))
 	if len(parsed.Files) != 1 {
 		t.Fatalf("files = %+v", parsed.Files)
 	}
