@@ -84,6 +84,68 @@ func (r *Repo) IsAncestor(ancestor, descendant string) bool {
 	return err == nil
 }
 
+// MergeBase 返回两个提交的最近公共祖先。没有共同历史时返回错误。
+func (r *Repo) MergeBase(a, b string) (string, error) {
+	out, err := git(r.Root, "merge-base", a, b)
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", fmt.Errorf("%s 与 %s 没有共同祖先", a, b)
+	}
+	return sha, nil
+}
+
+// Upstream 返回当前分支的上游 ref，例如 origin/main。没有上游时返回空串。
+func (r *Repo) Upstream() string {
+	out, err := git(r.Root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// RebaseResult 描述一次显式 rebase 的结果。
+type RebaseResult struct {
+	Rebased  bool   // true 表示 rebase 成功，HEAD 已移动
+	Conflict bool   // true 表示发生冲突并已自动 abort
+	Detail   string // 冲突或失败时的简短原因
+}
+
+// Rebase 把当前分支 rebase 到 ref。发生冲突时立即 git rebase --abort。
+// 只有 abort 自身失败才返回 error；其它失败通过 RebaseResult 返回，调用方
+// 可以安全地退回 merge-base 模式。
+func (r *Repo) Rebase(ref string) (RebaseResult, error) {
+	if _, err := git(r.Root, "rebase", ref); err != nil {
+		if !r.rebaseInProgress() {
+			return RebaseResult{Detail: strings.TrimSpace(err.Error())}, nil
+		}
+		if _, abortErr := git(r.Root, "rebase", "--abort"); abortErr != nil {
+			return RebaseResult{}, fmt.Errorf("rebase 到 %s 冲突，自动 abort 失败: %w", ref, abortErr)
+		}
+		return RebaseResult{Conflict: true, Detail: strings.TrimSpace(err.Error())}, nil
+	}
+	return RebaseResult{Rebased: true}, nil
+}
+
+func (r *Repo) rebaseInProgress() bool {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		out, err := git(r.Root, "rev-parse", "--git-path", name)
+		if err != nil {
+			continue
+		}
+		path := strings.TrimSpace(out)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(r.Root, path)
+		}
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // Distance 返回 descendant 比 ancestor 多出的提交数。anchors 必须是祖先。
 func (r *Repo) Distance(ancestor, descendant string) (int, error) {
 	out, err := git(r.Root, "rev-list", "--count", ancestor+".."+descendant)
