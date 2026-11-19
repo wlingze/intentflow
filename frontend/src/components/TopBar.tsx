@@ -13,13 +13,14 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
   const ctx = payload?.session.context;
   const review = payload?.review;
   const baseHint = review && review.comparison.mode === 'git' && review.baseLabel ? baseSummary(review) : '';
+  const remote = ctx?.repository.startsWith('github.com/') ?? false;
   const adds = [...stats.values()].reduce((sum, stat) => sum + stat.adds, 0);
   const dels = [...stats.values()].reduce((sum, stat) => sum + stat.dels, 0);
   return <header className={styles.top}>
     <span className={styles.mark} title="intentflow">if</span>
     <div className={styles.identity}>
       <div className={styles.repo} title={ctx?.repository}>{ctx?.repository.split('/').filter(Boolean).slice(-2).join('/') || 'intentflow'}</div>
-      <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>本地 PR</span></div>
+      <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>{remote ? 'GitHub PR' : '本地 PR'}</span></div>
     </div>
     <RevisionPicker />
     {baseHint && <div className={styles.base} data-warn={review?.needsRebase || undefined} title={baseHint}>{baseHint}</div>}
