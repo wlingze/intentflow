@@ -80,3 +80,21 @@ func TestPayloadUsesGzip(t *testing.T) {
 		t.Fatalf("payload session: %+v", payload.Session)
 	}
 }
+
+func TestPayloadJSONAlias(t *testing.T) {
+	h := newTestHandler(t)
+	for _, target := range []string{"/api/payload", "/api/payload.json"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		if w.Code != 200 {
+			t.Fatalf("%s = %d", target, w.Code)
+		}
+	}
+	for _, target := range []string{"/api/revisions", "/api/revisions.json"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		if w.Code != 200 {
+			t.Fatalf("%s = %d", target, w.Code)
+		}
+	}
+}

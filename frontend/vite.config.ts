@@ -2,6 +2,8 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // Relative asset URLs work at /, at /pr/owner/repo/4/ and in a static export.
+  base: './',
   plugins: [react()],
   server: {
     host: '0.0.0.0',

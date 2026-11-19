@@ -41,7 +41,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		return nil, fmt.Errorf("二进制里没有前端产物；先运行 scripts/build.sh")
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/payload", func(w http.ResponseWriter, r *http.Request) {
+	payloadHandler := func(w http.ResponseWriter, r *http.Request) {
 		p := cfg.Payload()
 		if id := r.URL.Query().Get("revision"); id != "" {
 			if cfg.Load == nil {
@@ -56,8 +56,11 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			p = next
 		}
 		writeJSON(w, 200, p)
-	})
-	mux.HandleFunc("GET /api/revisions", func(w http.ResponseWriter, r *http.Request) {
+	}
+	// The .json names are what a static export writes next to index.html.
+	mux.HandleFunc("GET /api/payload", payloadHandler)
+	mux.HandleFunc("GET /api/payload.json", payloadHandler)
+	revisionsHandler := func(w http.ResponseWriter, r *http.Request) {
 		if cfg.Revisions == nil {
 			writeJSON(w, 200, contract.RevisionList{Revisions: []contract.Revision{}})
 			return
@@ -68,7 +71,9 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			return
 		}
 		writeJSON(w, 200, list)
-	})
+	}
+	mux.HandleFunc("GET /api/revisions", revisionsHandler)
+	mux.HandleFunc("GET /api/revisions.json", revisionsHandler)
 	mux.Handle("/", spaHandler(dist))
 	return gzipMiddleware(mux), nil
 }
@@ -141,22 +146,27 @@ func Listen(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	host := cfg.Host
+	return listen(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台")
+}
+
+// listen shares socket, URL and browser handling between one-diff and
+// multi-PR modes.
+func listen(host string, port int, open bool, handler http.Handler, title string) error {
 	if host == "" {
 		host = "0.0.0.0"
 	}
-	ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(cfg.Port)))
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
 		return fmt.Errorf("监听失败: %w", err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	fmt.Println("review 工作台:")
-	for _, url := range accessURLs(host, port) {
+	actual := ln.Addr().(*net.TCPAddr).Port
+	fmt.Println(title + ":")
+	for _, url := range accessURLs(host, actual) {
 		fmt.Println("  " + url)
 	}
-	fmt.Println("端口:", port)
-	if cfg.OpenBrowser {
-		go openBrowser(accessURLs(host, port)[0])
+	fmt.Println("端口:", actual)
+	if open {
+		go openBrowser(accessURLs(host, actual)[0])
 	}
 	return http.Serve(ln, logRequests(handler))
 }
