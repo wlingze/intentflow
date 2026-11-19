@@ -55,9 +55,11 @@ jobs:
           intentflow version
 
       - name: Export the static workbench
+        env:
+          # Pass the title through env, never interpolate it into a shell line.
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          intentflow export --diff pr.diff --out site \
-            --title "${{ github.event.pull_request.title }}"
+          intentflow export --diff pr.diff --out site --title "$PR_TITLE"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
