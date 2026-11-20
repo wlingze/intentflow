@@ -203,7 +203,13 @@ export const FileDiffCard = memo(function FileDiffCard({
   const pickedRef = useRef<PickedRange | null>(null);
   const itemsRef = useRef<Item[]>([]);
   const wasViewed = useRef(viewed);
-  useEffect(() => { if (revealToken !== undefined) setOpen(true); }, [revealToken]);
+  useEffect(() => {
+    if (revealToken === undefined) return;
+    setOpen(true);
+    // 文件树没有行号：只显示 diff。用户先前展开过的折叠区在这里收回，
+    // 否则整份文件会一直保持展开，看起来像默认打开了全文。
+    if (targetLine === undefined) setExpanded(EMPTY);
+  }, [revealToken, targetLine]);
   useEffect(() => {
     if (viewed && !wasViewed.current) setOpen(false);
     if (!viewed && wasViewed.current) setOpen(true);
@@ -306,23 +312,30 @@ export const FileDiffCard = memo(function FileDiffCard({
     const scroller = content.current?.closest<HTMLElement>('[data-review-scroll]');
     const element = root.current;
     if (!scroller || !element) return;
-    const index = targetLine ? items.findIndex((item) => itemLines(item)[targetSide]?.n === targetLine) : -1;
+    const index = targetLine
+      ? items.findIndex((item) => itemLines(item)[targetSide]?.n === targetLine)
+      : items.findIndex((item) => item.type === 'header');
     if (targetLine && index < 0) return;
     lastReveal.current = pendingScroll;
     setPendingScroll('');
     // Keep the target below the floating search panel instead of hiding it.
     const panel = document.querySelector<HTMLElement>('[data-search-panel="true"]');
     const offset = panel ? Math.max(100, panel.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + 16) : 100;
-    const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (index >= 0 ? virtual.offsetOf(index) - offset : 0);
+    // 文件树跳转把第一段 hunk 顶到卡片吸顶头下面；行跳转仍按面板下缘对齐。
+    const head = root.current?.querySelector<HTMLElement>('header');
+    const anchor = targetLine || panel ? offset : (head?.offsetHeight ?? 0) + 10;
+    const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + (index >= 0 ? virtual.offsetOf(index) - anchor : 0);
     scroller.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
     // Row heights are estimated until the card is laid out, and the card may be
     // content-visibility:auto, so correct once the real row exists.
     let tries = 0;
     const settle = () => {
       if (tries++ > 8 || !root.current) return;
-      const line = targetLine ? root.current.querySelector<HTMLElement>(`[data-line="${targetLine}"][data-side="${targetSide}"]`) : null;
+      const line = targetLine
+        ? root.current.querySelector<HTMLElement>(`[data-line="${targetLine}"][data-side="${targetSide}"]`)
+        : root.current.querySelector<HTMLElement>('[data-hunk-head]');
       if (!line) { requestAnimationFrame(settle); return; }
-      const delta = line.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + offset);
+      const delta = line.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + anchor);
       if (Math.abs(delta) > 4 && Math.abs(delta) < scroller.clientHeight) scroller.scrollTop += delta;
       else if (Math.abs(delta) >= scroller.clientHeight) { scroller.scrollTop += delta; requestAnimationFrame(settle); }
     };
@@ -534,7 +547,7 @@ export const FileDiffCard = memo(function FileDiffCard({
         if (item.type === 'header') {
           const fullKey = `${file.path}@${item.key}#${item.hash}`;
           const done = viewed || reviewedSet.has(fullKey);
-          return <div key={index} data-virtual-row={index} className={cx(styles.hunkHead, done && styles.hunkDone)}>
+          return <div key={index} data-virtual-row={index} data-hunk-head className={cx(styles.hunkHead, done && styles.hunkDone)}>
             <span>{item.text}</span>
             <label className={styles.hunkCheck} title="标记这段改动已查看；全部标记后文件自动折叠">
               <input type="checkbox" checked={done} aria-label={`已查看 ${item.text}`} onChange={() => {
