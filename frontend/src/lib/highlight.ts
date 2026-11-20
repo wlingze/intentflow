@@ -321,3 +321,84 @@ function paint(code: string, spans: Span[], word: string, emphasis: EmphasisRang
 export function highlight(code: string, language?: string, word = '', emphasis: EmphasisRange[] = []): string {
   return paint(code, spansFor(code, language), word, emphasis);
 }
+
+interface DocumentSpans { starts: Int32Array; spans: Span[] | null }
+
+// Go 的原始字符串、多行注释和模板字符串都跨行。逐行调用 highlight.js 会把
+// 每一行当成新文档，反引号里的内容因此按代码着色。整份文件只解析一次，再
+// 按行裁剪 token，diff 行与文件全文自然得到同一结果。
+const DOCUMENT_LIMIT = 32;
+const documents = new Map<string, DocumentSpans>();
+
+function spansForDocument(code: string, id: string): DocumentSpans {
+  const key = `${id}\u0000${code}`;
+  const hit = documents.get(key);
+  if (hit) {
+    documents.delete(key);
+    documents.set(key, hit);
+    return hit;
+  }
+  const starts = [0];
+  for (let index = 0; index < code.length; index++) {
+    if (code.charCodeAt(index) === 10) starts.push(index + 1);
+  }
+  const document: DocumentSpans = { starts: Int32Array.from(starts), spans: null };
+  try {
+    const result = hljs.highlight(code, { language: id, ignoreIllegals: true });
+    document.spans = readSpans(result.value, code);
+  } catch {
+    document.spans = null;
+  }
+  documents.set(key, document);
+  if (documents.size > DOCUMENT_LIMIT) {
+    const oldest = documents.keys().next().value;
+    if (oldest !== undefined) documents.delete(oldest);
+  }
+  return document;
+}
+
+function clipSpans(spans: Span[], start: number, end: number): Span[] {
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (spans[middle].end <= start) low = middle + 1;
+    else high = middle;
+  }
+  const out: Span[] = [];
+  for (let index = low; index < spans.length && spans[index].start < end; index++) {
+    const from = Math.max(spans[index].start, start);
+    const to = Math.min(spans[index].end, end);
+    if (to > from) out.push({ start: from - start, end: to - start, cls: spans[index].cls });
+  }
+  return out;
+}
+
+export interface LinePainter {
+  /** 按整份文档的 token 状态给一行着色。text 必须与原文该行完全一致。 */
+  paint(line: number, text: string, word?: string, emphasis?: EmphasisRange[]): string;
+}
+
+/**
+ * 返回按行着色器：整份 code 只解析一次，跨行字符串在每一行都保持同一状态。
+ * 调用方给出的行号或文本与原文不符时退回单行着色，不影响旧调用。
+ */
+export function linePainter(code: string, language?: string): LinePainter {
+  const id = normalizeLanguage(language);
+  if (!GRAMMARS[id] || !code) {
+    return { paint: (_line, text, word = '', emphasis = []) => highlight(text, language, word, emphasis) };
+  }
+  const document = spansForDocument(code, id);
+  const spans = document.spans;
+  if (!spans) {
+    return { paint: (_line, text, word = '', emphasis = []) => highlight(text, language, word, emphasis) };
+  }
+  return {
+    paint(line, text, word = '', emphasis = []) {
+      const index = line - 1;
+      const start = index >= 0 && index < document.starts.length ? document.starts[index] : -1;
+      if (start < 0 || code.slice(start, start + text.length) !== text) return highlight(text, language, word, emphasis);
+      return paint(text, clipSpans(spans, start, start + text.length), word, emphasis);
+    },
+  };
+}

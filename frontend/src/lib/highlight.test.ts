@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { highlight } from './highlight';
+import { highlight, linePainter } from './highlight';
+import { diffLines } from './diff';
 
 describe('highlight', () => {
   it('escapes unknown languages', () => {
@@ -78,6 +79,59 @@ it('composes C syntax, selected words and changed ranges on the same text', () =
   expect(highlight('return n;', 'c', 'return', [{ start: 0, end: 6 }])).toBe(
     '<span class="tok-keyword"><span class="chg"><mark>return</mark></span></span> n;',
   );
+});
+
+describe('linePainter', () => {
+  // Go 的反引号原始字符串跨行；中间是被当成 C 代码示例的内容。
+  const document = [
+    'package raw',
+    '',
+    'var embedded = `',
+    'int main() {',
+    '\tint value = 1;',
+    '\tvalue = value + 1;',
+    '\treturn 0;',
+    '}',
+    '`',
+    '',
+    'func Demo() string { return embedded }',
+  ].join('\n');
+
+  it('keeps a multi-line Go raw string open across lines', () => {
+    const painter = linePainter(document, 'go');
+    for (const [line, text] of [[4, 'int main() {'], [5, '\tint value = 1;'], [7, '\treturn 0;'], [9, '`']] as const) {
+      const html = painter.paint(line, text);
+      expect(html).toContain('class="tok-string"');
+      expect(html).not.toContain('class="tok-keyword"');
+      expect(html).not.toContain('class="tok-number"');
+    }
+    expect(painter.paint(1, 'package raw')).toContain('<span class="tok-keyword">package</span>');
+  });
+
+  it('closes the raw string before colouring the next Go code', () => {
+    const painter = linePainter(document, 'go');
+    const html = painter.paint(11, 'func Demo() string { return embedded }');
+    expect(html).toContain('<span class="tok-keyword">func</span>');
+    expect(html).toContain('<span class="tok-keyword">return</span>');
+    expect(html).not.toContain('class="tok-string"');
+  });
+
+  it('paints unchanged diff context the same as the full file', () => {
+    const after = document.replace('value = value + 1;', 'value = value + 2;');
+    const before = linePainter(document, 'go');
+    const next = linePainter(after, 'go');
+    const shared = diffLines(document, after).filter((row) => row.type === 'equal');
+    expect(shared.length).toBeGreaterThan(0);
+    for (const row of shared) {
+      expect(before.paint(row.a.n, row.a.text)).toBe(next.paint(row.b.n, row.b.text));
+    }
+    expect(before.paint(4, 'int main() {')).toBe(next.paint(4, 'int main() {'));
+  });
+
+  it('falls back to one-line painting when the text does not match', () => {
+    const painter = linePainter('package main\n\nfunc main() {}', 'go');
+    expect(painter.paint(99, 'return 0')).toBe(highlight('return 0', 'go'));
+  });
 });
 
 describe('highlight with emphasis ranges', () => {
