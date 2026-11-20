@@ -7,7 +7,7 @@ import type { DiffRow, DiffStats } from '../lib/diff';
 import { cx } from '../lib/format';
 import { hashText } from '../lib/hash';
 import { useImagePaste } from '../hooks/useImagePaste';
-import { highlight } from '../lib/highlight';
+import { highlight, linePainter } from '../lib/highlight';
 import { clearCodeSelection, setCodeSelection } from '../lib/codeSelection';
 import { codeColumns } from '../lib/codeColumns';
 import { DiffHorizontalScroll } from './DiffHorizontalScroll';
@@ -237,6 +237,10 @@ export const FileDiffCard = memo(function FileDiffCard({
   // 行内改动：同一对增删行里真实变化的词，与 GitHub 一致。只在卡片真正
   // 挂载时计算，首屏不为一千多个文件付这笔钱。
   const marks = useMemo(() => (showBody ? inlineMarks(splitPairs(rows)) : NO_MARKS), [rows, showBody]);
+  // 整份文件解析一次，diff 行和展开后的全文都按同一份 token 状态着色。
+  const painters = useMemo(() => showBody
+    ? { before: linePainter(file.before ?? '', file.language), after: linePainter(file.after ?? '', file.language) }
+    : null, [showBody, file]);
   const items = useMemo(() => {
     const out: Item[] = [];
     for (const section of sections) {
@@ -483,6 +487,9 @@ export const FileDiffCard = memo(function FileDiffCard({
   const renderGutter = (side: Side, line?: DiffLine) => <div className={styles.gutter}>
     {line && <><button type="button" className={styles.commentAdd} title={`评论 ${side === 'before' ? 'L' : 'R'}${line.n}`} aria-label={`评论 ${side === 'before' ? 'L' : 'R'}${line.n}`} onMouseDown={() => { /* keep the picked range for the comment quote */ }} onClick={() => startComment(side, line)}>+</button><span className={styles.lineNo}>{line.n}</span></>}
   </div>;
+  const paintLine = (side: Side, line: DiffLine) => painters
+    ? painters[side].paint(line.n, line.text, word, marks[side].get(line.n))
+    : highlight(line.text, file.language, word, marks[side].get(line.n));
   const cell = (rowIndex: number, side: Side, line?: DiffLine, change?: 'add' | 'del') => <div data-scroll-side={line ? (layout === 'unified' ? 'after' : side) : undefined} className={cx(styles.cell, change && styles[change], !line && styles.blank)}>
     {line && <span className={cx(styles.code, targetLine === line.n && targetSide === side && styles.target, isPicked(picked, rowIndex, side) && styles.picked)} data-side={side} data-line={line.n} onPointerDown={(event) => { pointerStart.current = { x: event.clientX, y: event.clientY }; }} onClick={(event) => {
       const start = pointerStart.current;
@@ -493,7 +500,7 @@ export const FileDiffCard = memo(function FileDiffCard({
       if (pickedRef.current) { setPicked(null); clearCodeSelection(); }
       const selected = wordAtPoint(event, source, line.text);
       if (selected !== null) onWord(selected);
-    }}><span className={styles.sign} aria-hidden>{change === 'add' ? '+' : change === 'del' ? '−' : ' '}</span><span className={styles.source} data-source dangerouslySetInnerHTML={{ __html: highlight(line.text, file.language, word, marks[side].get(line.n)) || '&nbsp;' }} /></span>}
+    }}><span className={styles.sign} aria-hidden>{change === 'add' ? '+' : change === 'del' ? '−' : ' '}</span><span className={styles.source} data-source dangerouslySetInnerHTML={{ __html: paintLine(side, line) || '&nbsp;' }} /></span>}
   </div>;
 
   const slash = file.path.lastIndexOf('/');
