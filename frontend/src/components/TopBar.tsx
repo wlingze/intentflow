@@ -16,13 +16,14 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
   const baseHint = review && review.comparison.mode === 'git' && review.baseLabel ? baseSummary(review) : '';
   // 能不能发布由数据源决定，不看仓库名：静态导出的 GitHub PR 也保留为只读。
   const remote = !!publishLabel;
+  const kind = ctx?.revision === 'patch' ? '补丁' : (ctx?.revision?.startsWith('pr:') || remote) ? 'GitHub PR' : '本地 PR';
   const adds = [...stats.values()].reduce((sum, stat) => sum + stat.adds, 0);
   const dels = [...stats.values()].reduce((sum, stat) => sum + stat.dels, 0);
   return <header className={styles.top}>
     <span className={styles.mark} title="intentflow">if</span>
     <div className={styles.identity}>
       <div className={styles.repo} title={ctx?.repository}>{ctx?.repository.split('/').filter(Boolean).slice(-2).join('/') || 'intentflow'}</div>
-      <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>{remote ? 'GitHub PR' : '本地 PR'}</span></div>
+      <div className={styles.branchRow}><IconBranch width={13} height={13} /><span className={styles.branch} title={ctx?.branch}>{ctx?.branch}</span><span className={styles.local}>{kind}</span></div>
     </div>
     <RevisionPicker />
     {baseHint && <div className={styles.base} data-warn={review?.needsRebase || undefined} title={baseHint}>{baseHint}</div>}

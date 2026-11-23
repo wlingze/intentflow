@@ -10,6 +10,7 @@
 .resizer::after, .leftResizer::after { content: ''; position: absolute; inset: 0 3px; background: transparent; }
 .resizer:hover::after, .leftResizer:hover::after, .resizer:focus-visible::after, .leftResizer:focus-visible::after, .shell[data-resizing='true'] .resizer::after, .shell[data-resizing='true'] .leftResizer::after { background: var(--blue); }
 .resizer:focus-visible, .leftResizer:focus-visible { outline: none; }
+.shell[data-submission='true'] .workspace, .shell[data-submission='true'] .right { padding-bottom: 52px; }
 .shell[data-resizing='true'] { cursor: col-resize; user-select: none; }
 .splash { height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; background: var(--panel); color: var(--dim); text-align: center; padding: 24px; }
 .splash h1 { font-size: 20px; color: var(--ink); margin: 0; }
@@ -21,4 +22,5 @@
 .drawerLeft { left: 0; width: min(340px, 88vw); border-right: 1px solid var(--line); }
 .drawerRight { right: 0; width: min(420px, 94vw); border-left: 1px solid var(--line); }
 @media(max-width: 1000px) { .shell { grid-template-columns: minmax(0, 1fr); }.left, .right { display: none; } }
+@media(max-width: 760px) { .shell[data-submission='true'] .workspace { padding-bottom: 96px; } }
 @media(prefers-reduced-motion: reduce) { .shell *, .shell *::before, .shell *::after { scroll-behavior: auto !important; transition: none !important; } }
