@@ -53,6 +53,16 @@ gh workflow run release.yml -f tag=v0.1.0
 sha256sum -c checksums.txt --ignore-missing
 ```
 
+## macOS 签名
+
+产物未做 Developer ID 签名与公证：`codesign -dvv` 显示 `Signature=adhoc`，
+`spctl --assess --type execute` 返回 `rejected`。因此用浏览器下载并解压的运行会
+被 Gatekeeper 拦截，提示无法验证开发者。
+
+`curl` 下载不带 `com.apple.quarantine` 属性，`install.sh` 装出的文件可直接运行
+（已在 macOS 15.7.3 arm64 实测）。文档不要引导用户关闭 Gatekeeper 或整体取消
+隔离属性；需要支持浏览器下载时，再补 Developer ID 签名与公证。
+
 ## 兼容性
 
 - Go 1.24 以上构建。产物不依赖 libc，可在 Alpine 等最小镜像运行。
