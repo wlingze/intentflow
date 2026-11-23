@@ -38,6 +38,9 @@ export type Revision = Schemas['Revision'];
 export type RevisionList = Schemas['RevisionList'];
 export type ReviewSession = Schemas['ReviewSession'];
 export type ReviewContext = Schemas['ReviewContext'];
+export type ReviewSubmission = Schemas['ReviewSubmission'];
+export type SubmissionComment = Schemas['SubmissionComment'];
+export type ReviewSubmissionVerdict = NonNullable<ReviewSubmission['verdict']>;
 
 export interface PersistedReview {
   comments: Comment[];

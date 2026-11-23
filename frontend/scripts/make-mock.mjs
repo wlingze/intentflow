@@ -150,6 +150,7 @@ async function main() {
       truncated: files.length < paths.length,
       skipped: files.length < paths.length ? paths.slice(files.length) : [],
     },
+    submission: { enabled: false },
   };
 
   await fs.mkdir(path.dirname(output), { recursive: true });

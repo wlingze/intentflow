@@ -1,4 +1,4 @@
-import type { Payload, ReviewSession, RevisionList } from '../types';
+import type { Payload, ReviewSession, ReviewSubmission, RevisionList } from '../types';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -33,3 +33,12 @@ export async function fetchRevisions(): Promise<RevisionList> {
 }
 
 export const httpSource: WorkbenchSource = { fetchPayload, fetchRevisions };
+
+export async function submitReview(request: ReviewSubmission): Promise<{ status: string }> {
+  return jsonResponse<{ status: string }>(await fetch(apiPath('submission'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal: AbortSignal.timeout(30000),
+  }));
+}
