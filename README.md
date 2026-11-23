@@ -48,7 +48,7 @@ installer=$(curl -fsSL https://wlingze.github.io/intentflow/install.sh) &&
 **Windows**（PowerShell 5.1 或 7）：
 
 ```powershell
-& ([scriptblock]::Create((Invoke-RestMethod https://wlingze.github.io/intentflow/install.ps1 -ErrorAction Stop)))
+& ([scriptblock]::Create((curl.exe -fsSL https://wlingze.github.io/intentflow/install.ps1 | Out-String)))
 ```
 
 默认目标是 `%LOCALAPPDATA%\intentflow\bin\intentflow.exe`。脚本更新当前 PowerShell 和用户 `Path`，不需要管理员权限。其他已打开的终端保留原环境；若新终端也未继承更新，注销后重新登录。

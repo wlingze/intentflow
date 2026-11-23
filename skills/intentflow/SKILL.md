@@ -22,15 +22,28 @@ Do not use it to summarise code the user did not ask to review.
 command -v intentflow
 ```
 
-Nothing printed means it is missing. Use the [platform installer](https://wlingze.github.io/intentflow/#install).
-It selects the matching archive from the latest release, checks its SHA-256 and
-runs the installed binary with `--version`. On macOS/Linux the default is
-`/usr/local/bin/intentflow`; set `INTENTFLOW_INSTALL_DIR` to an absolute user bin
-directory for a non-admin install. On Windows use PowerShell; the installer adds
-`%LOCALAPPDATA%\intentflow\bin` to the user Path.
+Nothing printed means it is missing. Use the platform installer; it reads the
+latest release, checks the SHA-256, installs to the default directory and runs
+the installed binary with `--version`. Do not build from source unless the user
+asks: `make build` needs Go and Node, the release asset does not.
 
-Do not build it from source unless the user asks; `make build` needs Go and
-Node, the release asset does not.
+macOS / Linux (default `/usr/local/bin/intentflow`, needs `sudo` only for that
+directory; set `INTENTFLOW_INSTALL_DIR="$HOME/.local/bin"` for a user install):
+
+```bash
+installer=$(curl -fsSL https://wlingze.github.io/intentflow/install.sh) &&
+  sh -c "$installer"
+```
+
+Windows, in PowerShell 5.1 or 7 (default
+`%LOCALAPPDATA%\intentflow\bin\intentflow.exe`, no admin rights, adds the
+directory to the user `Path`):
+
+```powershell
+& ([scriptblock]::Create((curl.exe -fsSL https://wlingze.github.io/intentflow/install.ps1 | Out-String)))
+```
+
+Both read `HTTPS_PROXY` / `HTTP_PROXY`.
 
 ## 1. Start it
 
