@@ -60,6 +60,8 @@ func run(args []string) error {
 		return runExport(args)
 	case "github":
 		return runGithub(args)
+	case "review":
+		return runReview(args)
 	case "update":
 		return runUpdate(args)
 	default:
@@ -81,9 +83,11 @@ func usageTo(w io.Writer) {
   intentflow export --diff <patch> --out <dir> [--repo owner/repo] [--branch ref]
   intentflow serve --pr-dir <dir> [--no-github]
   intentflow github [open] --repo owner/name --pr N
+  intentflow review --wait --json --base main
   intentflow update [--check] [--version v0.2.0] [--force] [--repo owner/name]
   intentflow version
 
+  review         阻塞式审阅：页面提交后 stdout 输出一份 JSON
   --mode diff    默认且唯一模式；不运行 SSA、扫描或 AI
   --no-open      不自动打开浏览器
   --base         基线；默认对 main/master/origin/main/origin/master 取最近 merge-base
@@ -106,6 +110,7 @@ func usageTo(w io.Writer) {
 }
 
 type options struct {
+	log                                io.Writer
 	target, language, base, head, mode string
 	before, after                      string
 	beforeLabel, afterLabel            string
@@ -313,7 +318,7 @@ func runExport(args []string) error {
 	return nil
 }
 
-const maxPatchBytes = 32 << 20
+const maxPatchBytes = 64 << 20
 
 func readPatch(path string) ([]byte, error) {
 	if path == "-" {
@@ -370,6 +375,7 @@ type revision struct {
 
 type app struct {
 	mu                                sync.Mutex
+	log                               io.Writer
 	opt                               options
 	repo                              *gitcompare.Repo
 	branch, baseRef, baseSHA, headSHA string
@@ -391,7 +397,11 @@ func newApp(opt options) (*app, error) {
 	if opt.rebase && (opt.before != "" || opt.after != "") {
 		return nil, fmt.Errorf("--rebase 只适用于 Git 比较；目录比较请去掉该参数")
 	}
-	a := &app{opt: opt, cache: map[string]*revision{}}
+	log := opt.log
+	if log == nil {
+		log = os.Stdout
+	}
+	a := &app{opt: opt, cache: map[string]*revision{}, log: log}
 	var err error
 	if opt.before != "" || opt.after != "" {
 		if opt.before == "" || opt.after == "" {
@@ -503,7 +513,7 @@ func (a *app) tryRebase(base baseInfo) error {
 		return nil
 	}
 	if !a.headIsWorktree && !strings.EqualFold(a.opt.head, "HEAD") && a.opt.head != "." {
-		fmt.Printf("· --rebase：--head %s 不是当前分支，跳过\n", a.opt.head)
+		fmt.Fprintf(a.log, "· --rebase：--head %s 不是当前分支，跳过\n", a.opt.head)
 		return nil
 	}
 	tip := base.UpstreamSHA
@@ -511,7 +521,7 @@ func (a *app) tryRebase(base baseInfo) error {
 		tip = base.SHA
 	}
 	if tip != "" && a.repo.IsAncestor(tip, a.headSHA) {
-		fmt.Printf("· --rebase：HEAD 已包含 %s，跳过\n", target)
+		fmt.Fprintf(a.log, "· --rebase：HEAD 已包含 %s，跳过\n", target)
 		return nil
 	}
 	dirty, err := a.repo.StatusFiles()
@@ -519,7 +529,7 @@ func (a *app) tryRebase(base baseInfo) error {
 		return err
 	}
 	if len(dirty) > 0 {
-		fmt.Printf("· --rebase：工作区有 %d 个未提交改动，跳过（不会自动 stash）\n", len(dirty))
+		fmt.Fprintf(a.log, "· --rebase：工作区有 %d 个未提交改动，跳过（不会自动 stash）\n", len(dirty))
 		return nil
 	}
 	res, err := a.repo.Rebase(target)
@@ -528,12 +538,12 @@ func (a *app) tryRebase(base baseInfo) error {
 	}
 	if !res.Rebased {
 		if res.Conflict {
-			fmt.Printf("· --rebase 冲突，已自动 git rebase --abort；继续用 merge-base 基线\n")
+			fmt.Fprintln(a.log, "· --rebase 冲突，已自动 git rebase --abort；继续用 merge-base 基线")
 		} else {
-			fmt.Printf("· --rebase 未执行：%s；继续用 merge-base 基线\n", res.Detail)
+			fmt.Fprintf(a.log, "· --rebase 未执行：%s；继续用 merge-base 基线\n", res.Detail)
 		}
 	} else {
-		fmt.Printf("· --rebase：已 rebase 到 %s\n", target)
+		fmt.Fprintf(a.log, "· --rebase：已 rebase 到 %s\n", target)
 	}
 	head, err := a.repo.Resolve("HEAD")
 	if err != nil {
@@ -545,19 +555,19 @@ func (a *app) tryRebase(base baseInfo) error {
 
 func (a *app) printBase() {
 	b := a.base
-	fmt.Printf("· 分支 %s；基线 %s（%s，领先 %d 个提交）\n", a.branch, b.label(), shortSHA(b.SHA), b.Ahead)
+	fmt.Fprintf(a.log, "· 分支 %s；基线 %s（%s，领先 %d 个提交）\n", a.branch, b.label(), shortSHA(b.SHA), b.Ahead)
 	if b.Upstream == "" {
 		return
 	}
 	switch {
 	case b.Behind > 0 && !b.Contains:
-		fmt.Printf("  落后 %s %d 个提交，建议 rebase\n", b.Upstream, b.Behind)
+		fmt.Fprintf(a.log, "  落后 %s %d 个提交，建议 rebase\n", b.Upstream, b.Behind)
 	case b.Behind > 0:
-		fmt.Printf("  基线与 %s 相差 %d 个提交\n", b.Upstream, b.Behind)
+		fmt.Fprintf(a.log, "  基线与 %s 相差 %d 个提交\n", b.Upstream, b.Behind)
 	case !b.Contains:
-		fmt.Printf("  未包含 %s 最新提交，建议 rebase\n", b.Upstream)
+		fmt.Fprintf(a.log, "  未包含 %s 最新提交，建议 rebase\n", b.Upstream)
 	default:
-		fmt.Printf("  已包含 %s 最新提交\n", b.Upstream)
+		fmt.Fprintf(a.log, "  已包含 %s 最新提交\n", b.Upstream)
 	}
 }
 
@@ -703,12 +713,12 @@ func (a *app) revisions() (contract.RevisionList, error) {
 }
 
 func (a *app) printCompare(p contract.Payload) {
-	fmt.Printf("· 比较 %s → %s，%d 个改动文件\n", p.Review.Before, p.Review.After, len(p.Code.Files))
+	fmt.Fprintf(a.log, "· 比较 %s → %s，%d 个改动文件\n", p.Review.Before, p.Review.After, len(p.Code.Files))
 	if p.Code.Truncated {
-		fmt.Printf("  注意：%d 个文件超出体积上限，未携带正文\n", len(p.Code.Skipped))
+		fmt.Fprintf(a.log, "  注意：%d 个文件超出体积上限，未携带正文\n", len(p.Code.Skipped))
 	}
 	if p.Session.UpdatedAt != "" {
-		fmt.Printf("· 已恢复 session %s：%d 条评论\n", p.Session.Context.SessionId, len(p.Session.Comments))
+		fmt.Fprintf(a.log, "· 已恢复 session %s：%d 条评论\n", p.Session.Context.SessionId, len(p.Session.Comments))
 	}
 }
 
