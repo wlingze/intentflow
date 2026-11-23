@@ -80,6 +80,34 @@ func Build(beforeRoot, afterRoot, label string, renames map[string]string) (cont
 	return bundle, nil
 }
 
+// Fit turns already-classified files into a payload bundle: sort by path,
+// apply the same size budget as Build, and keep truncated paths visible.
+// Patch input uses it because the diff itself already carries the status.
+func Fit(root string, files []contract.CodeFile) contract.CodeBundle {
+	sort.SliceStable(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	sizes := make([]int, len(files))
+	for i, file := range files {
+		sizes[i] = len(file.Before) + len(file.After)
+		if file.Language == "" {
+			files[i].Language = languageOf(file.Path)
+		}
+	}
+	keep := allocate(sizes, MaxTotalBytes)
+	bundle := contract.CodeBundle{Root: root, Files: make([]contract.CodeFile, 0, len(files)), Skipped: []string{}}
+	for i, file := range files {
+		if !keep[i] || sizes[i] > MaxFileBytes {
+			bundle.Truncated = true
+			bundle.Skipped = append(bundle.Skipped, file.Path)
+			file.Before, file.After = "", ""
+		}
+		bundle.Files = append(bundle.Files, file)
+	}
+	return bundle
+}
+
+// LanguageOf exposes the payload language table to other diff sources.
+func LanguageOf(path string) string { return languageOf(path) }
+
 type deltaEntry struct {
 	path                string
 	oldPath             string
