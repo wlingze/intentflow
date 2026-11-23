@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wlingze/intentflow/schema/review-result.schema.json",
+  "title": "intentflow review result",
+  "description": "The single JSON document written by `intentflow review --json` to stdout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "reason",
+    "message",
+    "verdict",
+    "summary",
+    "comments",
+    "revision",
+    "submitted_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "enum": ["submitted", "cancelled", "timeout", "error"]
+    },
+    "reason": {
+      "enum": [
+        null,
+        "user",
+        "page-closed",
+        "interrupted",
+        "timeout",
+        "usage",
+        "git",
+        "patch",
+        "pr",
+        "listen",
+        "internal"
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [null, "approve", "request-changes", "comment"]
+    },
+    "summary": {
+      "type": ["string", "null"]
+    },
+    "comments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/comment" }
+    },
+    "revision": {
+      "oneOf": [
+        { "$ref": "#/$defs/revision" },
+        { "type": "null" }
+      ]
+    },
+    "submitted_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "submitted" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "reason": { "type": "null" },
+          "verdict": { "enum": ["approve", "request-changes", "comment"] },
+          "summary": { "type": "string" },
+          "submitted_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["cancelled", "timeout", "error"] } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "reason": { "type": "string" },
+          "verdict": { "type": "null" },
+          "summary": { "type": "null" },
+          "comments": { "maxItems": 0 },
+          "submitted_at": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "comment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "body", "file", "line", "end_line", "side", "quote", "resolved"],
+      "properties": {
+        "id": { "type": "string" },
+        "body": { "type": "string", "minLength": 1 },
+        "file": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "end_line": { "type": ["integer", "null"], "minimum": 1 },
+        "side": { "enum": [null, "before", "after"] },
+        "quote": { "type": ["string", "null"] },
+        "resolved": { "type": "boolean" }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "mode",
+        "repository",
+        "branch",
+        "subdir",
+        "base",
+        "head",
+        "base_label",
+        "head_label",
+        "session_id",
+        "comparison_id",
+        "diff_digest"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "mode": { "enum": ["git", "folder", "patch"] },
+        "repository": { "type": "string" },
+        "branch": { "type": "string" },
+        "subdir": { "type": "string" },
+        "base": { "type": "string" },
+        "head": { "type": "string" },
+        "base_label": { "type": "string" },
+        "head_label": { "type": "string" },
+        "session_id": { "type": "string" },
+        "comparison_id": { "type": "string" },
+        "diff_digest": { "type": "string" }
+      }
+    }
+  }
+}
