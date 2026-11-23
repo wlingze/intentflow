@@ -22,12 +22,12 @@ Do not use it to summarise code the user did not ask to review.
 command -v intentflow
 ```
 
-Nothing printed means it is missing. Take the asset for the platform from
-<https://github.com/wlingze/intentflow/releases/latest>:
-`intentflow_<version>_<os>_<arch>.tar.gz` for `linux` and `darwin`, `.zip` for
-`windows`; arch is `amd64` or `arm64`. Unpack it and put `intentflow` on PATH —
-`~/.local/bin` is enough. One static binary, no root, no service, no runtime
-dependency besides `git`.
+Nothing printed means it is missing. Use the [platform installer](https://wlingze.github.io/intentflow/#install).
+It selects the matching archive from the latest release, checks its SHA-256 and
+runs the installed binary with `--version`. On macOS/Linux the default is
+`/usr/local/bin/intentflow`; set `INTENTFLOW_INSTALL_DIR` to an absolute user bin
+directory for a non-admin install. On Windows use PowerShell; the installer adds
+`%LOCALAPPDATA%\intentflow\bin` to the user Path.
 
 Do not build it from source unless the user asks; `make build` needs Go and
 Node, the release asset does not.

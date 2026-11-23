@@ -34,7 +34,26 @@
 
 ## 安装
 
-从 [Releases](https://github.com/wlingze/intentflow/releases) 下载对应平台的压缩包。
+安装脚本从[最新正式版](https://github.com/wlingze/intentflow/releases/latest)读取 `checksums.txt`，按系统与 CPU 选择压缩包。SHA-256 匹配后才解压安装，最后用安装后的绝对路径运行 `--version`。无需预先下载文件。
+
+**macOS / Linux**（sh、bash 或 zsh）：
+
+```sh
+installer=$(curl -fsSL https://wlingze.github.io/intentflow/install.sh) &&
+  sh -c "$installer"
+```
+
+默认目标是 `/usr/local/bin/intentflow`，不是 `/usr/local/intentflow`。只有写入系统目录时才需要 `sudo`。没有管理员权限时，可先设置 `export INTENTFLOW_INSTALL_DIR="$HOME/.local/bin"`，并把该目录加入 `PATH`。
+
+**Windows**（PowerShell 5.1 或 7）：
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod https://wlingze.github.io/intentflow/install.ps1 -ErrorAction Stop)))
+```
+
+默认目标是 `%LOCALAPPDATA%\intentflow\bin\intentflow.exe`。脚本更新当前 PowerShell 和用户 `Path`，不需要管理员权限。其他已打开的终端保留原环境；若新终端也未继承更新，注销后重新登录。
+
+可先审阅 [sh 脚本](website/install.sh) 或 [PowerShell 脚本](website/install.ps1)。手动下载时，使用同一 release 的 `checksums.txt` 校验压缩包：
 
 | 平台 | 文件 |
 | --- | --- |
@@ -45,24 +64,7 @@
 | Windows x86-64 | `intentflow_<版本>_windows_amd64.zip` |
 | Windows ARM64 | `intentflow_<版本>_windows_arm64.zip` |
 
-解压后得到单个可执行文件，前端已内嵌，不需要其他文件。
-
-```bash
-# Linux / macOS
-tar -xzf intentflow_0.1.0_linux_amd64.tar.gz
-sudo install -m755 intentflow /usr/local/bin/intentflow
-
-# Windows（PowerShell）
-Expand-Archive intentflow_0.1.0_windows_amd64.zip -DestinationPath .
-.\intentflow.exe version
-```
-
-确认版本与平台：
-
-```bash
-intentflow version
-# 0.1.0 (abc1234, 2026-11-13T..., go1.24.0 linux/amd64)
-```
+前端已内嵌。`intentflow --version` 可确认安装版本和平台。SHA-256 校验不等于 Apple 公证；如果 Gatekeeper 拒绝运行，请勿关闭系统保护。
 
 也可以从源码构建：
 

@@ -38,6 +38,9 @@ go build -ldflags "-X github.com/wlingze/intentflow/internal/version.Version=0.1
 3. `.github/workflows/release.yml` 依次构建前端、交叉编译、打包、计算 SHA-256。
 4. 用 `gh release create` 发布；同名 release 已存在时改为覆盖上传。
 
+官网的 `install.sh` 和 `install.ps1` 由 Pages 随 `website/` 部署，不依赖某个 tag。
+它们读取 `releases/latest/download/checksums.txt`，从目标平台的唯一一行取得版本、文件名和 SHA-256，再从对应 tag 下载该文件。发新版无需修改 README 或官网。请保留上述包名、包内可执行文件路径和清单格式。
+
 需要重跑：
 
 ```bash

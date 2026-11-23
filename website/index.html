@@ -47,7 +47,7 @@
           <h1 class="hero__title" data-i18n="hero.title">Read the diff. Write the note. Hand it to the agent.</h1>
           <p class="hero__lead" data-i18n="hero.lead">Local diff review for coding agents.</p>
           <div class="hero__actions">
-            <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download v0.1.0</a>
+            <a class="btn btn--primary" href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="hero.download">Download latest release</a>
             <a class="btn btn--ghost" href="./docs.html" data-i18n="hero.docs">Read the docs</a>
           </div>
         </div>
@@ -195,23 +195,21 @@ review 工作台:
                 <span data-i18n="install.unix">Linux / macOS</span>
                 <button class="copy-btn" type="button" data-copy="install-unix" data-i18n="btn.copy">Copy</button>
               </div>
-              <pre><code data-i18n="install.unixCmd" id="install-unix">tar -xzf intentflow_0.1.0_linux_amd64.tar.gz
-sudo install -m755 intentflow /usr/local/bin/intentflow
-intentflow version</code></pre>
+              <pre><code id="install-unix">installer=$(curl -fsSL https://wlingze.github.io/intentflow/install.sh) &amp;&amp;
+  sh -c "$installer"</code></pre>
             </div>
 
             <div class="codeblock">
               <div class="codeblock__head">
-                <span data-i18n="install.windows">Windows</span>
+                <span data-i18n="install.windows">Windows (PowerShell)</span>
                 <button class="copy-btn" type="button" data-copy="install-windows" data-i18n="btn.copy">Copy</button>
               </div>
-              <pre><code data-i18n="install.windowsCmd" id="install-windows">Expand-Archive intentflow_0.1.0_windows_amd64.zip -DestinationPath .
-.\intentflow.exe version</code></pre>
+              <pre><code id="install-windows">&amp; ([scriptblock]::Create((Invoke-RestMethod https://wlingze.github.io/intentflow/install.ps1 -ErrorAction Stop)))</code></pre>
             </div>
           </div>
 
-          <p class="install__line"><code>intentflow_0.1.0_{linux,darwin,windows}_{amd64,arm64}</code></p>
-          <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">All releases and checksums</a></p>
+          <p class="install__line" data-i18n="install.verify">The installer checks SHA-256 before unpacking and runs `--version` after installation.</p>
+          <p class="fine"><a href="https://github.com/wlingze/intentflow/releases/latest" data-i18n="install.releases">Latest release and checksums</a></p>
         </div>
       </div>
     </section>
