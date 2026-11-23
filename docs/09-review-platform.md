@@ -48,7 +48,9 @@ intentflow 的第一阶段是可用的本地 PR 评审：文件树、diff、行�
 ```
 
 保存在浏览器 localStorage，键 `intentflow.review.<comparison_id>`。
-服务端不写任何文件，`--review-dir` 参数已移除。
+服务端不写任何文件，`--review-dir` 参数已移除。只有
+`intentflow review --wait` 会在进程内存里接收一次提交，然后退出；
+它不持久化评审，也不改变上面的 localStorage 规则。
 
 目录比较以两份目录路径作为身份，并标注“目录比较”，没有伪造的 Git 分支。
 
