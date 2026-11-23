@@ -204,7 +204,7 @@ review 工作台:
                 <span data-i18n="install.windows">Windows (PowerShell)</span>
                 <button class="copy-btn" type="button" data-copy="install-windows" data-i18n="btn.copy">Copy</button>
               </div>
-              <pre><code id="install-windows">&amp; ([scriptblock]::Create((Invoke-RestMethod https://wlingze.github.io/intentflow/install.ps1 -ErrorAction Stop)))</code></pre>
+              <pre><code id="install-windows">&amp; ([scriptblock]::Create((curl.exe -fsSL https://wlingze.github.io/intentflow/install.ps1 | Out-String)))</code></pre>
             </div>
           </div>
 
