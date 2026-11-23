@@ -9,6 +9,11 @@ A local diff workbench. The human reads the diff and writes comments in the
 browser; you get one Markdown block back. Nothing is sent anywhere: the review
 lives in their browser.
 
+For an agent-driven blocking review, use the sibling skill
+[`intentflow-review`](../intentflow-review/SKILL.md) instead: it runs
+`intentflow review --wait --json`, hands the URL to the user, and returns a
+stable JSON document with a verdict and line comments.
+
 ## When to use
 
 - "review my changes", "review this branch", "check the diff before I commit"
@@ -62,7 +67,7 @@ Ranges:
 | want | flag |
 | --- | --- |
 | branch against main | `--base main` |
-| uncommitted and untracked files | `--base main --head WORKTREE` |
+| uncommitted and untracked files | `--head WORKTREE` |
 | one commit | `--base <sha>~1 --head <sha>` |
 | two directories, no Git | `--before ./a --after ./b` |
 
