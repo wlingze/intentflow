@@ -47,6 +47,7 @@ const (
 const (
 	Folder ComparisonMode = "folder"
 	Git    ComparisonMode = "git"
+	Patch  ComparisonMode = "patch"
 )
 
 // Defines values for Confidence.
@@ -71,6 +72,19 @@ const (
 	Intent  Layer = "intent"
 	Logic   Layer = "logic"
 	Project Layer = "project"
+)
+
+// Defines values for ReviewSubmissionAction.
+const (
+	Cancel ReviewSubmissionAction = "cancel"
+	Submit ReviewSubmissionAction = "submit"
+)
+
+// Defines values for ReviewSubmissionVerdict.
+const (
+	ReviewSubmissionVerdictApprove        ReviewSubmissionVerdict = "approve"
+	ReviewSubmissionVerdictComment        ReviewSubmissionVerdict = "comment"
+	ReviewSubmissionVerdictRequestChanges ReviewSubmissionVerdict = "request-changes"
 )
 
 // Defines values for RevisionKind.
@@ -107,6 +121,12 @@ const (
 const (
 	After  Side = "after"
 	Before Side = "before"
+)
+
+// Defines values for SubmissionResponseStatus.
+const (
+	Cancelled SubmissionResponseStatus = "cancelled"
+	Submitted SubmissionResponseStatus = "submitted"
 )
 
 // Defines values for SymbolEdgeKind.
@@ -358,9 +378,10 @@ type Layer string
 
 // Payload defines model for Payload.
 type Payload struct {
-	Code    CodeBundle    `json:"code"`
-	Review  Review        `json:"review"`
-	Session ReviewSession `json:"session"`
+	Code       CodeBundle      `json:"code"`
+	Review     Review          `json:"review"`
+	Session    ReviewSession   `json:"session"`
+	Submission SubmissionState `json:"submission"`
 }
 
 // Quote defines model for Quote.
@@ -428,6 +449,21 @@ type ReviewSession struct {
 	Viewed []string `json:"viewed"`
 }
 
+// ReviewSubmission defines model for ReviewSubmission.
+type ReviewSubmission struct {
+	Action       ReviewSubmissionAction   `json:"action"`
+	Comments     *[]SubmissionComment     `json:"comments,omitempty"`
+	ComparisonId string                   `json:"comparison_id"`
+	Summary      *string                  `json:"summary,omitempty"`
+	Verdict      *ReviewSubmissionVerdict `json:"verdict,omitempty"`
+}
+
+// ReviewSubmissionAction defines model for ReviewSubmission.Action.
+type ReviewSubmissionAction string
+
+// ReviewSubmissionVerdict defines model for ReviewSubmission.Verdict.
+type ReviewSubmissionVerdict string
+
 // Revision defines model for Revision.
 type Revision struct {
 	Author  string       `json:"author"`
@@ -494,6 +530,32 @@ type Signal struct {
 	Title      string     `json:"title"`
 }
 
+// SubmissionComment defines model for SubmissionComment.
+type SubmissionComment struct {
+	Body     string  `json:"body"`
+	EndLine  *int32  `json:"end_line,omitempty"`
+	File     *string `json:"file,omitempty"`
+	Id       string  `json:"id"`
+	Line     *int32  `json:"line,omitempty"`
+	Quote    *string `json:"quote,omitempty"`
+	Resolved bool    `json:"resolved"`
+	Side     *Side   `json:"side,omitempty"`
+}
+
+// SubmissionResponse defines model for SubmissionResponse.
+type SubmissionResponse struct {
+	Status SubmissionResponseStatus `json:"status"`
+}
+
+// SubmissionResponseStatus defines model for SubmissionResponse.Status.
+type SubmissionResponseStatus string
+
+// SubmissionState defines model for SubmissionState.
+type SubmissionState struct {
+	// Enabled The workbench accepts one review submission and then exits.
+	Enabled bool `json:"enabled"`
+}
+
 // SymbolEdge defines model for SymbolEdge.
 type SymbolEdge struct {
 	Delta    DeltaKind      `json:"delta"`
@@ -556,3 +618,6 @@ type GetPayloadParams struct {
 	// Revision Revision id from /api/revisions (range, worktree, or commit:<sha>).
 	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
 }
+
+// SubmitReviewJSONRequestBody defines body for SubmitReview for application/json ContentType.
+type SubmitReviewJSONRequestBody = ReviewSubmission

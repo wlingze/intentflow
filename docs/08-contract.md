@@ -29,8 +29,12 @@ Payload
 │   ├── files : CodeFile[]        # 只含改动文件
 │   ├── truncated : bool
 │   └── skipped : string[]
-└── session : ReviewSession       # 当前范围的评审草稿
+├── session : ReviewSession       # 当前范围的评审草稿
+└── submission : SubmissionState  # 是否接受一次审阅提交
 ```
+
+`submission.enabled` 只在 `intentflow review --wait` 下为 true。普通工作台
+始终为 false，页面不显示提交栏。
 
 `Review` 仍保留早期语义分析的占位字段（`scan`、`findings`、`ai` 等）。当前版本固定为
 `scan.status = skipped`，`findings = []`，前端不读取。
@@ -60,7 +64,7 @@ path / old_path? / status / language / before / after
 ### Comparison
 
 ```text
-mode : folder | git
+mode : folder | git | patch
 beforeLabel / afterLabel
 repo? / subdir? / baseRef? / headRef?
 commits : Commit[]
@@ -68,7 +72,8 @@ selected : string[]
 note
 ```
 
-目录比较只有 folder；Git 比较带仓库、子目录和 ref。
+目录比较只有 folder；Git 比较带仓库、子目录和 ref；`patch` 来自
+`--diff` / `--pr`，没有仓库和 ref，文件来自补丁本身。
 
 ## 3. Revision
 
@@ -116,14 +121,21 @@ ReviewSession
 | --- | --- | --- |
 | GET | `/api/payload` | 当前比较快照；`?revision=` 切换 |
 | GET | `/api/revisions` | 比较范围列表 |
+| GET | `/api/events` | SSE；`review --wait` 下跟踪在线页面 |
+| POST | `/api/submission` | `review --wait` 下提交一次评审或取消 |
 
-服务端只读。评审状态的保存、恢复和草稿列表都在浏览器里完成，
-没有对应的写接口。
+普通工作台的评审状态仍只存在浏览器，服务端不落盘。`review --wait` 的
+`POST /api/submission` 只在进程内唤醒一次等待，写一次结果后进程退出。
+完整协议见 [docs/11-agent-review.md](11-agent-review.md)。
 
 ## 6. 必填策略
 
 `ReviewSession` 和 `ReviewContext` 的字段均为必填，空数组表示“没有”。
 `Comment.quote` 可选，因为评论可以不绑定行号；`resolved` 缺省为 false。
+
+`Payload.submission` 必填：普通工作台 `enabled=false`，`review --wait` 为
+`true`。`ReviewSubmission.action` 与 `comparison_id` 必填；`verdict` 在
+`action=submit` 时由服务端校验，`comments` 可为空数组。
 
 ## 7. 兼容
 

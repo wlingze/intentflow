@@ -38,6 +38,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server-sent events used to detect a closed review page */
+        get: operations["reviewEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit or cancel the current review (review --wait mode only) */
+        post: operations["submitReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -249,7 +283,7 @@ export interface components {
             needsRebase: boolean;
         };
         /** @enum {string} */
-        ComparisonMode: "folder" | "git";
+        ComparisonMode: "folder" | "git" | "patch";
         Commit: {
             sha: string;
             short: string;
@@ -362,6 +396,36 @@ export interface components {
             review: components["schemas"]["Review"];
             code: components["schemas"]["CodeBundle"];
             session: components["schemas"]["ReviewSession"];
+            submission: components["schemas"]["SubmissionState"];
+        };
+        SubmissionState: {
+            /** @description The workbench accepts one review submission and then exits. */
+            enabled: boolean;
+        };
+        ReviewSubmission: {
+            /** @enum {string} */
+            action: "submit" | "cancel";
+            comparison_id: string;
+            /** @enum {string} */
+            verdict?: "approve" | "request-changes" | "comment";
+            summary?: string;
+            comments?: components["schemas"]["SubmissionComment"][];
+        };
+        SubmissionComment: {
+            id: string;
+            body: string;
+            file?: string;
+            /** Format: int32 */
+            line?: number;
+            /** Format: int32 */
+            end_line?: number;
+            side?: components["schemas"]["Side"];
+            quote?: string;
+            resolved: boolean;
+        };
+        SubmissionResponse: {
+            /** @enum {string} */
+            status: "submitted" | "cancelled";
         };
         ReviewContext: {
             session_id: string;
@@ -465,6 +529,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionList"];
+                };
+            };
+        };
+    };
+    reviewEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream; periodic comments keep the connection alive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    submitReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewSubmission"];
+            };
+        };
+        responses: {
+            /** @description Submission accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionResponse"];
                 };
             };
         };

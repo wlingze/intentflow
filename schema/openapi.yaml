@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: intentflow review contract
-  version: 0.3.0
+  version: 0.4.0
   description: Local Git diff and persistent pull-request-style reviews.
 
 servers:
@@ -35,6 +35,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RevisionList'
+  /api/events:
+    get:
+      summary: Server-sent events used to detect a closed review page
+      operationId: reviewEvents
+      responses:
+        '200':
+          description: SSE stream; periodic comments keep the connection alive
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /api/submission:
+    post:
+      summary: Submit or cancel the current review (review --wait mode only)
+      operationId: submitReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewSubmission'
+      responses:
+        '200':
+          description: Submission accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionResponse'
 components:
   schemas:
     Confidence:
@@ -336,7 +363,7 @@ components:
 
     ComparisonMode:
       type: string
-      enum: [folder, git]
+      enum: [folder, git, patch]
 
     Commit:
       type: object
@@ -519,11 +546,61 @@ components:
     Payload:
       type: object
       additionalProperties: false
-      required: [review, code, session]
+      required: [review, code, session, submission]
       properties:
         review: { $ref: '#/components/schemas/Review' }
         code: { $ref: '#/components/schemas/CodeBundle' }
         session: { $ref: '#/components/schemas/ReviewSession' }
+        submission: { $ref: '#/components/schemas/SubmissionState' }
+
+    SubmissionState:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: The workbench accepts one review submission and then exits.
+
+    ReviewSubmission:
+      type: object
+      additionalProperties: false
+      required: [action, comparison_id]
+      properties:
+        action:
+          type: string
+          enum: [submit, cancel]
+        comparison_id: { type: string }
+        verdict:
+          type: string
+          enum: [approve, request-changes, comment]
+        summary: { type: string }
+        comments:
+          type: array
+          items: { $ref: '#/components/schemas/SubmissionComment' }
+
+    SubmissionComment:
+      type: object
+      additionalProperties: false
+      required: [id, body, resolved]
+      properties:
+        id: { type: string }
+        body: { type: string }
+        file: { type: string }
+        line: { type: integer, format: int32 }
+        end_line: { type: integer, format: int32 }
+        side: { $ref: '#/components/schemas/Side' }
+        quote: { type: string }
+        resolved: { type: boolean }
+
+    SubmissionResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [submitted, cancelled]
 
     ReviewContext:
       type: object
