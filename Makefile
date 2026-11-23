@@ -11,7 +11,7 @@ TREE_BIN ?= bin/intentflow
 # e2e 需要 Playwright。NODE_PATH 指向全局安装的包，没有就退回本地解析。
 PLAYWRIGHT_PATH ?= $(HOME)/.local/lib/node_modules/@playwright/cli/node_modules
 
-.PHONY: tools schema frontend build check e2e e2e-tree e2e-ui demo serve release-check site site-check clean
+.PHONY: tools schema frontend build check e2e e2e-tree e2e-ui e2e-review demo serve release-check site site-check clean
 
 # 一次性安装生成器。oapi-codegen 固定在 v2.4.1，避免生成物漂移。
 tools:
@@ -48,6 +48,10 @@ e2e-tree:
 # 设置 SCREENSHOT_DIR 可同时保存整页截图。
 e2e-ui:
 	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/ui.mjs $(TREE_BIN)
+
+# agent 审阅链路：真实浏览器点「提交并关闭」，校验 CLI 的 JSON 与退出码。
+e2e-review:
+	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/review.mjs $(TREE_BIN)
 
 # 生成 demo 的 review.json。
 demo:
