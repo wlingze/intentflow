@@ -3,6 +3,7 @@ package serve
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/wlingze/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/reviewflow"
 )
 
 // Config 描述一个只读的 diff 工作台。评审状态由浏览器保存，服务端不落盘。
@@ -30,6 +32,16 @@ type Config struct {
 	Load      func(string) (contract.Payload, error)
 	// OpenBrowser 在终端里启动时自动打开工作台；无图形环境时静默跳过。
 	OpenBrowser bool
+	// Submission 非空时启用审阅提交：页面可提交一次，SSE 跟踪在线页面。
+	Submission *reviewflow.Waiter
+	// Ready 在监听成功后调用，用于写 ready 文件。
+	Ready func(urls []string, port int)
+	// Stop 关闭时优雅停止 HTTP 服务。
+	Stop <-chan struct{}
+	// Out 接收人类日志；默认 os.Stdout。JSON 模式传 stderr。
+	Out io.Writer
+	// Log 接收 /api 访问日志；默认与 Out 相同。
+	Log io.Writer
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -41,6 +53,10 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		return nil, fmt.Errorf("二进制里没有前端产物；先运行 scripts/build.sh")
 	}
 	mux := http.NewServeMux()
+	withState := func(p contract.Payload) contract.Payload {
+		p.Submission = contract.SubmissionState{Enabled: cfg.Submission != nil}
+		return p
+	}
 	payloadHandler := func(w http.ResponseWriter, r *http.Request) {
 		p := cfg.Payload()
 		if id := r.URL.Query().Get("revision"); id != "" {
@@ -55,7 +71,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			}
 			p = next
 		}
-		writeJSON(w, 200, p)
+		writeJSON(w, 200, withState(p))
 	}
 	// The .json names are what a static export writes next to index.html.
 	mux.HandleFunc("GET /api/payload", payloadHandler)
@@ -74,6 +90,88 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	}
 	mux.HandleFunc("GET /api/revisions", revisionsHandler)
 	mux.HandleFunc("GET /api/revisions.json", revisionsHandler)
+	mux.HandleFunc("POST /api/submission", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Submission == nil {
+			writeError(w, 404, "当前工作台不接受提交；用 intentflow review --wait 启动")
+			return
+		}
+		var req contract.ReviewSubmission
+		if err := decode(w, r, &req); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		current := cfg.Payload().Session.Context
+		if req.ComparisonId == "" || req.ComparisonId != current.ComparisonId {
+			writeError(w, 409, "比较范围已变化，请刷新页面后再提交")
+			return
+		}
+		switch req.Action {
+		case contract.Cancel:
+			if !cfg.Submission.Cancel(reviewflow.ReasonUser, "用户取消了审阅") {
+				writeError(w, 409, "本次审阅已结束")
+				return
+			}
+			writeJSON(w, 200, contract.SubmissionResponse{Status: contract.Cancelled})
+			flush(w)
+		case contract.Submit:
+			sub, err := reviewflow.FromRequest(req)
+			if err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			if !cfg.Submission.Submit(sub) {
+				writeError(w, 409, "本次审阅已结束")
+				return
+			}
+			writeJSON(w, 200, contract.SubmissionResponse{Status: contract.Submitted})
+			flush(w)
+		default:
+			writeError(w, 400, fmt.Sprintf("未知 action %q", req.Action))
+		}
+	})
+	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Submission == nil {
+			writeError(w, 404, "当前工作台没有审阅会话")
+			return
+		}
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeError(w, 500, "当前连接不支持流式响应")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, "retry: 1000\n\n")
+		flusher.Flush()
+		cfg.Submission.ClientConnected()
+		defer cfg.Submission.ClientDisconnected()
+		// net/http only notices a dead SSE client on the next write. CloseNotify
+		// fires on the socket close, so a closed tab cancels promptly.
+		var closed <-chan bool
+		if notifier, ok := w.(http.CloseNotifier); ok {
+			closed = notifier.CloseNotify()
+		}
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-closed:
+				return
+			case <-cfg.Submission.Done():
+				return
+			case <-ticker.C:
+				if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+		}
+	})
 	mux.Handle("/", spaHandler(dist))
 	return gzipMiddleware(mux), nil
 }
@@ -114,9 +212,23 @@ func (g *gzipResponseWriter) Write(data []byte) (int, error) {
 	return g.writer.Write(data)
 }
 
+// Flush keeps one-shot API responses (submission) on the wire before the
+// review process shuts the server down.
+func (g *gzipResponseWriter) Flush() {
+	if !g.wrote {
+		g.WriteHeader(http.StatusOK)
+	}
+	if !g.plain {
+		_ = g.writer.Flush()
+	}
+	if flusher, ok := g.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodHead || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		if r.Method == http.MethodHead || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") || r.URL.Path == "/api/events" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -146,12 +258,16 @@ func Listen(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	return listen(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台")
+	return listenServe(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台", cfg.Out, cfg.Log, cfg.Ready, cfg.Stop)
 }
 
 // listen shares socket, URL and browser handling between one-diff and
 // multi-PR modes.
 func listen(host string, port int, open bool, handler http.Handler, title string) error {
+	return listenServe(host, port, open, handler, title, nil, nil, nil, nil)
+}
+
+func listenServe(host string, port int, open bool, handler http.Handler, title string, out, logOut io.Writer, ready func([]string, int), stop <-chan struct{}) error {
 	if host == "" {
 		host = "0.0.0.0"
 	}
@@ -160,15 +276,40 @@ func listen(host string, port int, open bool, handler http.Handler, title string
 		return fmt.Errorf("监听失败: %w", err)
 	}
 	actual := ln.Addr().(*net.TCPAddr).Port
-	fmt.Println(title + ":")
-	for _, url := range accessURLs(host, actual) {
-		fmt.Println("  " + url)
+	urls := accessURLs(host, actual)
+	if out == nil {
+		out = os.Stdout
 	}
-	fmt.Println("端口:", actual)
+	fmt.Fprintln(out, title+":")
+	for _, url := range urls {
+		fmt.Fprintln(out, "  "+url)
+	}
+	fmt.Fprintln(out, "端口:", actual)
+	if logOut == nil {
+		logOut = out
+	}
+	server := &http.Server{Handler: logRequests(handler, logOut)}
+	if stop != nil {
+		go func() {
+			<-stop
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = server.Shutdown(ctx)
+		}()
+	}
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(ln) }()
+	if ready != nil {
+		ready(urls, actual)
+	}
 	if open {
-		go openBrowser(accessURLs(host, actual)[0])
+		go openBrowser(urls[0])
 	}
-	return http.Serve(ln, logRequests(handler))
+	err = <-served
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 func accessURLs(host string, port int) []string {
@@ -264,12 +405,15 @@ func serveIndex(w http.ResponseWriter, r *http.Request, dist fs.FS) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(raw)
 }
-func logRequests(next http.Handler) http.Handler {
+func logRequests(next http.Handler, out io.Writer) http.Handler {
+	if out == nil {
+		out = os.Stdout
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			fmt.Printf("  %s %s %s\n", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+			fmt.Fprintf(out, "  %s %s %s\n", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
 		}
 	})
 }
@@ -281,4 +425,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func flush(w http.ResponseWriter) {
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
