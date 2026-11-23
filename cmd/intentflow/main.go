@@ -40,6 +40,9 @@ func run(args []string) error {
 		case "-h", "--help", "-help", "help":
 			usage()
 			return nil
+		case "version", "--version", "-version":
+			fmt.Println(version.String())
+			return nil
 		}
 	}
 	command := "serve"
@@ -53,9 +56,6 @@ func run(args []string) error {
 		return runDiff(args)
 	case "update":
 		return runUpdate(args)
-	case "version", "--version", "-version":
-		fmt.Println(version.String())
-		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", command)
 	}

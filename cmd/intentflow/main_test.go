@@ -2,13 +2,48 @@ package main
 
 import (
 	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wlingze/intentflow/internal/contract"
+	"github.com/wlingze/intentflow/internal/version"
 )
+
+func TestVersionFlagPrintsVersion(t *testing.T) {
+	for _, arg := range []string{"version", "--version", "-version"} {
+		got := captureStdout(t, func() error { return run([]string{arg}) })
+		if strings.TrimSpace(got) != version.String() {
+			t.Fatalf("%s printed %q, want %q", arg, got, version.String())
+		}
+	}
+}
+
+func captureStdout(t *testing.T, fn func() error) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	if err := fn(); err != nil {
+		w.Close()
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
 
 func TestDefaultIsPureDiff(t *testing.T) {
 	var opt options
