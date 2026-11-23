@@ -113,7 +113,8 @@ intentflow
 ```bash
 intentflow                              # 自动基线 → HEAD
 intentflow --base main                  # main → HEAD
-intentflow --base main --head WORKTREE  # main → 工作区，含未跟踪文件
+intentflow --base main --head HEAD      # main → HEAD
+intentflow --head WORKTREE              # HEAD → 工作区，含未跟踪文件
 intentflow --base v1.0 --head HEAD      # 指定提交范围
 intentflow --before ./a --after ./b     # 两个目录
 intentflow --rebase                     # 先 rebase 到基线，冲突自动回退
@@ -261,6 +262,24 @@ intentflow github open --repo owner/repo --pr 4
 | `serve --pr-dir` | 本地 patch；缺失时抓 `.diff` | 多 PR 路径 | 不导入 | 公开仓库可匿名 |
 
 `serve --pr-dir` 适合部署和分享链接。`github open` 适合本地读一个 PR 及其评论。
+### 8. Agent 阻塞审阅
+
+`intentflow review` 专给 agent 用：启动页面后阻塞，等人点「提交并关闭」，
+stdout 只输出一份 JSON。
+
+```bash
+intentflow review --wait --json --base HEAD --head WORKTREE \
+  --ready-file /tmp/intentflow-ready.json --timeout 45m --no-open
+```
+
+- 页面多出结论（通过 / 要求修改 / 仅评论）、总结和「提交并关闭」。
+- 结果含 `verdict`、`comments[]`（文件、行号、side、正文）和 `revision`。
+- 退出码：`0` 已提交，`1` 错误，`2` 取消或页面关闭，`3` 超时，`130` 中断。
+- 也可以审 `--diff change.patch` 或 `--pr owner/repo#123`。
+- 默认只监听 `127.0.0.1`；`--ready-file` 写 URL、端口和 session。
+
+完整字段、状态和页面关闭检测见 [docs/11-agent-review.md](docs/11-agent-review.md)。
+可直接复制给 agent 的步骤在 [skills/intentflow-review/SKILL.md](skills/intentflow-review/SKILL.md)。
 
 ## 截图
 
@@ -292,7 +311,8 @@ intentflow github open --repo owner/repo --pr 4
 | `--no-open` | 不自动打开浏览器 |
 | `-v` | 打印进度 |
 
-`--mode diff` 是默认且唯一模式。旧的 `scan` / `review` 模式会明确报错。
+`--mode diff` 是默认且唯一模式。旧的 `--mode scan|review` 会明确报错；
+阻塞审阅用 `intentflow review` 子命令，不通过 `--mode`。
 
 ## 数据存在哪
 
@@ -334,6 +354,7 @@ make check    # go vet、Go 测试、tsc、Vitest
 make build    # 前端构建 + 静态二进制
 make e2e      # 真实布局下的滚动、行内标记、跳转检查
 make e2e-tree # 文件树展开结构（脚本自己启动工作台）
+make e2e-review # 真实浏览器点提交，校验 CLI JSON
 make release-check  # 六个平台交叉编译验证
 make site     # 官网本地预览，http://127.0.0.1:8131/
 ```
@@ -395,13 +416,17 @@ internal/prdiff/      补丁 → payload / revision 列表
 internal/ghreview/    GitHub REST：PR、diff、评论、review 提交
 internal/export/      纯静态站点导出
 internal/reviewctx/   评审身份：session 与比较范围摘要
-internal/serve/       HTTP 服务与内嵌前端
+internal/reviewflow/  agent 审阅协议：等待、提交、JSON、退出码
+internal/patchdiff/   unified diff 解析（--diff）
+internal/prdiff/      GitHub PR patch 拉取（--pr）
+internal/serve/       HTTP 服务、提交接口与内嵌前端
 internal/version/     版本号、提交、构建时间
 frontend/             React + TypeScript + Vite
 chrome/               Tampermonkey 用户脚本（纯 JS + 打包后的前端）
 examples/demo-go/     单文件 demo
 docs/                 设计文档
-skills/intentflow/    给代理用的 skill
+skills/intentflow/    给代理用的普通 skill
+skills/intentflow-review/  agent 阻塞审阅循环
 website/              静态官网（GitHub Pages）
 ```
 
@@ -418,6 +443,7 @@ website/              静态官网（GitHub Pages）
 | [docs/09-review-platform.md](docs/09-review-platform.md) | 评审存储与匹配规则 |
 | [docs/10-release.md](docs/10-release.md) | 版本号、发布产物与校验 |
 | [docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md) | 单 diff、静态导出、PR 路由与 GitHub 兼容 |
+| [docs/11-agent-review.md](docs/11-agent-review.md) | agent 审阅协议：JSON、退出码、页面关闭 |
 | [docs/third-party.md](docs/third-party.md) | 第三方许可 |
 
 ## 许可
