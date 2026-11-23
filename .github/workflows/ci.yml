@@ -112,3 +112,10 @@ jobs:
 
       - name: Check website
         run: node scripts/check-site.mjs
+
+      - name: Test Unix installer offline
+        run: python3 scripts/test-install.py
+
+      - name: Reject corrupt Windows archives
+        shell: pwsh
+        run: ./scripts/test-install.ps1

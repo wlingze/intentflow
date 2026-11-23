@@ -40,6 +40,8 @@ const required = [
   'index.html',
   'docs.html',
   '404.html',
+  'install.sh',
+  'install.ps1',
   '.nojekyll',
   'README.md',
   'assets/app.js',
@@ -319,6 +321,20 @@ for (const [page, source] of pageSources) {
   const header = sectionByAttribute(source, 'class="site-header"');
   if (!/<a\b[^>]*\bhref="https:\/\/github\.com\/wlingze\/intentflow"[^>]*>/.test(header)) {
     fail(`${page}: the top header has no link to the source repository`);
+  }
+}
+
+// ── 17. Copyable install commands must match the README and the Pages artifact ──
+
+if (pageSources.has('index.html')) {
+  const home = pageSources.get('index.html');
+  const readme = readFileSync(join(site, '..', 'README.md'), 'utf8');
+  for (const [id, script] of [['install-unix', 'install.sh'], ['install-windows', 'install.ps1']]) {
+    const block = new RegExp(`<code id="${id}">([^<]+)</code>`).exec(home);
+    const cmd = decodeEntities(block?.[1] || '');
+    if (!cmd.includes(`https://wlingze.github.io/intentflow/${script}`) || !readme.includes(cmd)) {
+      fail(`index.html: #${id} must use the same installer command as README.md`);
+    }
   }
 }
 
