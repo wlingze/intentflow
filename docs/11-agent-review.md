@@ -70,7 +70,8 @@ jq . "$run/result.json"
 ## 2. 结果 JSON（schema_version = 1）
 
 stdout 只有这一份文档。字段固定，**所有键始终存在**；缺失值写 `null`，
-`comments` 始终是数组。
+`comments` 始终是数组。机器可校验的 schema：
+[`schema/review-result.schema.json`](../schema/review-result.schema.json)。
 
 ```json
 {
