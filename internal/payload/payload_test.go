@@ -1,6 +1,10 @@
 package payload
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/wlingze/intentflow/internal/contract"
+)
 
 func TestAllocatePrefersSmallFiles(t *testing.T) {
 	// 30 的单位放不下，三个 1 应当全部保留。
@@ -72,5 +76,26 @@ func TestMergeEntriesPairsRenamedIdenticalFile(t *testing.T) {
 	entries := mergeEntries(before, after, nil)
 	if len(entries) != 1 || entries[0].oldPath != "old/name.sf" || entries[0].path != "new/name.sf" {
 		t.Fatalf("entries = %v", mergePaths(entries))
+	}
+}
+
+func TestFitSortsAndAppliesBudgets(t *testing.T) {
+	big := make([]byte, MaxFileBytes+1)
+	bundle := Fit("patch", []contract.CodeFile{
+		{Path: "b.go", Status: contract.CodeStatusModified, Before: "old", After: "new"},
+		{Path: "a.go", Status: contract.CodeStatusAdded, After: "new"},
+		{Path: "big.go", Status: contract.CodeStatusModified, After: string(big)},
+	})
+	if len(bundle.Files) != 3 {
+		t.Fatalf("files = %+v", bundle.Files)
+	}
+	if bundle.Files[0].Path != "a.go" || bundle.Files[1].Path != "b.go" {
+		t.Fatalf("order = %+v", bundle.Files)
+	}
+	if bundle.Files[0].Language != "go" || bundle.Files[1].Status != contract.CodeStatusModified {
+		t.Fatalf("metadata = %+v", bundle.Files)
+	}
+	if bundle.Files[2].After != "" || !bundle.Truncated || len(bundle.Skipped) != 1 || bundle.Skipped[0] != "big.go" {
+		t.Fatalf("truncate = %+v skipped=%v", bundle.Files[2], bundle.Skipped)
 	}
 }
