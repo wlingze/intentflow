@@ -29,8 +29,8 @@
 - 全局搜索，支持区分大小写与完整匹配。
 - 点代码里的单词，列出全仓引用并跳转。
 - 导出评审为 Markdown 或 JSON；`⌘↵` / `Ctrl+Enter` 直接复制 Markdown。
-- 拉取 GitHub PR 的 diff 与已有评论；把本地评论提交回 GitHub
-  （comment / approve / request changes）。
+- 拉取 GitHub PR 的 diff 与已有评论，在一个只读工作台里查看。
+  GitHub 提交不在 CLI 中。
 
 评审数据只存浏览器 localStorage。服务端默认不写磁盘。
 
@@ -233,37 +233,33 @@ intentflow serve --pr-dir /srv/intentflow/prs --host 127.0.0.1 --port 8080
 索引页、路由、静态化边界与部署示例见
 [docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)。
 
-### 7. GitHub PR 双向
+### 7. GitHub PR 只读
 
 token 只从环境变量读，不落盘、不打印：
 
 ```bash
 export GITHUB_TOKEN=...        # 或 GH_TOKEN
-
-# 拉 PR diff 和已有 review 评论，起工作台
 intentflow github open --repo owner/repo --pr 4
-
-# 在浏览器里写评论，用「提交 Review」导出 JSON，然后提交
-intentflow github submit --repo owner/repo --pr 4 \
-  --review intentflow-review-....json --event comment
-
-# 只给整体意见也能提交
-intentflow github submit --repo owner/repo --pr 4 --body "LGTM" --event approve
-intentflow github submit --repo owner/repo --pr 4 --body "请先修这个" --event request-changes
-
-# 先看映射，不调用 GitHub
-intentflow github submit --repo owner/repo --pr 4 --review review.json --event comment --dry-run
 ```
 
-- 拉取：PR 元数据、整个 PR 的聚合 diff、已有行级 review 评论。
-- 提交：intentflow 的行引用映射成 GitHub `line` / `side` / `start_line`。
-- 行号不在当前 diff 的评论写入 review body，不会让整个 review 返回 422。
-- 已有 GitHub 评论以 `gh-` 开头，提交时跳过，不会重复提交。
-- GitHub 不允许 PR 作者 approve / request changes 自己的 PR；审批要用另一个账号。
+它拉取：
 
-权限、限流、失败处理和 GitHub Actions 模板见
-[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)
-与 [docs/examples/github-actions-review.yml](docs/examples/github-actions-review.yml)。
+- PR 元数据：标题、base/head SHA、状态。
+- 整个 PR 的聚合 diff。
+- 已有行级 review 评论。
+
+本模式只读。提交 review 不在 CLI 中；当前分支没有实现 GitHub 写回。
+浏览器插件的可行方案见
+[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)。
+
+`github open` 与 `serve --pr-dir` 的区别：
+
+| 模式 | 数据来源 | 范围 | 已有评论 | 认证 |
+| --- | --- | --- | --- | --- |
+| `github open` | GitHub REST API | 单个 PR | 导入 | `GITHUB_TOKEN` / `GH_TOKEN` |
+| `serve --pr-dir` | 本地 patch；缺失时抓 `.diff` | 多 PR 路径 | 不导入 | 公开仓库可匿名 |
+
+`serve --pr-dir` 适合部署和分享链接。`github open` 适合本地读一个 PR 及其评论。
 
 ## 截图
 
@@ -289,9 +285,7 @@ intentflow github submit --repo owner/repo --pr 4 --review review.json --event c
 | `--force` | `export` 时允许输出目录非空 |
 | `--repo` | GitHub 仓库，`owner/name`（`github` 命令） |
 | `--pr` | GitHub PR 编号 |
-| `--review` | intentflow 导出的 review JSON；`-` 表示 stdin |
-| `--event` | `comment` / `approve` / `request-changes` |
-| `--dry-run` | 只打印将提交的 review JSON |
+| `--no-comments` | 不导入已有的 GitHub review 评论 |
 | `--dist` | 覆盖内嵌前端，仅调试用 |
 | `--no-open` | 不自动打开浏览器 |
 | `-v` | 打印进度 |
@@ -305,7 +299,7 @@ intentflow github submit --repo owner/repo --pr 4 --review review.json --event c
 - 布局偏好：localStorage，键前缀 `intentflow.`。
 - GitHub token：只从 `GITHUB_TOKEN` / `GH_TOKEN` 读，不写文件、不打印。
 - 服务端默认不写文件；`serve --pr-dir` 会把抓到的 GitHub diff 缓存到 PR 目录。
-- GitHub API 模式：PR diff 与评论只在内存；导入的评论随 payload 展示。
+- GitHub 只读模式：PR diff 与评论只在内存；导入的评论随 payload 展示。
 
 一个 `仓库 + 分支 + 子目录` 对应一个稳定 session，相当于本地 PR。不同仓库的
 同名分支不会串记录。同一 session 下每个比较范围另存草稿，记录
