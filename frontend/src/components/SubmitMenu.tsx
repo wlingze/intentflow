@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { copyText, downloadText } from '../lib/files';
 import { buildReviewMarkdown } from '../lib/markdown';
+import { appQuery } from '../lib/dom';
 import { reviewDocument, useApp, useAppDispatch } from '../state/AppProvider';
 import { IconChevronDown } from './Icons';
 import styles from './SubmitMenu.module.css';
@@ -46,7 +47,7 @@ export function SubmitMenu() {
       if (event.key !== 'Enter' || event.isComposing) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (appQuery('[role="dialog"]')) return;
       event.preventDefault();
       void submit();
     };
