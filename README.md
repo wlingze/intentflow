@@ -262,17 +262,18 @@ intentflow github open --repo owner/repo --pr 4
 | `serve --pr-dir` | 本地 patch；缺失时抓 `.diff` | 多 PR 路径 | 不导入 | 公开仓库可匿名 |
 
 `serve --pr-dir` 适合部署和分享链接。`github open` 适合本地读一个 PR 及其评论。
+
 ### 8. Agent 阻塞审阅
 
-`intentflow review` 专给 agent 用：启动页面后阻塞，等人点「提交并关闭」，
-stdout 只输出一份 JSON。
+`intentflow review` 专给 agent 用：启动页面后阻塞，等人点「提交并关闭」。
+加 `--json` 时 stdout 只输出一份 JSON；不加时输出完整 Markdown。
 
 ```bash
 intentflow review --wait --json --base HEAD --head WORKTREE \
   --ready-file /tmp/intentflow-ready.json --timeout 45m --no-open
 ```
 
-- 页面多出结论（通过 / 要求修改 / 仅评论）、总结和「提交并关闭」。
+- 右上角「提交 Review」菜单多出结论（通过 / 要求修改 / 仅评论）、总结和「提交并关闭」。
 - 结果含 `verdict`、`comments[]`（文件、行号、side、正文）和 `revision`。
 - 退出码：`0` 已提交，`1` 错误，`2` 取消或页面关闭，`3` 超时，`130` 中断。
 - 也可以审 `--diff change.patch` 或 `--pr owner/repo#123`。

@@ -2,19 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/wlingze/intentflow/schema/review-result.schema.json",
   "title": "intentflow review result",
-  "description": "The single JSON document written by `intentflow review --json` to stdout.",
+  "description": "The single JSON document written by `intentflow review --json` to stdout. Only actionable comments are included; resolved comments and quote snippets stay in the human Markdown.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "status",
     "reason",
-    "message",
     "verdict",
     "summary",
     "comments",
-    "revision",
-    "submitted_at"
+    "revision"
   ],
   "properties": {
     "schema_version": {
@@ -38,9 +36,6 @@
         "internal"
       ]
     },
-    "message": {
-      "type": "string"
-    },
     "verdict": {
       "enum": [null, "approve", "request-changes", "comment"]
     },
@@ -56,10 +51,6 @@
         { "$ref": "#/$defs/revision" },
         { "type": "null" }
       ]
-    },
-    "submitted_at": {
-      "type": ["string", "null"],
-      "format": "date-time"
     }
   },
   "allOf": [
@@ -73,7 +64,7 @@
           "reason": { "type": "null" },
           "verdict": { "enum": ["approve", "request-changes", "comment"] },
           "summary": { "type": "string" },
-          "submitted_at": { "type": "string", "format": "date-time" }
+          "revision": { "$ref": "#/$defs/revision" }
         }
       }
     },
@@ -87,8 +78,7 @@
           "reason": { "type": "string" },
           "verdict": { "type": "null" },
           "summary": { "type": "null" },
-          "comments": { "maxItems": 0 },
-          "submitted_at": { "type": "null" }
+          "comments": { "maxItems": 0 }
         }
       }
     }
@@ -97,48 +87,23 @@
     "comment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "body", "file", "line", "end_line", "side", "quote", "resolved"],
+      "required": ["file", "line", "end_line", "side", "body"],
       "properties": {
-        "id": { "type": "string" },
-        "body": { "type": "string", "minLength": 1 },
         "file": { "type": ["string", "null"] },
         "line": { "type": ["integer", "null"], "minimum": 1 },
         "end_line": { "type": ["integer", "null"], "minimum": 1 },
         "side": { "enum": [null, "before", "after"] },
-        "quote": { "type": ["string", "null"] },
-        "resolved": { "type": "boolean" }
+        "body": { "type": "string", "minLength": 1 }
       }
     },
     "revision": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "mode",
-        "repository",
-        "branch",
-        "subdir",
-        "base",
-        "head",
-        "base_label",
-        "head_label",
-        "session_id",
-        "comparison_id",
-        "diff_digest"
-      ],
+      "required": ["id", "base", "head"],
       "properties": {
         "id": { "type": "string" },
-        "mode": { "enum": ["git", "folder", "patch"] },
-        "repository": { "type": "string" },
-        "branch": { "type": "string" },
-        "subdir": { "type": "string" },
         "base": { "type": "string" },
-        "head": { "type": "string" },
-        "base_label": { "type": "string" },
-        "head_label": { "type": "string" },
-        "session_id": { "type": "string" },
-        "comparison_id": { "type": "string" },
-        "diff_digest": { "type": "string" }
+        "head": { "type": "string" }
       }
     }
   }

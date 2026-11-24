@@ -5,7 +5,6 @@ import { DiffStage } from './components/DiffStage';
 import { FileTree } from './components/FileTree';
 import { RightPanel } from './components/RightPanel';
 import { SearchPanel } from './components/SearchPanel';
-import { SubmissionBar } from './components/SubmissionBar';
 import { SymbolPanel } from './components/SymbolPanel';
 import { Toast } from './components/Toast';
 import styles from './App.module.css';
@@ -125,6 +124,5 @@ export function App() {
     {drawer === 'right' && <div className={styles.drawerRight}><RightPanel /></div>}
     <Toast />
     <SearchPanel open={searchOpen} onOpen={() => setSearchOpen(true)} onClose={() => setSearchOpen(false)} />
-    {submission && <SubmissionBar />}
   </div>;
 }

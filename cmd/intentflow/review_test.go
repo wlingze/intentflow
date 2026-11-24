@@ -154,7 +154,7 @@ func TestReviewSubmitKeepsStdoutPureJSON(t *testing.T) {
 	if result.SchemaVersion != 1 || result.Status != reviewflow.StatusSubmitted || result.Verdict == nil || *result.Verdict != reviewflow.VerdictRequestChanges {
 		t.Fatalf("result = %+v", result)
 	}
-	if result.Revision == nil || result.Revision.Mode != "patch" || result.Revision.ID != "patch" || result.Revision.Base != "" || result.Revision.Head != "" {
+	if result.Revision == nil || result.Revision.ID != "patch" || result.Revision.Base != "" || result.Revision.Head != "" {
 		t.Fatalf("revision = %+v", result.Revision)
 	}
 	if len(result.Comments) != 1 || result.Comments[0].Body != "change old to new" || result.Comments[0].File == nil || *result.Comments[0].File != "main.go" || result.Comments[0].Line == nil || *result.Comments[0].Line != 2 {
@@ -162,6 +162,35 @@ func TestReviewSubmitKeepsStdoutPureJSON(t *testing.T) {
 	}
 	if strings.Contains(h.stdout.String(), "review 工作台") || strings.Contains(h.stdout.String(), "http://") {
 		t.Fatalf("human log leaked to stdout: %s", h.stdout.String())
+	}
+	if !strings.Contains(h.stderr.String(), "review 工作台") {
+		t.Fatalf("URL was not logged to stderr: %s", h.stderr.String())
+	}
+}
+
+func TestReviewNonJSONPrintsMarkdown(t *testing.T) {
+	h := startReview(t, "--wait")
+	status, body := h.post(t, submissionBody(h.ready.ComparisonID))
+	if status != http.StatusOK {
+		t.Fatalf("submit = %d %s", status, body)
+	}
+	if err := h.wait(t); err != nil {
+		t.Fatalf("exit = %v; stdout=%s stderr=%s", err, h.stdout.String(), h.stderr.String())
+	}
+	out := h.stdout.String()
+	for _, want := range []string{"# Review:", "## 结论", "**request-changes**（要求修改）", "fix the line", "main.go:2 · 改动后", "> new line", "change old to new"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in stdout:\n%s", want, out)
+		}
+	}
+	if strings.HasPrefix(strings.TrimSpace(out), "{") || strings.Contains(out, "schema_version") {
+		t.Fatalf("non-JSON stdout must be Markdown:\n%s", out)
+	}
+	if strings.Contains(out, "比较：patch ·  → ") {
+		t.Fatalf("empty patch range leaked into Markdown:\n%s", out)
+	}
+	if strings.Contains(out, "review 工作台") || strings.Contains(out, "http://") {
+		t.Fatalf("human log leaked to stdout: %s", out)
 	}
 	if !strings.Contains(h.stderr.String(), "review 工作台") {
 		t.Fatalf("URL was not logged to stderr: %s", h.stderr.String())

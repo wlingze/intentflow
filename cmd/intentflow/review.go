@@ -42,7 +42,7 @@ func reviewCommand(parent context.Context, args []string, stdout, stderr io.Writ
 	diffPath := fs.String("diff", "", "审阅 unified diff 文件；- 表示 stdin")
 	prRef := fs.String("pr", "", "GitHub PR：owner/repo#N 或 PR URL")
 	wait := fs.Bool("wait", true, "等待提交；review 总是等待")
-	jsonOut := fs.Bool("json", false, "stdout 只输出结果 JSON")
+	jsonOut := fs.Bool("json", false, "stdout 只输出结果 JSON（默认 Markdown）")
 	readyPath := fs.String("ready-file", "", "监听成功后写入 ready JSON")
 	timeout := fs.Duration("timeout", 30*time.Minute, "总等待上限；0 不超时")
 	host := fs.String("host", "127.0.0.1", "HTTP 监听地址")
@@ -83,10 +83,9 @@ func reviewCommand(parent context.Context, args []string, stdout, stderr io.Writ
 		}
 	}
 
-	logOut := stdout
-	if jsonMode {
-		logOut = stderr
-	}
+	// stdout is the result channel in both modes: JSON with --json, Markdown
+	// without it. URL, progress and server logs always go to stderr.
+	logOut := stderr
 	opt.log = logOut
 
 	p, cleanup, reason, err := buildReviewSource(parent, opt, *diffPath, *prRef)
@@ -170,7 +169,9 @@ func reviewCommand(parent context.Context, args []string, stdout, stderr io.Writ
 	revision := reviewflow.RevisionFromPayload(p)
 	switch outcome.Status {
 	case reviewflow.StatusSubmitted:
-		return emitReview(reviewflow.SubmittedResult(outcome, revision), jsonMode, stdout, stderr)
+		result := reviewflow.SubmittedResult(outcome, revision)
+		result.Markdown = reviewflow.Markdown(p, outcome.Submission)
+		return emitReview(result, jsonMode, stdout, stderr)
 	case reviewflow.StatusCancelled:
 		return emitReview(reviewflow.CancelledResult(outcome, revision), jsonMode, stdout, stderr)
 	default:
@@ -340,13 +341,9 @@ func emitReview(result reviewflow.Result, jsonMode bool, stdout, stderr io.Write
 func printHumanReview(result reviewflow.Result, out io.Writer) {
 	switch result.Status {
 	case reviewflow.StatusSubmitted:
-		verdict := ""
-		if result.Verdict != nil {
-			verdict = string(*result.Verdict)
-		}
-		fmt.Fprintf(out, "· 审阅已提交：%s，%d 条意见\n", verdict, len(result.Comments))
-		if result.Summary != nil && *result.Summary != "" {
-			fmt.Fprintf(out, "  总结：%s\n", *result.Summary)
+		if result.Markdown != "" {
+			fmt.Fprint(out, result.Markdown)
+			return
 		}
 	case reviewflow.StatusCancelled, reviewflow.StatusTimeout:
 		message := result.Message
@@ -365,7 +362,7 @@ func reviewUsage(w io.Writer) {
     --ready-file /tmp/intentflow-ready.json --timeout 30m
 
   --wait           显式等待；review 总是等待
-  --json           stdout 只输出一份结果 JSON；日志和 URL 去 stderr
+  --json           stdout 只输出一份结果 JSON；不加时为 Markdown；日志和 URL 去 stderr
   --diff           unified diff 文件；- 表示 stdin
   --pr             GitHub PR：owner/repo#N 或 PR URL
   --ready-file     监听成功后原子写入 URL/端口/session
