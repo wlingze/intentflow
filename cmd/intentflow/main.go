@@ -81,7 +81,6 @@ func usageTo(w io.Writer) {
   intentflow export --diff <patch> --out <dir>
   intentflow serve --pr-dir <dir> [--no-github]
   intentflow github [open] --repo owner/name --pr N
-  intentflow github submit --repo owner/name --pr N --review <json> --event comment
   intentflow update [--check] [--version v0.2.0] [--force] [--repo owner/name]
   intentflow version
 
@@ -99,8 +98,6 @@ func usageTo(w io.Writer) {
   --no-github    只读本地 PR 目录，不回退抓取 GitHub
   --repo         GitHub 仓库，owner/name
   --pr           GitHub PR 编号
-  --event        comment | approve | request-changes
-  --dry-run      只打印将提交的 review JSON
 
   update --check     只打印当前与最新版本；有新版本时退出码 2
   update --version   安装指定版本；--force 同版本也重装
