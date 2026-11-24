@@ -4,3 +4,5 @@
 /.intentflow/
 /examples/demo-go/*/go.sum
 /examples/demo-go/out/
+/chrome/node_modules/
+/chrome/dist/
