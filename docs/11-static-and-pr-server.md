@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | 纯静态导出 | 一份 patch；构建时生成 `payload.json` 与 `revisions.json` | 最低：任意静态文件服务器，或对象存储 + CDN | 看 diff、文件树、搜索、符号引用、写评审、导出 Markdown/JSON | 没有服务端；不能切换 commit 范围；patch 之外的未改源码不存在；评审只存浏览器 |
 | 服务端托管 | 每个 PR 一份 patch；目录按 owner/repo/number 排列 | 中：一个 Go 二进制 + 反向代理 + 磁盘 | 路径路由、索引页、静态导出同样的交互、按需抓取公开 PR | 需要进程与磁盘；默认不写评审；GitHub 抓取受公开仓库与限流约束 |
-| 浏览器插件 / 油猴脚本 | 运行在 github.com PR 页，读 DOM 或调用 GitHub API | 高：需要扩展商店、权限、跨域与内容脚本维护 | 直接在 PR 页注入工作台，可复用登录态 | 浏览器与商店审核；GitHub DOM 变更会破坏注入；无法覆盖非 GitHub 的 patch 文件；安装门槛高 |
+| 浏览器插件 / 油猴脚本 | 运行在 github.com PR 页，读 DOM 或调用 GitHub API | 高：需要扩展商店、权限、跨域与内容脚本维护 | 直接在 PR 页注入工作台或打开侧栏，可复用页面上下文 | 浏览器与商店审核；GitHub DOM 变更会破坏注入；API 写回仍需 token；无法覆盖非 GitHub 的 patch 文件；安装门槛高 |
 
 结论：
 
@@ -23,7 +23,7 @@
 | --- | --- | --- | --- | --- | --- |
 | A. GitHub Actions | PR 事件、PR diff、Pages 或 artifact 权限 | 中：一个 workflow + Pages 设置 | PR 打开/更新时生成静态 review 页，自动回贴链接 | Fork PR 的 `GITHUB_TOKEN` 只读；Pages 需要仓库设置；无法写回行级评论 | 采用为发布层，不替代 API |
 | B. GitHub REST 只读 | PR 元数据、聚合 diff、已有 review 评论 | 低：一个命令 + 环境变量 token | 拉 patch 与评论；在只读工作台里查看 | 需要 token；受权限与限流约束；不写回 | **读取闭环，采用** |
-| C. 浏览器注入 | PR 页 DOM 或 GitHub API、扩展权限 | 高：扩展商店/油猴安装、权限、DOM 维护 | 在 PR 页内直接看 diff、写回评论 | GitHub DOM 变更会破坏；安装门槛高；审核与跨域成本高 | 暂不做 |
+| C. 浏览器注入 | PR 页 DOM 或 GitHub API、扩展权限 | 高：扩展商店/油猴安装、权限、DOM 维护 | 在 PR 页内直接看 diff；写回需额外 token 或本地服务 | GitHub DOM 变更会破坏；安装门槛高；审核与跨域成本高 | 暂不做 |
 
 Actions 和 API 不是二选一：Actions 负责「让每个人打开一个链接」，API 负责「本地读到一个 PR 的完整上下文」。提交留给后续界面或浏览器扩展；本分支不暴露 CLI 写回。
 
