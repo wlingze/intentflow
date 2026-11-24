@@ -396,6 +396,7 @@ internal/reviewctx/   评审身份：session 与比较范围摘要
 internal/serve/       HTTP 服务与内嵌前端
 internal/version/     版本号、提交、构建时间
 frontend/             React + TypeScript + Vite
+chrome/               Tampermonkey 用户脚本（纯 JS + 打包后的前端）
 examples/demo-go/     单文件 demo
 docs/                 设计文档
 skills/intentflow/    给代理用的 skill
