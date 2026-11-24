@@ -34,7 +34,7 @@ Payload
 ```
 
 `submission.enabled` 只在 `intentflow review --wait` 下为 true。普通工作台
-始终为 false，页面不显示提交栏。
+始终为 false，页面不显示提交入口。
 
 `Review` 仍保留早期语义分析的占位字段（`scan`、`findings`、`ai` 等）。当前版本固定为
 `scan.status = skipped`，`findings = []`，前端不读取。

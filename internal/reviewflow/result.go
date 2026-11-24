@@ -6,84 +6,89 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/wlingze/intentflow/internal/contract"
 )
 
-// Revision describes the comparison a submission belongs to.
+// Revision describes the comparison a submission belongs to. It is also the
+// input description used when the CLI builds a patch or PR payload.
 type Revision struct {
-	ID           string `json:"id"`
-	Mode         string `json:"mode"`
-	Repository   string `json:"repository"`
-	Branch       string `json:"branch"`
-	Subdir       string `json:"subdir"`
-	Base         string `json:"base"`
-	Head         string `json:"head"`
-	BaseLabel    string `json:"base_label"`
-	HeadLabel    string `json:"head_label"`
-	SessionID    string `json:"session_id"`
-	ComparisonID string `json:"comparison_id"`
-	DiffDigest   string `json:"diff_digest"`
+	ID         string
+	Mode       string
+	Repository string
+	Branch     string
+	Base       string
+	Head       string
+	BaseLabel  string
+	HeadLabel  string
+}
+
+// ResultRevision is the small revision block in the CLI JSON.
+type ResultRevision struct {
+	ID   string `json:"id"`
+	Base string `json:"base"`
+	Head string `json:"head"`
+}
+
+// OutputComment is one actionable comment in the CLI JSON. Resolved comments
+// and quote snippets stay in the human Markdown only.
+type OutputComment struct {
+	File    *string `json:"file"`
+	Line    *int    `json:"line"`
+	EndLine *int    `json:"end_line"`
+	Side    *string `json:"side"`
+	Body    string  `json:"body"`
 }
 
 // Result is the one JSON document `intentflow review --json` writes to stdout.
-// Every field is always present so agents can read a fixed schema.
+// Message and Markdown are human channels and never enter JSON.
 type Result struct {
-	SchemaVersion int       `json:"schema_version"`
-	Status        string    `json:"status"`
-	Reason        *string   `json:"reason"`
-	Message       string    `json:"message"`
-	Verdict       *Verdict  `json:"verdict"`
-	Summary       *string   `json:"summary"`
-	Comments      []Comment `json:"comments"`
-	Revision      *Revision `json:"revision"`
-	SubmittedAt   *string   `json:"submitted_at"`
+	SchemaVersion int             `json:"schema_version"`
+	Status        string          `json:"status"`
+	Reason        *string         `json:"reason"`
+	Verdict       *Verdict        `json:"verdict"`
+	Summary       *string         `json:"summary"`
+	Comments      []OutputComment `json:"comments"`
+	Revision      *ResultRevision `json:"revision"`
+
+	Message  string `json:"-"`
+	Markdown string `json:"-"`
 }
 
 // RevisionFromPayload copies the identity a page was looking at.
-func RevisionFromPayload(p contract.Payload) *Revision {
+func RevisionFromPayload(p contract.Payload) *ResultRevision {
 	ctx := p.Session.Context
-	return &Revision{
-		ID:           ctx.Revision,
-		Mode:         string(p.Review.Comparison.Mode),
-		Repository:   ctx.Repository,
-		Branch:       ctx.Branch,
-		Subdir:       ctx.Subdir,
-		Base:         ctx.Base,
-		Head:         ctx.Head,
-		BaseLabel:    p.Review.Comparison.BeforeLabel,
-		HeadLabel:    p.Review.Comparison.AfterLabel,
-		SessionID:    ctx.SessionId,
-		ComparisonID: ctx.ComparisonId,
-		DiffDigest:   ctx.DiffDigest,
-	}
+	return &ResultRevision{ID: ctx.Revision, Base: ctx.Base, Head: ctx.Head}
 }
 
-func newResult(status string, revision *Revision) Result {
-	return Result{SchemaVersion: SchemaVersion, Status: status, Comments: []Comment{}, Revision: revision}
+func newResult(status string, revision *ResultRevision) Result {
+	return Result{SchemaVersion: SchemaVersion, Status: status, Comments: []OutputComment{}, Revision: revision}
 }
 
 // SubmittedResult is emitted when the human clicked 提交并关闭.
-func SubmittedResult(outcome Outcome, revision *Revision) Result {
+func SubmittedResult(outcome Outcome, revision *ResultRevision) Result {
 	result := newResult(StatusSubmitted, revision)
 	verdict := outcome.Submission.Verdict
 	summary := outcome.Submission.Summary
 	result.Verdict = &verdict
 	result.Summary = &summary
-	if outcome.Submission.Comments != nil {
-		result.Comments = outcome.Submission.Comments
-	}
-	if !outcome.At.IsZero() {
-		at := outcome.At.UTC().Format(time.RFC3339)
-		result.SubmittedAt = &at
+	for _, comment := range outcome.Submission.Comments {
+		// A resolved comment is no longer a task. Keep it out of the machine
+		// output, including the overall comments that only carry a body.
+		if comment.Resolved {
+			continue
+		}
+		result.Comments = append(result.Comments, OutputComment{
+			File: comment.File, Line: comment.Line, EndLine: comment.EndLine,
+			Side: comment.Side, Body: comment.Body,
+		})
 	}
 	return result
 }
 
 // CancelledResult is emitted for an explicit cancel, a closed page or a
 // signal. The reason stays machine readable; message is for humans.
-func CancelledResult(outcome Outcome, revision *Revision) Result {
+func CancelledResult(outcome Outcome, revision *ResultRevision) Result {
 	result := newResult(StatusCancelled, revision)
 	reason := outcome.Reason
 	if reason == "" {
@@ -95,7 +100,7 @@ func CancelledResult(outcome Outcome, revision *Revision) Result {
 }
 
 // TimeoutResult is emitted when --timeout expires.
-func TimeoutResult(revision *Revision) Result {
+func TimeoutResult(revision *ResultRevision) Result {
 	result := newResult(StatusTimeout, revision)
 	reason := ReasonTimeout
 	result.Reason = &reason
@@ -105,7 +110,7 @@ func TimeoutResult(revision *Revision) Result {
 
 // ErrorResult is emitted after the flags were parsed. Early flag parse errors
 // still go to stderr because the output mode is not known yet.
-func ErrorResult(reason, message string, revision *Revision) Result {
+func ErrorResult(reason, message string, revision *ResultRevision) Result {
 	result := newResult(StatusError, revision)
 	result.Reason = &reason
 	result.Message = message

@@ -5,8 +5,9 @@ description: Run a blocking human review for an agent. Start `intentflow review 
 
 # intentflow review（agent 审阅循环）
 
-`intentflow review` 一次只做一件事：打开页面、等人提交、输出一份 JSON。
-stdout 只有 JSON；URL 和日志在 stderr 与 `--ready-file`。
+`intentflow review` 一次只做一件事：打开页面、等人提交、输出结果。
+加 `--json` 时 stdout 只有 JSON；不加时 stdout 是完整 Markdown。URL 和
+日志在 stderr 与 `--ready-file`。
 
 已经验证过的流程是 **后台启动 → 把 URL 给用户 → 结束本轮 → 用户提交后
 再读结果**。不要在同一轮里阻塞等待，否则用户看不到 URL。
@@ -69,8 +70,9 @@ printf 'RUN_DIR=%s\nOPEN=%s\n' "$run_dir" "$url"
 `--rebase` 同用。
 
 **启动后立刻在回复里给出 `OPEN=` 的 URL，并结束本轮。** 告诉用户：
-看完 diff、写评论、选结论，然后点「提交并关闭」。不要在这期间改代码，
-也不要猜评论。把 `RUN_DIR` 记在上下文里，下一轮要用。
+看完 diff、写评论，在右上角「提交 Review」菜单里选结论、写总结，然后点
+「提交并关闭」。页面会尝试自己关闭；浏览器拦住时显示「审阅已提交」页。
+不要在这期间改代码，也不要猜评论。把 `RUN_DIR` 记在上下文里，下一轮要用。
 
 如果 harness 会在工具调用结束后回收后台进程，示例里的 `setsid` 是关键；
 没有 `setsid` 时先确认 `nohup` 起的进程还能存活。否则这个跨轮次模式
@@ -120,7 +122,6 @@ verdict=$(jq -r '.verdict // ""' "$r")
 
 ```bash
 jq -r '.comments[]
-  | select(.resolved == false)
   | "\(.file // "GENERAL"):\(.line // 0)-\(.end_line // 0) [\(.side // "-")] \(.body)"' "$r"
 ```
 
@@ -148,24 +149,21 @@ jq -e '.status == "submitted" and .verdict == "approve"' "$r"
 {
   "schema_version": 1,
   "status": "submitted",
+  "reason": null,
   "verdict": "request-changes",
   "summary": "把 SQL 拼接改成参数化查询。",
   "comments": [{
-    "id": "c-1",
-    "body": "改成参数化查询。",
     "file": "store.go",
     "line": 7,
     "end_line": 7,
     "side": "after",
-    "quote": "return fmt.Sprintf(\"SELECT ... '%s'\", name)",
-    "resolved": false
+    "body": "改成参数化查询。"
   }],
   "revision": {
-    "id": "worktree", "mode": "git", "base": "1e36d0df…", "head": "WORKTREE",
-    "base_label": "1e36d0df", "head_label": "工作区", "repository": "/repo",
-    "branch": "master", "subdir": "", "diff_digest": "6ded…"
-  },
-  "submitted_at": "2026-11-23T12:45:16Z"
+    "id": "worktree",
+    "base": "1e36d0df…",
+    "head": "WORKTREE"
+  }
 }
 ```
 
@@ -173,9 +171,10 @@ jq -e '.status == "submitted" and .verdict == "approve"' "$r"
 
 - `file` 是仓库相对路径。`line` 从 1 开始，`side=after` 指新文件，
   `side=before` 指旧文件。
-- 用 `quote` 找代码。文件可能被后来的修改移动过，行号可能过期。
-- `resolved: true` 跳过。
+- 结果只含未解决评论；已解决项不出现。
 - `file: null` 是整体意见，不是某一行的任务。
+- 需要看评论引用的代码时，直接读当前文件；不加 `--json` 时 Markdown
+  会带引用片段。
 - 只改评论要求的内容；不要顺手重构。
 
 ## 6. 按评论改代码
@@ -215,7 +214,7 @@ git diff -U1000000 > change.patch
 ## 8. 不要做
 
 - 不要解析 `stderr` 判断结果：那里是 URL、日志和错误原文。
-- 不要用 `message` 做机器分支：它是中文说明。
+- 不要解析 Markdown 文案做机器分支。
 - 不要在等待期间改代码或猜评论。
 - 不要同时开两个 review 进程审同一份 diff，页面会分不清。
 - 不要把 `--host 0.0.0.0` 当默认：提交入口是本机 IPC。

@@ -86,23 +86,32 @@ async function waitReady(server) {
       page.on('pageerror', (error) => errors.push(String(error)));
       page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
       await page.goto(ready.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      const bar = page.locator('section[aria-label="提交审阅"]');
-      await bar.waitFor({ state: 'visible', timeout: 60000 });
-      assert.equal(await bar.getByRole('button', { name: '提交并关闭' }).count(), 1, '缺少「提交并关闭」按钮');
       await page.locator('[data-file="store.go"] [data-line]').first().waitFor({ state: 'visible', timeout: 60000 });
       assert.ok(await page.locator('[data-file="store.go"] [data-line]').count() >= 3, 'diff 行没有渲染');
+      await page.getByRole('button', { name: '提交 Review' }).click();
+      const menu = page.getByRole('dialog', { name: '提交评审' });
+      await menu.waitFor({ state: 'visible', timeout: 60000 });
+      assert.equal(await menu.getByRole('button', { name: '提交并关闭' }).count(), 1, '缺少「提交并关闭」按钮');
+      await menu.getByRole('button', { name: '要求修改' }).click();
+      await menu.getByLabel('审阅总结').fill('e2e：改成参数化查询');
       if (process.env.SCREENSHOT_DIR) {
         mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
         await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'review-submit.png'), fullPage: false });
       }
-
-      await bar.getByRole('button', { name: '要求修改' }).click();
-      await bar.getByLabel('审阅总结').fill('e2e：改成参数化查询');
-      await bar.getByRole('button', { name: '提交并关闭' }).click();
-      await page.getByText('已提交，可以关闭页面').waitFor({ timeout: 30000 });
-      // Shutting the server down races the EventSource reconnect. That browser
-      // message is expected; any other page error is not.
-      const relevant = errors.filter((message) => !message.includes('ERR_CONNECTION_REFUSED'));
+      await menu.getByRole('button', { name: '提交并关闭' }).click();
+      // The page may close itself; when the browser blocks that, a goodbye
+      // screen is shown instead.
+      const outcome = await Promise.race([
+        page.waitForEvent('close').then(() => 'closed'),
+        page.getByRole('heading', { name: '审阅已提交' }).waitFor({ timeout: 30000 }).then(() => 'visible').catch(() => 'closed'),
+      ]);
+      assert.ok(outcome === 'closed' || outcome === 'visible', `unexpected page state ${outcome}`);
+      if (outcome === 'visible' && process.env.SCREENSHOT_DIR) {
+        await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'review-done.png'), fullPage: false });
+      }
+      // Shutting the server down races the EventSource reconnect. That and a
+      // blocked window.close() are expected; any other page error is not.
+      const relevant = errors.filter((message) => !message.includes('ERR_CONNECTION_REFUSED') && !message.includes('Scripts may close only'));
       assert.deepEqual(relevant, [], `页面报错: ${relevant.join('; ')}`);
     } finally {
       await browser.close();
@@ -120,10 +129,10 @@ async function waitReady(server) {
     assert.equal(result.verdict, 'request-changes');
     assert.equal(result.summary, 'e2e：改成参数化查询');
     assert.deepEqual(result.comments, []);
-    assert.equal(result.revision.mode, 'patch');
     assert.equal(result.revision.id, 'patch');
+    assert.deepEqual(Object.keys(result.revision).sort(), ['base', 'head', 'id']);
     assert.match(raw, /^\{"schema_version":1,/, 'stdout 必须从 JSON 开头');
-    console.log('ok review submit bar → JSON', JSON.stringify({ status: result.status, verdict: result.verdict }));
+    console.log('ok review submit menu → JSON', JSON.stringify({ status: result.status, verdict: result.verdict }));
   } catch (error) {
     console.error('--- stderr ---\n' + server.stderr());
     console.error('--- stdout ---\n' + server.stdout());

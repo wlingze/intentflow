@@ -12,6 +12,9 @@
 这个模式只服务 agent 调用。普通工作台 `intentflow` / `intentflow serve`
 保持不变：页面里的评审仍存 localStorage，服务端不落盘。
 
+`review` 的 stdout 只输出结果：加 `--json` 是一份 JSON，不加是 Markdown。
+URL、进度和错误都去 stderr 或 ready 文件。
+
 ## 1. 命令
 
 ```bash
@@ -65,12 +68,13 @@ wait "$pid"
 jq . "$run/result.json"
 ```
 
-`--json` 模式下，ready 之前 stdout 必须是空的；URL 只写到 ready 文件和 stderr。
+ready 之前 stdout 必须是空的。两种模式下 URL、日志和错误都只写 ready 文件或 stderr。
 
 ## 2. 结果 JSON（schema_version = 1）
 
 stdout 只有这一份文档。字段固定，**所有键始终存在**；缺失值写 `null`，
-`comments` 始终是数组。机器可校验的 schema：
+`comments` 始终是数组。只输出未解决评论，且不带 `id`、`quote`、`resolved`：
+这些字段只服务页面和人类 Markdown。机器可校验的 schema：
 [`schema/review-result.schema.json`](../schema/review-result.schema.json)。
 
 ```json
@@ -78,46 +82,29 @@ stdout 只有这一份文档。字段固定，**所有键始终存在**；缺失
   "schema_version": 1,
   "status": "submitted",
   "reason": null,
-  "message": "",
   "verdict": "request-changes",
   "summary": "把 SQL 拼接改成参数化查询。",
   "comments": [
     {
-      "id": "c-3f9a",
-      "body": "用户输入直接拼进了 SQL，改成参数化查询。",
       "file": "internal/store/store.go",
       "line": 15,
       "end_line": 15,
       "side": "after",
-      "quote": "query = fmt.Sprintf(\"SELECT ... '%s%'\", name)",
-      "resolved": false
+      "body": "用户输入直接拼进了 SQL，改成参数化查询。"
     },
     {
-      "id": "c-b204",
-      "body": "整体建议退回这版。",
       "file": null,
       "line": null,
       "end_line": null,
       "side": null,
-      "quote": null,
-      "resolved": false
+      "body": "整体建议退回这版。"
     }
   ],
   "revision": {
     "id": "range",
-    "mode": "git",
-    "repository": "/home/me/repo",
-    "branch": "feature/store",
-    "subdir": "",
     "base": "a1b2c3d4e5f6…",
-    "head": "9f8e7d6c5b4a…",
-    "base_label": "a1b2c3d4",
-    "head_label": "9f8e7d6c",
-    "session_id": "3f2a…",
-    "comparison_id": "9c81…",
-    "diff_digest": "7d0e…"
-  },
-  "submitted_at": "2026-11-23T12:34:56Z"
+    "head": "9f8e7d6c5b4a…"
+  }
 }
 ```
 
@@ -128,38 +115,63 @@ stdout 只有这一份文档。字段固定，**所有键始终存在**；缺失
 | `schema_version` | int | 固定 `1`。字段变化时递增 |
 | `status` | string | `submitted` / `cancelled` / `timeout` / `error` |
 | `reason` | string\|null | 见状态表；`submitted` 为 `null` |
-| `message` | string | 人类可读说明；机器不要解析 |
 | `verdict` | string\|null | `approve` / `request-changes` / `comment` |
 | `summary` | string\|null | 页面里的总结，可为空串 |
-| `comments` | array | 页面里的全部评论，含已解决 |
-| `revision` | object\|null | 本次比较的身份；早期错误可能为 `null` |
-| `submitted_at` | string\|null | RFC3339 UTC |
+| `comments` | array | 未解决评论；已解决的不输出 |
+| `revision` | object\|null | 本次比较身份；早期错误可能为 `null` |
 
 `comments[]`：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 页面内评论 id |
-| `body` | string | 评论正文，非空 |
 | `file` | string\|null | 仓库相对路径；整体意见为 `null` |
 | `line` | int\|null | 1 起行号 |
 | `end_line` | int\|null | 区间末行；单行为 `line` |
 | `side` | string\|null | `before` / `after` |
-| `quote` | string\|null | 评论时的代码片段 |
-| `resolved` | bool | 用户是否已标记解决 |
+| `body` | string | 评论正文，非空 |
 
 `revision`：
 
 | 字段 | 说明 |
 | --- | --- |
 | `id` | `range` / `worktree` / `commit:<sha>` / `patch` / `pr:<owner/repo#N>` |
-| `mode` | `git` / `folder` / `patch` |
-| `repository` | 仓库路径、patch 路径或 `owner/repo` |
-| `branch` / `subdir` | 分支与子目录；patch 模式 branch 为 `补丁` |
 | `base` / `head` | commit SHA；PR 来自 `gh pr view`，format-patch 取 `From`；未知为空串 |
-| `base_label` / `head_label` | 页面显示的比较标签 |
-| `session_id` / `comparison_id` | 与 `ReviewSession.context` 相同 |
-| `diff_digest` | 本次 diff 正文摘要 |
+
+结果不包含仓库路径、分支、标签、session、comparison 或 diff 摘要。
+要定位代码，用 `file` 和 `line`；要确认范围，用 `revision.id/base/head`。
+
+### 非 JSON 输出
+
+不加 `--json` 时，提交成功打印完整 Markdown，而不是一行状态：
+
+```markdown
+# Review: a1b2c3d4 → 工作区
+
+仓库：/home/me/repo
+分支：feature/store
+比较：range · a1b2c3d4e5f6 → 9f8e7d6c5b4a
+
+## 结论
+
+**request-changes**（要求修改）
+
+把 SQL 拼接改成参数化查询。
+
+## Review 意见
+
+### 1. internal/store/store.go:15 · 改动后
+
+> query = fmt.Sprintf("SELECT ... '%s'", name)
+
+用户输入直接拼进了 SQL，改成参数化查询。
+
+### 2. 整体意见
+
+整体建议退回这版。
+```
+
+已解决评论不出现在 Markdown；`quote` 只在这里出现。取消、超时和错误
+仍打印一行人类说明；错误原文同时在 stderr。
 
 ### 状态与退出码
 
@@ -179,12 +191,12 @@ stderr。非 `--json` 模式只写人类文本，退出码相同。
 
 - `--json` 下 stdout 只有一个 JSON 文档，前后没有横幅、进度行或 URL。
 - URL、日志、`gh`/HTTP 错误都走 stderr 或 ready 文件。
-- 字段名不随状态变化；不要按中文 `message` 判断分支。
-- `comments` 顺序与页面一致。已解决评论保留，agent 自行跳过。
+- 字段名不随状态变化；不要按 Markdown 文案判断分支。
+- `comments` 顺序与页面一致；已解决评论不出现，`quote` 不在 JSON 里。
 
 ## 3. 页面提交协议
 
-页面只在 `review` 模式显示提交栏。普通工作台不显示，也不注册接口。
+页面只在 `review` 模式显示提交入口：右上角「提交 Review」菜单里有结论、总结、「取消审阅」和「提交并关闭」。普通工作台不显示，也不注册接口。
 
 `POST /api/submission`：
 
@@ -209,7 +221,8 @@ stderr。非 `--json` 模式只写人类文本，退出码相同。
 }
 ```
 
-取消：
+请求里的 `id`、`quote`、`resolved` 只用于页面和人类 Markdown；结果 JSON
+不输出这三项。取消：
 
 ```json
 { "action": "cancel", "comparison_id": "9c81…" }
@@ -220,6 +233,10 @@ stderr。非 `--json` 模式只写人类文本，退出码相同。
 ```json
 { "status": "submitted" }
 ```
+
+页面收到成功响应后尝试 `window.close()`。浏览器通常只允许脚本关闭自己
+打开的标签页，所以这个调用可能被拒绝；被拒绝时页面切换成「审阅已提交」，
+提示用户可以关闭页面。提交和解锁以 POST 成功为准，不依赖页面是否真的关闭。
 
 校验规则：
 
@@ -307,13 +324,13 @@ make build
 NODE_PATH=<playwright> node scripts/e2e/review.mjs ./bin/intentflow
 ```
 
-`make e2e-review` 是同一件事的 make 目标。它启动真实浏览器，检查
-「提交并关闭」按钮、POST、CLI JSON 和退出码。
+`make e2e-review` 是同一件事的 make 目标。它启动真实浏览器，打开右上角
+「提交 Review」菜单，检查「提交并关闭」按钮、POST、CLI JSON 和退出码。
 
 ## 7. 不做什么
 
 - 不把评审写进仓库，不写数据库。
 - 不执行被审阅代码。
 - 不自动改代码：agent 收到 JSON 后自己决定。
-- 不在 stdout 混 Markdown 或进度输出。
+- `--json` 的 stdout 不混 Markdown；非 JSON 模式的 stdout 是 Markdown。
 - 不把 `--host 0.0.0.0` 当默认值：提交通道是本机 IPC，不是网络服务。

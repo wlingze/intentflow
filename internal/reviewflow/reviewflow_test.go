@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,14 +169,14 @@ func TestWaiterContextFallback(t *testing.T) {
 }
 
 func TestResultEnvelopeHasFixedKeys(t *testing.T) {
-	revision := &Revision{ID: "range", Mode: "git"}
+	revision := &ResultRevision{ID: "range", Base: "a", Head: "b"}
 	checks := []Result{
 		SubmittedResult(Outcome{Submission: Submission{Verdict: VerdictApprove, Summary: "ok", Comments: []Comment{}}, At: time.Unix(1, 0)}, revision),
 		CancelledResult(Outcome{Reason: ReasonUser}, revision),
 		TimeoutResult(revision),
 		ErrorResult(ReasonPatch, "bad patch", nil),
 	}
-	want := []string{"schema_version", "status", "reason", "message", "verdict", "summary", "comments", "revision", "submitted_at"}
+	want := []string{"schema_version", "status", "reason", "verdict", "summary", "comments", "revision"}
 	for _, result := range checks {
 		raw, err := json.Marshal(result)
 		if err != nil {
@@ -199,8 +200,84 @@ func TestResultEnvelopeHasFixedKeys(t *testing.T) {
 	}
 }
 
+func TestResultCommentsStayMinimalAndDropResolved(t *testing.T) {
+	file := "internal/store/store.go"
+	line := 7
+	end := 8
+	side := "after"
+	quote := "old line"
+	revision := &ResultRevision{ID: "range", Base: "base", Head: "head"}
+	result := SubmittedResult(Outcome{Submission: Submission{
+		Verdict: VerdictRequestChanges,
+		Summary: "fix it",
+		Comments: []Comment{
+			{ID: "c-1", Body: "change old to new", File: &file, Line: &line, EndLine: &end, Side: &side, Quote: &quote},
+			{ID: "c-2", Body: "already done", Resolved: true},
+			{ID: "c-3", Body: "overall note"},
+		},
+	}}, revision)
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Comments []map[string]json.RawMessage `json:"comments"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Comments) != 2 {
+		t.Fatalf("comments = %s", raw)
+	}
+	want := []string{"file", "line", "end_line", "side", "body"}
+	for _, comment := range doc.Comments {
+		if len(comment) != len(want) {
+			t.Fatalf("comment keys = %v", comment)
+		}
+		for _, key := range want {
+			if _, ok := comment[key]; !ok {
+				t.Fatalf("comment missing %q: %s", key, raw)
+			}
+		}
+	}
+	if strings.Contains(string(raw), "quote") || strings.Contains(string(raw), "resolved") || strings.Contains(string(raw), "already done") {
+		t.Fatalf("extra fields leaked: %s", raw)
+	}
+}
+
+func TestMarkdownIncludesConcreteComments(t *testing.T) {
+	file := "main.go"
+	line := 2
+	end := 2
+	side := "after"
+	quote := "new line"
+	sub := Submission{
+		Verdict: VerdictRequestChanges,
+		Summary: "fix the line",
+		Comments: []Comment{
+			{ID: "c-1", Body: "change old to new", File: &file, Line: &line, EndLine: &end, Side: &side, Quote: &quote},
+			{ID: "c-2", Body: "already done", Resolved: true},
+			{ID: "c-3", Body: "overall note"},
+		},
+	}
+	got := Markdown(contract.Payload{
+		Review: contract.Review{Before: "HEAD", After: "WORKTREE", Notes: []string{"patch input"}},
+		Session: contract.ReviewSession{Context: contract.ReviewContext{
+			Repository: "repo", Branch: "main", Revision: "range", Base: "aaaaaaaaaaaaaaaa", Head: "bbbbbbbbbbbbbbbb",
+		}},
+	}, sub)
+	for _, want := range []string{"# Review: HEAD → WORKTREE", "仓库：repo", "**request-changes**（要求修改）", "fix the line", "main.go:2 · 改动后", "> new line", "change old to new", "整体意见", "overall note", "patch input"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "already done") {
+		t.Fatalf("resolved comment leaked:\n%s", got)
+	}
+}
+
 func TestResultExitCodes(t *testing.T) {
-	revision := &Revision{}
+	revision := &ResultRevision{}
 	cases := []struct {
 		result Result
 		code   int
