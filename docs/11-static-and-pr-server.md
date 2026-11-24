@@ -211,33 +211,38 @@ intentflow github open --repo owner/repo --pr 4
 
 限制：单次响应上限 32 MiB；评论最多读 1000 条。没有实现自动 backoff、条件请求或分页重试。
 
-## 7. 浏览器插件可行性
+## 7. 浏览器插件（油猴脚本，已实现）
 
-可以做。建议按维护成本分三层，不要一上来做完整注入。
+已实现一个 Tampermonkey 用户脚本，代码在 `chrome/`。它把完整 React 工作台挂到 GitHub 页面的 Shadow DOM 里，diff 由脚本在浏览器本地解析。
 
 ### 7.1 方案分层
 
 | 形态 | 做什么 | 成本 | 限制 |
 | --- | --- | --- | --- |
-| 油猴脚本 / 轻扩展 | 在 PR 页加一个按钮，打开本地 intentflow 的对应 PR 页面 | 最低 | 仍要本地进程；没有页面内 diff |
+| 油猴脚本 + Shadow DOM | PR 页加按钮，全屏挂载打包好的前端 | 中 | 需要 Tampermonkey；GitHub CSP、样式隔离、token 存储 |
 | 扩展侧栏 / iframe | 在 GitHub 侧栏嵌入本地 intentflow 页面 | 中 | 需要本地端口发现、CSP、扩展权限 |
-| 完整内容脚本 | 把 diff 渲染和评论 UI 注入 GitHub 页面 | 最高 | GitHub DOM、CSP、bundle 体积、商店审核、长期维护 |
+| 完整内容脚本改写 GitHub DOM | 把 diff 和评论 UI 拆进 GitHub 页面 | 最高 | GitHub DOM 变更、CSP、bundle 体积、商店审核 |
 
-推荐先做第一种：脚本只解析 URL 里的 `<owner>/<repo>/<number>`，然后打开
-`http://127.0.0.1:<port>/pr/<owner>/<repo>/<number>`。diff 渲染继续复用现有前端。
+当前实现采用第一种：脚本不依赖本地进程，直接在 PR 页右下角加
+`intentflow` 按钮，点开后全屏挂载工作台。diff 用 `GM_xmlhttpRequest` 抓取，
+绕开 GitHub 的 `connect-src`；前端资源已经打进单文件 userscript。
 
 ### 7.2 提交怎么接
 
-如果以后要做写回，建议扩展调用本地 intentflow 的 HTTP 接口，而不是在扩展里直接保存 token：
+脚本顶部工具栏有「评论 / 通过 / 请求修改」和「提交到 GitHub」。
+前端直接读工作台保存在 localStorage 的 review 文档，重新抓当前 diff，
+映射成 GitHub review 评论后调用：
 
-1. 扩展把当前 PR 的 owner/repo/number 和 review JSON 发给本地接口。
-2. 本地进程从环境变量拿 token，调用 GitHub REST。
-3. 扩展只显示结果，不接触 token。
+```text
+POST /repos/{owner}/{repo}/pulls/{number}/reviews
+```
 
-`internal/ghreview` 里的提交与映射代码可以复用，但当前分支没有暴露 CLI 或 HTTP 入口。
-实现时需要补 CSRF token、只监听 `127.0.0.1`、限制请求来源。
+token 存在 Tampermonkey 的 `GM_setValue`，不写页面 localStorage，不打印。
 
-### 7.3 行号映射（未来写回时）
+为什么不走本地 HTTP 接口：这个脚本的目标是零进程。代价是 token 存在
+扩展存储里；共用电脑时要用 Tampermonkey 菜单清除 token。
+
+### 7.3 行号映射（已实现）
 
 | intentflow | GitHub review comment |
 | --- | --- |
@@ -249,7 +254,7 @@ intentflow github open --repo owner/repo --pr 4
 
 `position` 是旧的 diff 行偏移，跨 hunk 与多行评论都容易算错；不使用。
 outdated 行处理：提交时重新抓当前 PR diff；落不到 hunk 的评论写入 review body，不发 inline。
-这些逻辑已经在 `internal/ghreview` 中有实现和测试，但当前没有用户入口。
+同一套规则在 `chrome/src/github.js` 中实现，并有纯 JS 测试。
 
 ## 8. GitHub Actions 用法
 
@@ -314,6 +319,13 @@ GitHub 只读：
 
 浏览器检查：Playwright 打开静态页和 `/pr/...` 页，`api/*.json` 均返回 200，无 console error。
 
+油猴脚本：
+
+- 在 `wlingze/intentflow#4` 页面注入 `chrome/dist/intentflow.user.js`，22 个文件全部渲染。
+- 工作台挂在 Shadow DOM，GitHub 页面样式不互相污染。
+- 用模拟的 `GM_xmlhttpRequest` 验证提交：整体意见映射到 review body，返回 review URL。
+- `node --test chrome/src/*.test.js` 覆盖 diff 解析、行号映射、评论导入。
+
 ## 11. 遗留问题
 
 - patch 之外的未改源码不可恢复；展开 gap 是空占位行。要显示真实上下文，需要同时提供仓库或 base/head 源码。
@@ -322,6 +334,7 @@ GitHub 只读：
 - GitHub 只读模式不导入 PR 会话评论、review 摘要、check 状态。
 - 导入的 GitHub 评论不能在线程里回复；本地编辑不会写回。
 - 同一浏览器里已有本地草稿时，localStorage 会覆盖新导入的 GitHub 评论；清掉该草稿后才能看到最新导入结果。
-- 浏览器插件未实现。`internal/ghreview` 保留提交与映射代码，但没有 CLI/HTTP 入口。
+- 油猴脚本已实现，产物是 `chrome/dist/intentflow.user.js`。它需要 Tampermonkey；token 存在扩展存储。
+- 脚本不导入 PR 会话评论、review 摘要、check 状态；不支持回复现有评论线程。
 - 没有自动重试/backoff、ETag、GitHub Enterprise 实机验证。
 - 单补丁模式的 identity 固定为 `patch` / `patch`；不同补丁在同一浏览器里会共用 session 前缀，但 `comparison_id` 由 diff 摘要决定，不会串行号。
