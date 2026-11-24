@@ -283,7 +283,8 @@ intentflow github open --repo owner/repo --pr 4
 | `--pr-dir` | PR 目录，按 `/pr/<owner>/<repo>/<number>` 路由 |
 | `--no-github` | 只读本地 PR 目录，不回退抓取 GitHub |
 | `--force` | `export` 时允许输出目录非空 |
-| `--repo` | GitHub 仓库，`owner/name`（`github` 命令） |
+| `--repo` | GitHub 仓库；`export` 用来标记来源，`github` 命令用来指定仓库 |
+| `--branch` | `export` 的来源分支或 PR 标签 |
 | `--pr` | GitHub PR 编号 |
 | `--no-comments` | 不导入已有的 GitHub review 评论 |
 | `--dist` | 覆盖内嵌前端，仅调试用 |
