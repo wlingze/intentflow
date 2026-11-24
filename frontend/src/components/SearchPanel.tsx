@@ -5,6 +5,7 @@ import { useReviewData } from '../state/selectors';
 import { cx } from '../lib/format';
 import { codeSelection } from '../lib/codeSelection';
 import { loadMatch, saveMatch } from '../lib/exactPref';
+import { appActiveElement, appQuery } from '../lib/dom';
 import { SearchHitList } from './SearchHitList';
 import { IconClose, IconSearch } from './Icons';
 import styles from './SearchPanel.module.css';
@@ -19,7 +20,7 @@ interface Props {
 // Multi-line selections use their first non-empty line because search is per
 // diff line.
 function selectedQuery(): string {
-  const active = document.activeElement;
+  const active = appActiveElement();
   if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
     const start = active.selectionStart ?? 0;
     const end = active.selectionEnd ?? 0;
@@ -37,7 +38,7 @@ function firstLine(text: string): string {
 interface Position { path: string; line: number }
 
 function targetVisible(target: Position): boolean {
-  const scroller = document.querySelector<HTMLElement>('[data-review-scroll]');
+  const scroller = appQuery<HTMLElement>('[data-review-scroll]');
   if (!scroller) return false;
   const card = [...scroller.querySelectorAll<HTMLElement>('[data-file]')].find((element) => element.dataset.file === target.path);
   const line = card && [...card.querySelectorAll<HTMLElement>('[data-line]')].find((element) => Number(element.dataset.line) === target.line);
@@ -50,7 +51,7 @@ function targetVisible(target: Position): boolean {
 // Current viewport position, used to pick the nearest match instead of the
 // first one. Cards and lines are virtualized, so only visible DOM is read.
 function currentPosition(): Position | null {
-  const scroller = document.querySelector<HTMLElement>('[data-review-scroll]');
+  const scroller = appQuery<HTMLElement>('[data-review-scroll]');
   if (!scroller) return null;
   const top = scroller.getBoundingClientRect().top + 20;
   const cards = [...scroller.querySelectorAll<HTMLElement>('[data-file]')];
@@ -170,7 +171,7 @@ export function SearchPanel({ open, onOpen, onClose }: Props) {
       const find = (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'f';
       if (find) {
         event.preventDefault();
-        const selected = input.current === document.activeElement ? '' : selectedQuery();
+        const selected = input.current === appActiveElement() ? '' : selectedQuery();
         if (selected) setQuery(selected);
         if (!open) onOpen();
         requestAnimationFrame(() => { input.current?.focus(); input.current?.select(); });

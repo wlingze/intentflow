@@ -5,6 +5,7 @@ import { inlineMarks } from '../lib/inlineDiff';
 import { estimateItem } from '../lib/cardHeights';
 import type { DiffRow, DiffStats } from '../lib/diff';
 import { cx } from '../lib/format';
+import { appQuery } from '../lib/dom';
 import { hashText } from '../lib/hash';
 import { useImagePaste } from '../hooks/useImagePaste';
 import { highlight, linePainter } from '../lib/highlight';
@@ -323,7 +324,7 @@ export const FileDiffCard = memo(function FileDiffCard({
     lastReveal.current = pendingScroll;
     setPendingScroll('');
     // Keep the target below the floating search panel instead of hiding it.
-    const panel = document.querySelector<HTMLElement>('[data-search-panel="true"]');
+    const panel = appQuery<HTMLElement>('[data-search-panel="true"]');
     const offset = panel ? Math.max(100, panel.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + 16) : 100;
     // 文件树跳转把第一段 hunk 顶到卡片吸顶头下面；行跳转仍按面板下缘对齐。
     const head = root.current?.querySelector<HTMLElement>('header');
@@ -382,7 +383,7 @@ export const FileDiffCard = memo(function FileDiffCard({
     };
     const onKey = (event: KeyboardEvent) => {
       // Esc belongs to open dialogs (search, export) first.
-      if (event.key !== 'Escape' || document.querySelector('[role="dialog"]')) return;
+      if (event.key !== 'Escape' || appQuery('[role="dialog"]')) return;
       setPicked(null);
       clearCodeSelection();
     };
