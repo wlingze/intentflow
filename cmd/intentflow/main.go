@@ -78,7 +78,7 @@ func usageTo(w io.Writer) {
   intentflow -t . --head WORKTREE
   intentflow diff -t . --base main
   intentflow diff <patch|->         从补丁启动工作台，不需要 Git 仓库
-  intentflow export --diff <patch> --out <dir>
+  intentflow export --diff <patch> --out <dir> [--repo owner/repo] [--branch ref]
   intentflow serve --pr-dir <dir> [--no-github]
   intentflow github [open] --repo owner/name --pr N
   intentflow update [--check] [--version v0.2.0] [--force] [--repo owner/name]
@@ -258,7 +258,7 @@ func servePatch(path string, labels patchLabels, run serveRunOptions) error {
 
 func runExport(args []string) error {
 	fs := flag.NewFlagSet("intentflow export", flag.ContinueOnError)
-	var diffPath, out, dist, beforeLabel, afterLabel, title string
+	var diffPath, out, dist, beforeLabel, afterLabel, title, repo, branch string
 	fs.StringVar(&diffPath, "diff", "", "补丁文件；- 表示 stdin")
 	fs.StringVar(&diffPath, "patch", "", "补丁文件；- 表示 stdin")
 	fs.StringVar(&out, "out", "intentflow-static", "静态站点输出目录")
@@ -266,6 +266,8 @@ func runExport(args []string) error {
 	fs.StringVar(&beforeLabel, "before-label", "", "补丁前标签")
 	fs.StringVar(&afterLabel, "after-label", "", "补丁后标签")
 	fs.StringVar(&title, "title", "", "补丁标题")
+	fs.StringVar(&repo, "repo", "patch", "来源仓库；例如 github.com/owner/repo")
+	fs.StringVar(&branch, "branch", "patch", "来源分支或 PR 标签")
 	force := fs.Bool("force", false, "输出目录非空时覆盖同名文件")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -286,7 +288,7 @@ func runExport(args []string) error {
 		return err
 	}
 	payload, revisions, err := prdiff.Build(data, prdiff.Params{
-		Repository: "patch", Branch: "patch", Before: beforeLabel, After: afterLabel,
+		Repository: repo, Branch: branch, Before: beforeLabel, After: afterLabel,
 		Title: title, Mode: contract.Folder,
 		Note: "静态导出：只含改动 hunk；展开的未改区间是空占位行。",
 	})
