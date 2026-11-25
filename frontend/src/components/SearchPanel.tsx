@@ -191,7 +191,7 @@ export function SearchPanel({ open, onOpen, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) onClose();
+      if (!root.current || !event.composedPath().includes(root.current)) onClose();
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
