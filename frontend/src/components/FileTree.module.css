@@ -112,7 +112,7 @@ details[open] > .dirRow > .chevron {
 
 .folder {
   flex: none;
-  color: #54aeff;
+  color: var(--blue);
 }
 
 .dirName {

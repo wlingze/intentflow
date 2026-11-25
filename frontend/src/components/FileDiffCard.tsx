@@ -71,6 +71,42 @@ type CaretDocument = Document & {
   caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
 };
 
+// Shadow DOM 里 document.caretRangeFromPoint 返回的是宿主节点，取不到行内字符。
+// 这里按字符矩形找指针下的字符，两种挂载方式都能用。
+function charIndexAtPoint(source: HTMLElement, target: EventTarget | null, x: number, y: number): number {
+  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  const scope = element && element !== source && source.contains(element) ? element : source;
+  const range = document.createRange();
+  const offsetOf = (node: Node): number => {
+    range.selectNodeContents(source);
+    range.setEnd(node, 0);
+    return range.toString().length;
+  };
+  const scan = (root: Node): number => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let best = -1;
+    let distance = Infinity;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue ?? '';
+      const base = offsetOf(node);
+      for (let index = 0; index < text.length; index++) {
+        if (text[index] === '\n') continue;
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        const rect = range.getBoundingClientRect();
+        const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+        const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+        if (dx === 0 && dy === 0) return base + index;
+        const score = dx * dx + dy * dy;
+        if (score < distance) { distance = score; best = base + index; }
+      }
+    }
+    return best;
+  };
+  const hit = scan(scope);
+  return hit >= 0 || scope === source ? hit : scan(source);
+}
+
 // Single click on code picks the identifier under the pointer. A drag-select
 // is left alone, so copying text does not change the highlight.
 function wordAtPoint(event: ReactMouseEvent<HTMLElement>, source: HTMLElement, line: string): string | null {
@@ -93,11 +129,15 @@ function wordAtPoint(event: ReactMouseEvent<HTMLElement>, source: HTMLElement, l
       offset = position.offset;
     }
   }
-  if (!container || !source.contains(container)) return '';
-  const before = document.createRange();
-  before.selectNodeContents(source);
-  before.setEnd(container, offset);
-  let index = before.toString().length;
+  let index = -1;
+  if (container && source.contains(container)) {
+    const before = document.createRange();
+    before.selectNodeContents(source);
+    before.setEnd(container, offset);
+    index = before.toString().length;
+  }
+  if (index < 0) index = charIndexAtPoint(source, event.target, event.clientX, event.clientY);
+  if (index < 0) return '';
   if (index >= line.length) index = line.length - 1;
   if (!isWordChar(line[index]) && index > 0 && isWordChar(line[index - 1])) index--;
   if (!isWordChar(line[index])) return '';
@@ -379,7 +419,7 @@ export const FileDiffCard = memo(function FileDiffCard({
       event.preventDefault();
     };
     const onDown = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) { setPicked(null); clearCodeSelection(); }
+      if (!root.current || !event.composedPath().includes(root.current)) { setPicked(null); clearCodeSelection(); }
     };
     const onKey = (event: KeyboardEvent) => {
       // Esc belongs to open dialogs (search, export) first.
