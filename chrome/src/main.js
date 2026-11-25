@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { App } from '../../frontend/src/App';
 import { AppProvider } from '../../frontend/src/state/AppProvider';
 import { buildPayload } from './payload.js';
-import { askToken, fetchComments, fetchDiff, fetchPull, importComments, mapReview, parsePrUrl, setToken, submitReview } from './github.js';
+import { fetchComments, fetchDiff, fetchPull, importComments, mapReview, parsePrUrl, submitReview } from './github.js';
+import { buildReviewMarkdown } from '../../frontend/src/lib/markdown';
+import { copyText } from '../../frontend/src/lib/files';
+import { applyTheme, loadThemeMode } from '../../frontend/src/lib/theme';
 import '../../frontend/src/styles/tokens.css';
 import '../../frontend/src/styles/global.css';
 
@@ -94,25 +97,40 @@ async function submit(event) {
   buttons.forEach((node) => { node.disabled = true; });
   setStatus('读取本地评论…');
   try {
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const doc = readLocalReview(activePayload);
     const diff = await fetchDiff(activePr.owner, activePr.repo, activePr.number);
     const mapped = mapReview(doc, diff);
-    if (!mapped.comments.length && !mapped.body) throw new Error('没有可提交的评论（导入了的 gh- 评论不会重复提交）');
+    if (!mapped.comments.length && !mapped.body && selected === 'comment') throw new Error('没有可提交的评论（导入的 gh- 评论不会重复提交）');
     const result = await submitReview(activePr.owner, activePr.repo, activePr.number, {
-      body: mapped.body || 'intentflow review',
+      body: mapped.body,
       event: EVENTS[selected],
       comments: mapped.comments,
     });
-    const link = result.html_url ? ` ${result.html_url}` : '';
-    setStatus(`已提交 review${mapped.skipped ? `；${mapped.skipped} 条放入正文` : ''}${link}`, 'ok');
-    if (result.html_url) window.open(result.html_url, '_blank', 'noopener');
+    const label = selected === 'approve' ? '通过' : selected === 'request-changes' ? '请求修改' : '评论';
+    setStatus(`已提交${label}${result.comments ? `，${result.comments} 条行内评论` : ''}${mapped.skipped ? `；${mapped.skipped} 条放入正文` : ''}`, 'ok');
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error), 'error');
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(`${message}；可点「在页面完成」`, 'error');
   } finally {
     busy = false;
     buttons.forEach((node) => { node.disabled = false; });
   }
+}
+
+// 兜底通道：把评审 Markdown 放进剪贴板，再打开 GitHub 原生 Files changed。
+// 登录会话、权限和 CSRF 都由 GitHub 页面自己处理，脚本不碰 token。
+async function handoff() {
+  if (!activePayload || !activePr) return;
+  const doc = readLocalReview(activePayload);
+  const text = buildReviewMarkdown(activePayload.review, doc);
+  let copied = false;
+  if (typeof GM_setClipboard === 'function') {
+    try { GM_setClipboard(text, 'text'); copied = true; } catch { copied = false; }
+  }
+  if (!copied) copied = await copyText(text);
+  window.open(`${location.origin}/${activePr.owner}/${activePr.repo}/pull/${activePr.number}/files`, '_blank', 'noopener');
+  setStatus(copied ? 'Review Markdown 已复制；在 GitHub 页面点 Review changes 粘贴' : '复制失败；请用「提交 Review」菜单导出', copied ? 'ok' : 'error');
 }
 
 function barElement() {
@@ -129,8 +147,8 @@ function barElement() {
   event.innerHTML = '<option value="comment">评论</option><option value="approve">通过</option><option value="request-changes">请求修改</option>';
   bar.append(event);
   bar.append(button('提交到 GitHub', () => void submit(event.value)));
+  bar.append(button('在页面完成', () => void handoff(), 'if-button if-quiet'));
   bar.append(button('刷新', () => { closeOverlay(); setTimeout(() => void openOverlay(), 60); }, 'if-button if-quiet'));
-  bar.append(button('token', () => { askToken(true); setStatus('token 已保存'); }, 'if-button if-quiet'));
   const status = document.createElement('span');
   status.className = 'if-status';
   status.dataset.ifStatus = '';
@@ -143,6 +161,7 @@ function shellWithBar() {
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483000;';
+  applyTheme(host, loadThemeMode());
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = `${APP_CSS}\n${OVERLAY_CSS}`;
@@ -219,23 +238,23 @@ async function openOverlay() {
 
 const OVERLAY_CSS = `
   :host { display: block; height: 100%; }
-  .if-shell { height: 100%; display: flex; flex-direction: column; background: #080b10; color: #e8eef7; font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .if-bar { flex: none; display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; background: #0f141c; border-bottom: 1px solid #2a3646; }
-  .if-title { font-weight: 650; color: #e8eef7; white-space: nowrap; }
-  .if-select { height: 24px; padding: 0 5px; border: 1px solid #2a3646; border-radius: 5px; background: #0b1017; color: #e8eef7; font: inherit; }
-  .if-button { height: 24px; padding: 0 8px; border: 1px solid #2a3646; border-radius: 5px; background: #131a24; color: #e8eef7; font: inherit; cursor: pointer; white-space: nowrap; }
-  .if-button:hover { border-color: #5a687b; background: #1c2532; }
+  .if-shell { height: 100%; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .if-bar { flex: none; display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
+  .if-title { font-weight: 650; color: var(--ink); white-space: nowrap; }
+  .if-select { height: 24px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-2); color: var(--ink); font: inherit; }
+  .if-button { height: 24px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-3); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
+  .if-button:hover { border-color: var(--faint); background: var(--panel-2); }
   .if-button:disabled { opacity: .5; cursor: default; }
-  .if-quiet { background: transparent; color: #8a99ad; }
+  .if-quiet { background: transparent; color: var(--dim); }
   .if-close { margin-left: 2px; width: 26px; padding: 0; font-size: 16px; line-height: 1; }
-  .if-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8a99ad; }
-  .if-status[data-kind="ok"] { color: #3ddc97; }
-  .if-status[data-kind="error"] { color: #ff6b81; }
-  .if-body { flex: 1; min-height: 0; position: relative; }
+  .if-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+  .if-status[data-kind="ok"] { color: var(--green); }
+  .if-status[data-kind="error"] { color: var(--red); }
+  .if-body { flex: 1; min-height: 0; position: relative; background: var(--bg); }
   .if-root { height: 100%; }
   .if-root > div { height: 100% !important; }
-  .if-loading, .if-error { height: 100%; display: grid; place-content: center; padding: 24px; color: #8a99ad; text-align: center; }
-  .if-error { color: #ff6b81; max-width: 900px; margin: 0 auto; }
+  .if-loading, .if-error { height: 100%; display: grid; place-content: center; padding: 24px; color: var(--dim); text-align: center; }
+  .if-error { color: var(--red); max-width: 900px; margin: 0 auto; }
   .if-error-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
 `;
 
@@ -263,9 +282,14 @@ function syncLauncher() {
 }
 
 if (typeof GM_registerMenuCommand === 'function') {
-  GM_registerMenuCommand('设置 GitHub token', () => { askToken(true); });
-  GM_registerMenuCommand('清除 GitHub token', () => { setToken(''); });
+  GM_registerMenuCommand('打开 intentflow', () => { void openOverlay(); });
 }
+
+// 0.1 版本把 PAT 存在 GM_setValue 里；现在写操作走登录会话，启动时删掉旧 token。
+if (typeof GM_deleteValue === 'function') {
+  try { GM_deleteValue('intentflow.github.token'); } catch { /* 存储不可用 */ }
+}
+try { localStorage.removeItem('intentflow.github.token'); } catch { /* 隐私模式 */ }
 
 window.addEventListener('turbo:load', syncLauncher);
 window.addEventListener('popstate', syncLauncher);

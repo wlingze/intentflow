@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { importComments, mapReview, parsePrUrl } from './github.js';
+import { findAuthenticityToken, importComments, mapReview, parsePrUrl, reviewCommentFields, reviewFields, webReviewPaths } from './github.js';
 
 const diff = `--- a/a.txt
 +++ b/a.txt
@@ -58,4 +58,37 @@ test('importComments keeps LEFT and RIGHT anchors', () => {
   assert.deepEqual(imported[1].quote, { file: 'a.txt', side: 'before', start: 1, end: 2, snippet: '' });
   assert.equal(imported[2].quote.end, 8);
   assert.equal(imported[0].createdAt, Date.parse('2026-01-02T03:04:05Z'));
+});
+
+test('native form helpers target the logged-in review endpoints', () => {
+  assert.deepEqual(webReviewPaths('o', 'r', 7), {
+    page: '/o/r/pull/7',
+    comment: '/o/r/pull/7/review_comments',
+    review: '/o/r/pull/7/reviews',
+  });
+  assert.deepEqual(reviewCommentFields({ path: 'a.txt', body: 'hi', line: 12, side: 'RIGHT' }), {
+    'pull_request_review_comment[body]': 'hi',
+    'pull_request_review_comment[path]': 'a.txt',
+    'pull_request_review_comment[line]': '12',
+    'pull_request_review_comment[side]': 'RIGHT',
+  });
+  assert.deepEqual(reviewCommentFields({ path: 'a.txt', body: 'multi', line: 12, side: 'RIGHT', start_line: 10 }), {
+    'pull_request_review_comment[body]': 'multi',
+    'pull_request_review_comment[path]': 'a.txt',
+    'pull_request_review_comment[line]': '12',
+    'pull_request_review_comment[side]': 'RIGHT',
+    'pull_request_review_comment[start_line]': '10',
+    'pull_request_review_comment[start_side]': 'RIGHT',
+  });
+  assert.deepEqual(reviewFields({ body: 'summary', event: 'APPROVE' }), {
+    'pull_request_review[body]': 'summary',
+    'pull_request_review[event]': 'APPROVE',
+  });
+});
+
+test('findAuthenticityToken reads form and meta tokens', () => {
+  const form = { querySelector: (selector) => selector.includes('authenticity_token') ? { value: 'form-token' } : null };
+  assert.equal(findAuthenticityToken(form), 'form-token');
+  const meta = { querySelector: (selector) => selector.includes('csrf-token') ? { getAttribute: () => 'meta-token' } : null };
+  assert.equal(findAuthenticityToken(meta), 'meta-token');
 });
