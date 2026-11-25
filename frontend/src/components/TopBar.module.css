@@ -15,6 +15,7 @@
 .searchWrap button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--dim); }
 .searchWrap button:hover { border-color: var(--line-strong); color: var(--ink); }
 .wideOnly, .narrowOnly { display: flex; gap: 5px; }
+.themeWrap { display: flex; flex: none; }
 .narrowOnly { display: none; }
 .wideOnly button, .narrowOnly button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--dim); }
 .wideOnly button[aria-pressed='true'], .narrowOnly button[aria-pressed='true'] { color: var(--ink); background: var(--panel-3); }

@@ -2,6 +2,7 @@ import { useApp, useAppDispatch } from '../state/AppProvider';
 import { RevisionPicker } from './RevisionPicker';
 import { useReviewData } from '../state/selectors';
 import { SubmitMenu } from './SubmitMenu';
+import { ThemeMenu } from './ThemeMenu';
 import { IconBranch, IconFiles, IconPanel, IconSearch } from './Icons';
 import { baseSummary } from '../lib/baseStatus';
 import styles from './TopBar.module.css';
@@ -37,6 +38,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
         <button type="button" aria-label="文件导航" aria-pressed={drawer === 'left'} onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'left' ? null : 'left' })}><IconFiles width={16} height={16} /></button>
         <button type="button" aria-label="评审信息" aria-pressed={drawer === 'right'} onClick={() => dispatch({ type: 'drawer/set', drawer: drawer === 'right' ? null : 'right' })}><IconPanel width={16} height={16} /></button>
       </div>
+      <div className={styles.themeWrap}><ThemeMenu /></div>
       <SubmitMenu />
     </div>
   </header>;

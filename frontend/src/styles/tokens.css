@@ -31,6 +31,12 @@
   --chg-del: rgba(248, 81, 73, 0.55);
   --word-hl: rgba(56, 139, 253, 0.35);
 
+  /* 代码高亮：深色底上保持 ≥ 4.5:1 的正文对比度。 */
+  --tok-keyword: #ff7b72;
+  --tok-string: #a5d6ff;
+  --tok-comment: #8b949e;
+  --tok-number: #79c0ff;
+
   --grid: rgba(255, 255, 255, 0.022);
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
@@ -80,6 +86,11 @@
   --chg-add: #7ee2a8;
   --chg-del: #ffa198;
   --word-hl: #c2e0ff;
+
+  --tok-keyword: #cf222e;
+  --tok-string: #0a3069;
+  --tok-comment: #6e7781;
+  --tok-number: #0550ae;
 
   --grid: rgba(31, 35, 40, 0.02);
   --shadow: 0 16px 40px rgba(31, 35, 40, 0.12);

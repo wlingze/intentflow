@@ -259,19 +259,19 @@ pre {
    颜色来自所在单元格：新增行深绿，删除行深红。 */
 .chg { border-radius: 2px; background: var(--chg, var(--chg-add)); }
 .tok-keyword {
-  color: #cf222e;
+  color: var(--tok-keyword);
 }
 
 .tok-string {
-  color: #0a3069;
+  color: var(--tok-string);
 }
 
 .tok-comment {
-  color: #6e7781;
+  color: var(--tok-comment);
 }
 
 .tok-number {
-  color: #0550ae;
+  color: var(--tok-number);
 }
 
 .tok-literal {
