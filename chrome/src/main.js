@@ -1,297 +1,79 @@
-import { createElement, StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { App } from '../../frontend/src/App';
-import { AppProvider } from '../../frontend/src/state/AppProvider';
-import { buildPayload } from './payload.js';
-import { fetchComments, fetchDiff, fetchPull, importComments, mapReview, parsePrUrl, submitReview } from './github.js';
-import { buildReviewMarkdown } from '../../frontend/src/lib/markdown';
-import { copyText } from '../../frontend/src/lib/files';
-import { applyTheme, loadThemeMode } from '../../frontend/src/lib/theme';
-import '../../frontend/src/styles/tokens.css';
-import '../../frontend/src/styles/global.css';
+import { mountWorkbench } from '../../frontend/src/workbench';
+import { parsePrUrl } from './github.js';
+import { createPrSource } from './prSource.js';
 
-const APP_CSS = __INTENTFLOW_CSS__;
-const HOST_ID = 'intentflow-userscript-root';
-const BUTTON_ID = 'intentflow-launch';
-const EVENTS = { comment: 'COMMENT', approve: 'APPROVE', 'request-changes': 'REQUEST_CHANGES' };
+const FRAGMENT = '#intentflow';
+const LAUNCHER = 'intentflow-launch';
+let active = null;
 
-let mountedRoot = null;
-let restoreFetch = null;
-let activePayload = null;
-let activePr = null;
-let busy = false;
-
-function shadowQuery(selector) {
-  return document.getElementById(HOST_ID)?.shadowRoot?.querySelector(selector) ?? null;
+function closeWorkbench() {
+  if (!active) return;
+  active.root.unmount();
+  active.dialog.close();
+  active.host.remove();
+  active = null;
 }
 
-function setStatus(text, kind = '') {
-  const node = shadowQuery('[data-if-status]');
-  if (!node) return;
-  node.textContent = text || '';
-  node.dataset.kind = kind;
-  node.title = text || '';
-}
-
-function button(label, onClick, className = 'if-button') {
-  const node = document.createElement('button');
-  node.type = 'button';
-  node.className = className;
-  node.textContent = label;
-  node.addEventListener('click', onClick);
-  return node;
-}
-
-function installApi(payload, revisions) {
-  const original = window.fetch;
-  restoreFetch = () => { window.fetch = original; };
-  window.fetch = (input, init) => {
-    const url = typeof input === 'string' ? input : input?.url || '';
-    if (url.includes('/api/payload.json') || url.endsWith('api/payload.json')) {
-      return Promise.resolve(new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    }
-    if (url.includes('/api/revisions.json') || url.endsWith('api/revisions.json')) {
-      return Promise.resolve(new Response(JSON.stringify(revisions), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    }
-    return original.call(window, input, init);
-  };
-}
-
-function mountApp(root, payload, revisions) {
-  installApi(payload, revisions);
-  mountedRoot = createRoot(root);
-  mountedRoot.render(createElement(StrictMode, null, createElement(AppProvider, null, createElement(App))));
-}
-
-function closeOverlay() {
-  if (mountedRoot) {
-    try { mountedRoot.unmount(); } catch { /* already gone */ }
-    mountedRoot = null;
-  }
-  if (restoreFetch) { restoreFetch(); restoreFetch = null; }
-  document.getElementById(HOST_ID)?.remove();
-  activePayload = null;
-  activePr = null;
-  busy = false;
-}
-
-function readLocalReview(payload) {
-  try {
-    const key = `intentflow.review.${payload.session.context.comparison_id}`;
-    const raw = localStorage.getItem(key);
-    if (!raw) return payload.session;
-    const doc = JSON.parse(raw);
-    return doc?.version === 1 ? doc : payload.session;
-  } catch {
-    return payload.session;
-  }
-}
-
-async function submit(event) {
-  if (busy || !activePayload || !activePr) return;
-  const select = shadowQuery('[data-if-event]');
-  const selected = select?.value || event;
-  if (selected !== 'comment' && !window.confirm(selected === 'approve' ? '通过这个 PR？' : '请求修改这个 PR？')) return;
-  busy = true;
-  const buttons = [...(document.getElementById(HOST_ID)?.shadowRoot?.querySelectorAll('.if-button') || [])];
-  buttons.forEach((node) => { node.disabled = true; });
-  setStatus('读取本地评论…');
-  try {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const doc = readLocalReview(activePayload);
-    const diff = await fetchDiff(activePr.owner, activePr.repo, activePr.number);
-    const mapped = mapReview(doc, diff);
-    if (!mapped.comments.length && !mapped.body && selected === 'comment') throw new Error('没有可提交的评论（导入的 gh- 评论不会重复提交）');
-    const result = await submitReview(activePr.owner, activePr.repo, activePr.number, {
-      body: mapped.body,
-      event: EVENTS[selected],
-      comments: mapped.comments,
-    });
-    const label = selected === 'approve' ? '通过' : selected === 'request-changes' ? '请求修改' : '评论';
-    setStatus(`已提交${label}${result.comments ? `，${result.comments} 条行内评论` : ''}${mapped.skipped ? `；${mapped.skipped} 条放入正文` : ''}`, 'ok');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(`${message}；可点「在页面完成」`, 'error');
-  } finally {
-    busy = false;
-    buttons.forEach((node) => { node.disabled = false; });
-  }
-}
-
-// 兜底通道：把评审 Markdown 放进剪贴板，再打开 GitHub 原生 Files changed。
-// 登录会话、权限和 CSRF 都由 GitHub 页面自己处理，脚本不碰 token。
-async function handoff() {
-  if (!activePayload || !activePr) return;
-  const doc = readLocalReview(activePayload);
-  const text = buildReviewMarkdown(activePayload.review, doc);
-  let copied = false;
-  if (typeof GM_setClipboard === 'function') {
-    try { GM_setClipboard(text, 'text'); copied = true; } catch { copied = false; }
-  }
-  if (!copied) copied = await copyText(text);
-  window.open(`${location.origin}/${activePr.owner}/${activePr.repo}/pull/${activePr.number}/files`, '_blank', 'noopener');
-  setStatus(copied ? 'Review Markdown 已复制；在 GitHub 页面点 Review changes 粘贴' : '复制失败；请用「提交 Review」菜单导出', copied ? 'ok' : 'error');
-}
-
-function barElement() {
-  const bar = document.createElement('div');
-  bar.className = 'if-bar';
-  const title = document.createElement('span');
-  title.className = 'if-title';
-  title.textContent = activePr ? `intentflow · ${activePr.owner}/${activePr.repo}#${activePr.number}` : 'intentflow';
-  bar.append(title);
-
-  const event = document.createElement('select');
-  event.className = 'if-select';
-  event.dataset.ifEvent = '';
-  event.innerHTML = '<option value="comment">评论</option><option value="approve">通过</option><option value="request-changes">请求修改</option>';
-  bar.append(event);
-  bar.append(button('提交到 GitHub', () => void submit(event.value)));
-  bar.append(button('在页面完成', () => void handoff(), 'if-button if-quiet'));
-  bar.append(button('刷新', () => { closeOverlay(); setTimeout(() => void openOverlay(), 60); }, 'if-button if-quiet'));
-  const status = document.createElement('span');
-  status.className = 'if-status';
-  status.dataset.ifStatus = '';
-  bar.append(status);
-  bar.append(button('×', closeOverlay, 'if-button if-close'));
-  return bar;
-}
-
-function shellWithBar() {
+function showWorkbench(pr, key) {
   const host = document.createElement('div');
-  host.id = HOST_ID;
-  host.style.cssText = 'position:fixed;inset:0;z-index:2147483000;';
-  applyTheme(host, loadThemeMode());
+  host.id = 'intentflow-userscript-root';
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
-  style.textContent = `${APP_CSS}\n${OVERLAY_CSS}`;
-  const shell = document.createElement('div');
-  shell.className = 'if-shell';
-  shell.append(barElement());
-  const body = document.createElement('div');
-  body.className = 'if-body';
-  const root = document.createElement('div');
-  root.id = 'root';
-  root.className = 'if-root';
-  body.append(root);
-  shell.append(body);
-  shadow.append(style, shell);
+  style.textContent = __INTENTFLOW_CSS__;
+  const dialog = document.createElement('dialog');
+  dialog.setAttribute('aria-label', 'intentflow 工作台');
+  dialog.style.cssText = 'position:fixed;inset:0;margin:0;border:0;padding:0;width:100%;height:100%;max-width:none;max-height:none;overflow:hidden;background:var(--bg);';
+  // Esc 仍由搜索框、菜单、抽屉等工作台组件处理；浏览器后退负责退出。
+  dialog.addEventListener('cancel', (event) => event.preventDefault());
+  const container = document.createElement('div');
+  container.id = 'root';
+  dialog.append(container);
+  shadow.append(style, dialog);
   document.body.append(host);
-  return { host, body, root };
+  dialog.showModal();
+  active = { key, host, dialog, root: mountWorkbench(container, createPrSource(pr)) };
 }
 
-async function loadData() {
+function addLauncher() {
+  if (document.getElementById(LAUNCHER)) return;
+  const link = document.createElement('a');
+  link.id = LAUNCHER;
+  link.href = FRAGMENT;
+  link.textContent = 'intentflow';
+  link.title = '打开 intentflow 工作台（浏览器后退返回 GitHub）';
+  link.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147482000;padding:8px 13px;border:1px solid ButtonBorder;border-radius:18px;background:ButtonFace;color:ButtonText;font:600 12px/18px system-ui;text-decoration:none;';
+  document.body.append(link);
+}
+
+function syncPage() {
   const pr = parsePrUrl();
-  if (!pr) throw new Error('当前页面不是 GitHub PR');
-  activePr = pr;
-  const [diff, pull, comments] = await Promise.all([
-    fetchDiff(pr.owner, pr.repo, pr.number),
-    fetchPull(pr.owner, pr.repo, pr.number),
-    fetchComments(pr.owner, pr.repo, pr.number),
-  ]);
-  if (!diff.trim()) throw new Error('PR diff 为空');
-  const { parsePatch } = await import('./patch.js');
-  const files = parsePatch(diff).files;
-  const title = pull.title || document.title.split(' · ')[0] || `PR #${pr.number}`;
-  const base = pull.base?.ref || 'base';
-  const head = pull.head?.ref || 'head';
-  const built = await buildPayload(files, {
-    repository: `github.com/${pr.owner}/${pr.repo}`,
-    branch: `pull/${pr.number}`,
-    before: base,
-    after: head,
-    baseRef: pull.base?.sha || '',
-    headRef: pull.head?.sha || '',
-    title,
-    note: `GitHub PR #${pr.number}：diff 由浏览器脚本在本地解析；展开的未改区间是空占位行。`,
-  });
-  const imported = importComments(comments);
-  built.payload.session.comments = imported;
-  if (imported.length) built.payload.review.notes.push(`已导入 ${imported.length} 条 GitHub review 评论。`);
-  return built;
-}
-
-async function openOverlay() {
-  if (!parsePrUrl()) return;
-  if (document.getElementById(HOST_ID)) return;
-  const { body, root } = shellWithBar();
-  body.innerHTML = '<div class="if-loading">正在读取 PR diff…</div>';
-  try {
-    const built = await loadData();
-    activePayload = built.payload;
-    body.innerHTML = '';
-    body.append(root);
-    mountApp(root, built.payload, built.revisions);
-  } catch (error) {
-    body.innerHTML = '';
-    const message = document.createElement('div');
-    message.className = 'if-error';
-    message.textContent = error instanceof Error ? error.message : String(error);
-    const retry = button('重试', () => { closeOverlay(); setTimeout(() => void openOverlay(), 60); });
-    const close = button('关闭', closeOverlay);
-    const actions = document.createElement('div');
-    actions.className = 'if-error-actions';
-    actions.append(retry, close);
-    body.append(message, actions);
-  }
-}
-
-const OVERLAY_CSS = `
-  :host { display: block; height: 100%; }
-  .if-shell { height: 100%; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .if-bar { flex: none; display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
-  .if-title { font-weight: 650; color: var(--ink); white-space: nowrap; }
-  .if-select { height: 24px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-2); color: var(--ink); font: inherit; }
-  .if-button { height: 24px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-3); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
-  .if-button:hover { border-color: var(--faint); background: var(--panel-2); }
-  .if-button:disabled { opacity: .5; cursor: default; }
-  .if-quiet { background: transparent; color: var(--dim); }
-  .if-close { margin-left: 2px; width: 26px; padding: 0; font-size: 16px; line-height: 1; }
-  .if-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
-  .if-status[data-kind="ok"] { color: var(--green); }
-  .if-status[data-kind="error"] { color: var(--red); }
-  .if-body { flex: 1; min-height: 0; position: relative; background: var(--bg); }
-  .if-root { height: 100%; }
-  .if-root > div { height: 100% !important; }
-  .if-loading, .if-error { height: 100%; display: grid; place-content: center; padding: 24px; color: var(--dim); text-align: center; }
-  .if-error { color: var(--red); max-width: 900px; margin: 0 auto; }
-  .if-error-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
-`;
-
-function makeLauncher() {
-  let node = document.getElementById(BUTTON_ID);
-  if (node) return node;
-  node = document.createElement('button');
-  node.id = BUTTON_ID;
-  node.type = 'button';
-  node.textContent = 'intentflow';
-  node.title = '打开 intentflow PR review';
-  node.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147482000;height:34px;padding:0 13px;border:1px solid #2a3646;border-radius:18px;background:#0f141c;color:#e8eef7;font:600 12px ui-sans-serif,system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer;';
-  node.addEventListener('click', () => void openOverlay());
-  document.body.append(node);
-  return node;
-}
-
-function syncLauncher() {
-  if (!parsePrUrl()) {
-    document.getElementById(BUTTON_ID)?.remove();
-    if (document.getElementById(HOST_ID)) closeOverlay();
-    return;
-  }
-  makeLauncher();
+  const key = pr && `${pr.owner}/${pr.repo}#${pr.number}`;
+  const open = !!pr && location.hash === FRAGMENT;
+  if (active && (!open || active.key !== key || !active.host.isConnected)) closeWorkbench();
+  if (pr) addLauncher();
+  else document.getElementById(LAUNCHER)?.remove();
+  if (open && !active) showWorkbench(pr, key);
 }
 
 if (typeof GM_registerMenuCommand === 'function') {
-  GM_registerMenuCommand('打开 intentflow', () => { void openOverlay(); });
+  GM_registerMenuCommand('打开 / 关闭 intentflow', () => {
+    if (!parsePrUrl()) return;
+    if (location.hash === FRAGMENT) {
+      // 直接打开带片段的链接时也能退出，不依赖上一页存在。
+      history.replaceState(history.state, '', location.pathname + location.search);
+      syncPage();
+    } else location.hash = FRAGMENT;
+  });
 }
 
-// 0.1 版本把 PAT 存在 GM_setValue 里；现在写操作走登录会话，启动时删掉旧 token。
+// 清理旧版扩展存储，不读取值。
 if (typeof GM_deleteValue === 'function') {
   try { GM_deleteValue('intentflow.github.token'); } catch { /* 存储不可用 */ }
 }
-try { localStorage.removeItem('intentflow.github.token'); } catch { /* 隐私模式 */ }
 
-window.addEventListener('turbo:load', syncLauncher);
-window.addEventListener('popstate', syncLauncher);
-setInterval(syncLauncher, 2000);
-syncLauncher();
+window.addEventListener('hashchange', syncPage);
+window.addEventListener('popstate', syncPage);
+window.addEventListener('turbo:load', syncPage);
+document.addEventListener('turbo:before-cache', closeWorkbench);
+setInterval(syncPage, 2000); // GitHub 客户端导航不保证触发 turbo:load。
+syncPage();

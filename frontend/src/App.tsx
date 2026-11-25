@@ -95,7 +95,7 @@ export function App() {
     setLeftWidth(clampLeft(next, width, panels.right));
   };
   if (loading) return <div className={styles.splash}><span className={styles.mark}>if</span><p>正在读取 diff…</p></div>;
-  if (error || !payload) return <div className={styles.splash} role="alert"><span className={styles.mark}>if</span><h1>无法打开工作台</h1><p className={styles.error}>{error ?? 'payload 为空'}</p><p>检查服务端输出和 --base 参数。</p></div>;
+  if (error || !payload) return <div className={styles.splash} role="alert"><span className={styles.mark}>if</span><h1>无法打开工作台</h1><p className={styles.error}>{error ?? 'payload 为空'}</p><p>请重新打开工作台或刷新页面。</p></div>;
   return <div ref={shell} className={styles.shell} data-right={panels.right} data-resizing={dragging || leftDragging} style={{ '--review-width': `${width}px`, '--left-width': `${leftWidth}px` } as CSSProperties}>
     <div className={styles.workspace}>
       <TopBar onSearch={() => setSearchOpen(true)} />

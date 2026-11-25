@@ -249,8 +249,9 @@ intentflow github open --repo owner/repo --pr 4
 - 已有行级 review 评论。
 
 本模式只读。提交 review 不在 CLI 中；当前分支没有实现 GitHub 写回。
-浏览器插件的可行方案见
-[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md)。
+浏览器里用油猴脚本打开同一个工作台，可在原「提交 Review」菜单里发布：见
+[docs/11-static-and-pr-server.md](docs/11-static-and-pr-server.md) §7 与
+[chrome/README.md](chrome/README.md)。
 
 `github open` 与 `serve --pr-dir` 的区别：
 

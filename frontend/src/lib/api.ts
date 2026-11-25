@@ -1,4 +1,15 @@
-import type { Payload, RevisionList } from '../types';
+import type { Payload, ReviewSession, RevisionList } from '../types';
+
+export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+
+// 页面只认数据源，不根据 URL 猜测能否发布。静态导出的 GitHub PR 仍然只读。
+export interface WorkbenchSource {
+  fetchPayload: (revision?: string) => Promise<Payload>;
+  fetchRevisions: () => Promise<RevisionList>;
+  /** 有值表示能发布：显示在「提交 Review」菜单和顶栏的远端来源名。 */
+  publishLabel?: string;
+  publishReview?: (document: ReviewSession, event: ReviewEvent) => Promise<string>;
+}
 
 // Relative on purpose: the live server, a static export and a PR path such as
 // /pr/owner/repo/4/ all resolve api/*.json next to the page.
@@ -20,3 +31,5 @@ export async function fetchPayload(revision?: string): Promise<Payload> {
 export async function fetchRevisions(): Promise<RevisionList> {
   return jsonResponse<RevisionList>(await fetch(apiPath('revisions.json'), { cache: 'no-store' }));
 }
+
+export const httpSource: WorkbenchSource = { fetchPayload, fetchRevisions };

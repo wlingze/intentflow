@@ -1,5 +1,4 @@
-import { fetchPayload } from '../lib/api';
-import { useApp, useAppDispatch, saveCurrentReview } from '../state/AppProvider';
+import { useApp, useAppDispatch, useWorkbenchSource, saveCurrentReview } from '../state/AppProvider';
 import type { Revision } from '../types';
 import styles from './RevisionPicker.module.css';
 
@@ -17,6 +16,7 @@ export function RevisionPicker() {
   const state = useApp();
   const { revisions, revisionId, revisionLoading } = state;
   const dispatch = useAppDispatch();
+  const { fetchPayload } = useWorkbenchSource();
 
   if (!revisions || revisions.revisions.length <= 1) return null;
 

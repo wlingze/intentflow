@@ -15,6 +15,10 @@ html {
 body {
   margin: 0;
   overflow: hidden;
+}
+
+#root {
+  overflow: hidden;
   color: var(--ink);
   font: 13px/1.5 var(--sans);
   background:
@@ -27,7 +31,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-[data-theme="light"] body {
+:root[data-theme="light"] #root, :host([data-theme="light"]) #root {
   background: var(--bg);
 }
 
@@ -131,7 +135,7 @@ pre {
   border-color: color-mix(in srgb, var(--green) 86%, white);
 }
 
-[data-theme="light"] .btnPrimary {
+:root[data-theme="light"] .btnPrimary, :host([data-theme="light"]) .btnPrimary {
   color: #fff;
 }
 

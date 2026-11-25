@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
-import { fetchPayload, fetchRevisions } from '../lib/api';
+import { createContext, useContext, useEffect, useLayoutEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
+import { httpSource, type WorkbenchSource } from '../lib/api';
 import { loadLocalReview, saveLocalReview } from '../lib/localReview';
 import { sameList } from '../lib/visibleFiles';
 import { loadPrefs, savePrefs } from '../lib/prefs';
@@ -39,6 +39,8 @@ export interface AppState {
   treeFocus: { path: string; token: number } | null;
   toast: ToastState | null;
   toastSeq: number;
+  /** 数据源能发布时是来源名（GitHub），否则为空。 */
+  publishLabel: string;
 }
 export type Action =
   | { type: 'payload/loaded'; payload: Payload; id?: string }
@@ -67,16 +69,20 @@ export type Action =
   | { type: 'code/visible'; files: string[]; mounted: string[] }
   | { type: 'tree/focus'; path: string }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
-  | { type: 'toast/clear'; id: number };
+  | { type: 'toast/clear'; id: number }
+  | { type: 'publish/capable'; label: string };
 
-const prefs = loadPrefs();
-const initialState: AppState = {
-  payload: null, loading: true, error: null, revisions: null, revisionId: '', revisionLoading: null,
-  panels: { files: prefs.files, right: prefs.right }, drawer: null,
-  comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
-  saveStatus: 'saved', saveError: '',
-  code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '', visible: [], mounted: [] }, treeFocus: null, toast: null, toastSeq: 0,
-};
+function initialState(): AppState {
+  const prefs = loadPrefs();
+  return {
+    payload: null, loading: true, error: null, revisions: null, revisionId: '', revisionLoading: null,
+    panels: { files: prefs.files, right: prefs.right }, drawer: null,
+    comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
+    saveStatus: 'saved', saveError: '',
+    code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '', visible: [], mounted: [] }, treeFocus: null, toast: null, toastSeq: 0,
+    publishLabel: '',
+  };
+}
 
 export function reviewDocument(state: AppState): ReviewSession {
   if (!state.payload) throw new Error('未加载比较范围');
@@ -169,6 +175,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'tree/focus': return { ...state, treeFocus: { path: action.path, token: (state.treeFocus?.token ?? 0) + 1 } };
     case 'toast/show': return { ...state, toast: { id: state.toastSeq + 1, message: action.message, kind: action.kind ?? 'info' }, toastSeq: state.toastSeq + 1 };
     case 'toast/clear': return state.toast?.id === action.id ? { ...state, toast: null } : state;
+    case 'publish/capable': return state.publishLabel === action.label ? state : { ...state, publishLabel: action.label };
     default: return state;
   }
 }
@@ -176,19 +183,35 @@ function reducer(state: AppState, action: Action): AppState {
 const StateContext = createContext<AppState | null>(null);
 const DispatchContext = createContext<Dispatch<Action> | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+const SourceContext = createContext<WorkbenchSource>(httpSource);
+export function useWorkbenchSource() { return useContext(SourceContext); }
+
+export function AppProvider({ children, source = httpSource }: { children: ReactNode; source?: WorkbenchSource }) {
+  const [state, dispatch] = useReducer(reducer, undefined, initialState);
   useEffect(() => {
+    if (source.publishLabel) dispatch({ type: 'publish/capable', label: source.publishLabel });
     let cancelled = false;
-    fetchPayload().then((payload) => {
+    source.fetchPayload().then((payload) => {
       if (cancelled) return;
       // 浏览器里存着同一比较范围的记录时以它为准，服务端只给空文档。
       const local = loadLocalReview(payload.session.context);
       dispatch({ type: 'payload/loaded', payload: local ? { ...payload, session: local } : payload });
     })
       .catch((error: unknown) => { if (!cancelled) dispatch({ type: 'payload/error', error: error instanceof Error ? error.message : String(error) }); });
-    fetchRevisions().then((revisions) => { if (!cancelled) dispatch({ type: 'revisions/loaded', revisions }); }).catch(() => undefined);
+    source.fetchRevisions().then((revisions) => { if (!cancelled) dispatch({ type: 'revisions/loaded', revisions }); }).catch(() => undefined);
     return () => { cancelled = true; };
+  }, [source]);
+
+  // 离开工作台时也保留最后一次编辑，不用等 400ms 自动保存。
+  const latest = useRef(state);
+  useLayoutEffect(() => { latest.current = state; }, [state]);
+  useEffect(() => {
+    const flush = () => {
+      const current = latest.current;
+      if (current.payload && current.editVersion > current.savedVersion) saveLocalReview(reviewDocument(current));
+    };
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); flush(); };
   }, []);
 
   useEffect(() => {
@@ -210,7 +233,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => dispatch({ type: 'toast/clear', id }), 4500);
     return () => window.clearTimeout(timer);
   }, [state.toast]);
-  return <StateContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></StateContext.Provider>;
+  return <SourceContext.Provider value={source}><StateContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></StateContext.Provider></SourceContext.Provider>;
 }
 export function useApp(): AppState { const state = useContext(StateContext); if (!state) throw new Error('useApp 必须在 AppProvider 内使用'); return state; }
 export function useAppDispatch(): Dispatch<Action> { const dispatch = useContext(DispatchContext); if (!dispatch) throw new Error('useAppDispatch 必须在 AppProvider 内使用'); return dispatch; }

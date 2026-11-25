@@ -223,15 +223,36 @@ intentflow github open --repo owner/repo --pr 4
 | 扩展侧栏 / iframe | 在 GitHub 侧栏嵌入本地 intentflow 页面 | 中 | 需要本地端口发现、CSP、扩展权限 |
 | 完整内容脚本改写 GitHub DOM | 把 diff 和评论 UI 拆进 GitHub 页面 | 最高 | GitHub DOM 变更、CSP、bundle 体积、商店审核 |
 
-当前实现采用第一种：脚本不依赖本地进程，直接在 PR 页右下角加
-`intentflow` 按钮，点开后全屏挂载工作台。diff 用 `GM_xmlhttpRequest` 抓取，
+当前实现采用第一种：脚本不依赖本地进程，在 PR 页右下角加
+`intentflow` 入口，全屏挂载工作台。diff 用 `GM_xmlhttpRequest` 抓取，
 绕开 GitHub 的 `connect-src`；前端资源已经打进单文件 userscript。
 
-### 7.2 提交怎么接
+### 7.2 页面与独立版一致
 
-脚本顶部工具栏有「评论 / 通过 / 请求修改」和「提交到 GitHub」。
-前端直接读工作台保存在 localStorage 的 review 文档，重新抓当前 diff，
-映射成 GitHub review 评论后走 GitHub 自己的网页表单：
+脚本不再自己画工具栏、加载页、错误页，也不再改 `window.fetch`、不再
+单独读一份 localStorage 草稿。它只做三件事：
+
+1. 解析 PR 地址，取 diff、元数据和已有评论。
+2. 把结果包装成 `WorkbenchSource`，交给共享入口 `mountWorkbench`。
+3. 在 `#intentflow` 打开一个全屏 `<dialog>`，工作台挂在 Shadow DOM 里。
+
+独立页和脚本都走同一个 `mountWorkbench`（`frontend/src/workbench.tsx`），
+页面树、加载状态、错误提示、快捷键、评论编辑、主题和样式只有一份。
+差异只在数据源：独立页读 `api/*.json`，脚本读 PR。顶栏是否显示远端
+发布入口也由数据源决定，静态导出仍然只读。
+
+### 7.3 入口与退出
+
+- 右下角 `intentflow` 按钮：把地址改成 `#intentflow`，脚本据此挂载。
+- 直接打开 `.../pull/N#intentflow`：同样可用。
+- 退出用浏览器后退，或油猴菜单「打开 / 关闭 intentflow」。
+- `Esc` 留给工作台自己（搜索框、菜单、抽屉）。
+
+### 7.4 提交怎么接
+
+写回在原来的「提交 Review」菜单里，多一行 `GitHub`：下拉选
+评论 / 通过 / 请求修改，点「发布」。脚本取当前评审状态，重新抓当前
+diff，映射成 GitHub review 评论后走 GitHub 自己的网页表单：
 
 ```text
 POST /<owner>/<repo>/pull/<number>/review_comments
@@ -245,12 +266,11 @@ review（`COMMENT` / `APPROVE` / `REQUEST_CHANGES`）。
 
 这不是公开 REST API，是 GitHub 前端使用的网页表单；字段随 GitHub 改版
 可能变化。字段与请求顺序已有单元测试和 Playwright 模拟；真实登录会话下
-的提交未在本地自动验证，首次使用请确认评论落在当前 PR。失败时脚本显示
-GitHub 返回的原文，并提供「在页面完成」：复制评审 Markdown，打开原生
-Files changed，在 Review changes 表单里粘贴。
+的提交未在本地自动验证，首次使用请确认评论落在当前 PR。失败时工作台
+用提示条显示 GitHub 返回的原文，评审内容已先存本地草稿，不会丢。
 
 
-### 7.3 行号映射（已实现）
+### 7.5 行号映射（已实现）
 
 | intentflow | GitHub review comment |
 | --- | --- |
@@ -331,11 +351,14 @@ GitHub 只读：
 油猴脚本：
 
 - 在 `wlingze/intentflow#4` 页面注入 `chrome/dist/intentflow.user.js`，22 个文件全部渲染。
-- 工作台挂在 Shadow DOM，GitHub 页面样式不互相污染。
+- 工作台挂在 Shadow DOM 的全屏 `<dialog>` 里，GitHub 页面样式不互相污染。
+- 浅色、深色下顶栏、卡片、左侧栏尺寸、字体、CSS 变量与独立导出页逐项相同。
 - 深色 / 浅色 / 跟随系统三态主题；两种主题下 YAML 字符串、注释、数字都可读。
 - 点击 diff 里的标识符，右下角「符号引用」浮层出现并列出引用。
+- 脚本没有自己的工具栏；「提交 Review」菜单里出现 `GitHub` 行。
 - `node --test chrome/src/*.test.js` 覆盖 diff 解析、行号映射、评论导入、网页表单字段。
-- 网页表单提交需要真实登录会话，本地无法代替；未登录时脚本会提示，并保留「在页面完成」路径。
+- 模拟提交：2 个 POST，字段、`authenticity_token` 与事件正确，提示「已提交评论」；浏览器后退可退出。
+- 网页表单提交需要真实登录会话，本地无法代替；未登录时工作台提示 GitHub 的原文。
 
 ## 11. 遗留问题
 
@@ -346,6 +369,7 @@ GitHub 只读：
 - 导入的 GitHub 评论不能在线程里回复；本地编辑不会写回。
 - 同一浏览器里已有本地草稿时，localStorage 会覆盖新导入的 GitHub 评论；清掉该草稿后才能看到最新导入结果。
 - 油猴脚本已实现，产物是 `chrome/dist/intentflow.user.js`。它需要 Tampermonkey；写 review 使用浏览器登录会话，不要求 PAT。
+- 脚本与独立页共用 `mountWorkbench`；脚本只提供 PR 数据源，不再有独立页面层。
 - 网页表单提交路径未在真实登录会话下自动验证；首次使用请确认评论落在当前 PR。
 - 脚本不导入 PR 会话评论、review 摘要、check 状态；不支持回复现有评论线程。
 - 没有自动重试/backoff、ETag、GitHub Enterprise 实机验证。
