@@ -1,7 +1,7 @@
 .shell { display: grid; grid-template-columns: minmax(0, 1fr) min(var(--review-width), 48vw); height: 100vh; height: 100dvh; width: 100%; min-height: 0; background: var(--bg); }
 .shell[data-right='false'] { grid-template-columns: minmax(0, 1fr); }
 .workspace { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.main { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; align-items: stretch; }
+.main { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: stretch; }
 .left { position: relative; flex: none; width: var(--left-width, var(--left-w)); min-width: 0; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 .right { position: relative; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; z-index: 30; }
 .resizer, .leftResizer { position: absolute; top: 0; bottom: 0; width: 8px; z-index: 40; cursor: col-resize; touch-action: none; }

@@ -101,14 +101,13 @@ export function App() {
       <TopBar onSearch={() => setSearchOpen(true)} />
       <main className={styles.main} inert={!!revisionLoading}>
         {panels.files && <aside id="file-sidebar" className={styles.left} aria-label="文件导航">
-          <FileTree />
+          <FileTree /><SymbolPanel />
           <div className={styles.leftResizer} role="separator" aria-label="调整文件导航宽度" aria-orientation="vertical" aria-controls="file-sidebar" aria-valuemin={LEFT_MIN} aria-valuemax={leftLimit(width, panels.right)} aria-valuenow={Math.round(leftWidth)} tabIndex={0}
             onDoubleClick={() => setLeftWidth(clampLeft(LEFT_DEFAULT, width, panels.right))}
             onPointerDown={startLeftDrag} onPointerMove={moveLeftDrag} onPointerUp={endLeftDrag} onPointerCancel={endLeftDrag}
             onKeyDown={leftKey} />
         </aside>}
         <DiffStage />
-        <SymbolPanel />
       </main>
     </div>
     {panels.right && <aside id="review-panel" className={styles.right} aria-label="评审信息">
@@ -121,7 +120,7 @@ export function App() {
       <RightPanel />
     </aside>}
     {drawer && <button type="button" className={styles.overlay} aria-label="关闭面板" onClick={() => dispatch({ type: 'drawer/set', drawer: null })} />}
-    {drawer === 'left' && <div className={styles.drawerLeft}><FileTree /></div>}
+    {drawer === 'left' && <div className={styles.drawerLeft}><FileTree /><SymbolPanel /></div>}
     {drawer === 'right' && <div className={styles.drawerRight}><RightPanel /></div>}
     <Toast />
     <SearchPanel open={searchOpen} onOpen={() => setSearchOpen(true)} onClose={() => setSearchOpen(false)} />
