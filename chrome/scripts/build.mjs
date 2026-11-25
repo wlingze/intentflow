@@ -30,12 +30,12 @@ const body = js.replace('__INTENTFLOW_CSS__', JSON.stringify(css));
 const header = `// ==UserScript==
 // @name         intentflow PR review
 // @namespace    https://github.com/wlingze/intentflow
-// @version      0.1.0
-// @description  在 GitHub PR 页面打开 intentflow，diff 在浏览器本地解析，评论直接提交到 GitHub。
+// @version      0.2.0
+// @description  在 GitHub PR 页面打开 intentflow，diff 在浏览器本地解析，评论走登录会话提交。
 // @match        https://github.com/*/*/pull/*
-// @grant        GM_getValue
-// @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setClipboard
+// @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @connect      api.github.com
 // @connect      github.com
