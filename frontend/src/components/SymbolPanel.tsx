@@ -8,9 +8,14 @@ import { IconChevronRight, IconClose } from './Icons';
 import { cx } from '../lib/format';
 import styles from './SymbolPanel.module.css';
 
+const OPEN_KEY = 'intentflow.symbol-open';
 const HEIGHT_KEY = 'intentflow.symbol-height';
 const MIN_HEIGHT = 120;
 const DEFAULT_HEIGHT = 300;
+
+function initialOpen(): boolean {
+  try { return localStorage.getItem(OPEN_KEY) !== '0'; } catch { return true; }
+}
 
 function initialHeight(): number {
   try {
@@ -27,7 +32,7 @@ export function SymbolPanel() {
   const { code } = useApp();
   const dispatch = useAppDispatch();
   const { files } = useReviewData();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(initialOpen);
   const [limit, setLimit] = useState(200);
   const [active, setActive] = useState(-1);
   const [match, setMatch] = useState(() => loadMatch('symbol'));
@@ -37,17 +42,16 @@ export function SymbolPanel() {
   const deferred = useDeferredValue(word.trim());
   const results = useMemo(() => deferred ? searchDiff(files, deferred, match) : [], [files, deferred, match]);
 
-  // 点击代码里的标识符后浮层自动出现；收起后新增一个词会再次打开。
-  useEffect(() => {
-    if (word.trim()) setOpen(true);
-  }, [word]);
-
   useEffect(() => {
     setLimit(200);
     setActive(-1);
   }, [deferred, files, match]);
 
-  const toggle = () => setOpen((value) => !value);
+  const toggle = () => setOpen((value) => {
+    const next = !value;
+    try { localStorage.setItem(OPEN_KEY, next ? '1' : '0'); } catch { /* optional preference */ }
+    return next;
+  });
 
   const toggleCase = () => setMatch((current) => {
     const next = { ...current, caseSensitive: !current.caseSensitive };
@@ -61,8 +65,8 @@ export function SymbolPanel() {
   });
 
   const maxHeight = () => {
-    const stage = panel.current?.parentElement;
-    return Math.max(MIN_HEIGHT + 40, Math.min(560, (stage?.clientHeight ?? window.innerHeight) - 32));
+    const sidebar = panel.current?.parentElement;
+    return Math.max(MIN_HEIGHT + 40, (sidebar?.clientHeight ?? 640) - 140);
   };
   const apply = (value: number) => {
     const next = Math.min(maxHeight(), Math.max(MIN_HEIGHT, value));
@@ -103,8 +107,6 @@ export function SymbolPanel() {
     const hit = results[index];
     if (hit) dispatch({ type: 'code/reveal', file: hit.path, line: hit.line, side: hit.side });
   };
-
-  if (!word.trim()) return null;
 
   return <section ref={panel} style={{ '--symbol-height': `${height}px` } as React.CSSProperties} className={cx(styles.panel, open && styles.open)} aria-label="符号引用">
     {open && <div
