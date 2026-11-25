@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- |
 | 纯静态导出 | 一份 patch；构建时生成 `payload.json` 与 `revisions.json` | 最低：任意静态文件服务器，或对象存储 + CDN | 看 diff、文件树、搜索、符号引用、写评审、导出 Markdown/JSON | 没有服务端；不能切换 commit 范围；patch 之外的未改源码不存在；评审只存浏览器 |
 | 服务端托管 | 每个 PR 一份 patch；目录按 owner/repo/number 排列 | 中：一个 Go 二进制 + 反向代理 + 磁盘 | 路径路由、索引页、静态导出同样的交互、按需抓取公开 PR | 需要进程与磁盘；默认不写评审；GitHub 抓取受公开仓库与限流约束 |
-| 浏览器插件 / 油猴脚本 | 运行在 github.com PR 页，读 DOM 或调用 GitHub API | 高：需要扩展商店、权限、跨域与内容脚本维护 | 直接在 PR 页注入工作台或打开侧栏，可复用页面上下文 | 浏览器与商店审核；GitHub DOM 变更会破坏注入；API 写回仍需 token；无法覆盖非 GitHub 的 patch 文件；安装门槛高 |
+| 浏览器插件 / 油猴脚本 | 运行在 github.com PR 页，读 DOM 或调用 GitHub API | 高：需要扩展商店、权限、跨域与内容脚本维护 | 直接在 PR 页注入工作台或打开侧栏，可复用页面上下文 | 浏览器与商店审核；GitHub DOM 与网页表单变更会破坏注入；写回依赖登录会话 |
 
 结论：
 
@@ -23,7 +23,7 @@
 | --- | --- | --- | --- | --- | --- |
 | A. GitHub Actions | PR 事件、PR diff、Pages 或 artifact 权限 | 中：一个 workflow + Pages 设置 | PR 打开/更新时生成静态 review 页，自动回贴链接 | Fork PR 的 `GITHUB_TOKEN` 只读；Pages 需要仓库设置；无法写回行级评论 | 采用为发布层，不替代 API |
 | B. GitHub REST 只读 | PR 元数据、聚合 diff、已有 review 评论 | 低：一个命令 + 环境变量 token | 拉 patch 与评论；在只读工作台里查看 | 需要 token；受权限与限流约束；不写回 | **读取闭环，采用** |
-| C. 浏览器注入 | PR 页 DOM 或 GitHub API、扩展权限 | 高：扩展商店/油猴安装、权限、DOM 维护 | 在 PR 页内直接看 diff；写回需额外 token 或本地服务 | GitHub DOM 变更会破坏；安装门槛高；审核与跨域成本高 | 暂不做 |
+| C. 浏览器注入 | PR 页 DOM 或 GitHub API、扩展权限 | 高：扩展商店/油猴安装、权限、DOM 维护 | 在 PR 页内直接看 diff；写回使用页面登录会话 | GitHub DOM 与网页表单变更会破坏；安装门槛高；审核与跨域成本高 | **已实现（油猴脚本）** |
 
 Actions 和 API 不是二选一：Actions 负责「让每个人打开一个链接」，API 负责「本地读到一个 PR 的完整上下文」。提交留给后续界面或浏览器扩展；本分支不暴露 CLI 写回。
 
@@ -219,7 +219,7 @@ intentflow github open --repo owner/repo --pr 4
 
 | 形态 | 做什么 | 成本 | 限制 |
 | --- | --- | --- | --- |
-| 油猴脚本 + Shadow DOM | PR 页加按钮，全屏挂载打包好的前端 | 中 | 需要 Tampermonkey；GitHub CSP、样式隔离、token 存储 |
+| 油猴脚本 + Shadow DOM | PR 页加按钮，全屏挂载打包好的前端 | 中 | 需要 Tampermonkey；GitHub CSP、样式隔离、网页表单变更 |
 | 扩展侧栏 / iframe | 在 GitHub 侧栏嵌入本地 intentflow 页面 | 中 | 需要本地端口发现、CSP、扩展权限 |
 | 完整内容脚本改写 GitHub DOM | 把 diff 和评论 UI 拆进 GitHub 页面 | 最高 | GitHub DOM 变更、CSP、bundle 体积、商店审核 |
 
@@ -231,16 +231,24 @@ intentflow github open --repo owner/repo --pr 4
 
 脚本顶部工具栏有「评论 / 通过 / 请求修改」和「提交到 GitHub」。
 前端直接读工作台保存在 localStorage 的 review 文档，重新抓当前 diff，
-映射成 GitHub review 评论后调用：
+映射成 GitHub review 评论后走 GitHub 自己的网页表单：
 
 ```text
-POST /repos/{owner}/{repo}/pulls/{number}/reviews
+POST /<owner>/<repo>/pull/<number>/review_comments
+POST /<owner>/<repo>/pull/<number>/reviews
 ```
 
-token 存在 Tampermonkey 的 `GM_setValue`，不写页面 localStorage，不打印。
+两条请求都带页面里的 `authenticity_token`，用 `fetch` 的
+`credentials: same-origin` 发送，所以使用浏览器已登录的 GitHub 会话，
+不要求 token 或 PAT。行内评论先进待提交 review，最后一条请求提交整次
+review（`COMMENT` / `APPROVE` / `REQUEST_CHANGES`）。
 
-为什么不走本地 HTTP 接口：这个脚本的目标是零进程。代价是 token 存在
-扩展存储里；共用电脑时要用 Tampermonkey 菜单清除 token。
+这不是公开 REST API，是 GitHub 前端使用的网页表单；字段随 GitHub 改版
+可能变化。字段与请求顺序已有单元测试和 Playwright 模拟；真实登录会话下
+的提交未在本地自动验证，首次使用请确认评论落在当前 PR。失败时脚本显示
+GitHub 返回的原文，并提供「在页面完成」：复制评审 Markdown，打开原生
+Files changed，在 Review changes 表单里粘贴。
+
 
 ### 7.3 行号映射（已实现）
 
@@ -288,7 +296,8 @@ permissions:
 - 用 `admin:repo_hook`、`delete_repo` 等宽 scope 只为了读 PR。
 - 用 `position` 猜行号；跨 hunk、多行评论和 outdated 行都会错。
 - 把 GitHub HTML 当 API 抓取；页面结构变化就失效。
-- 在浏览器扩展里长期保存 PAT，除非有明确的加密与权限模型；优先让本地进程持有 token。
+- 在浏览器扩展里长期保存 PAT，除非有明确的加密与权限模型；优先使用页面登录会话，或让本地进程持有 token。
+- 伪造、导出或转发 GitHub 的会话 cookie / CSRF token；脚本只在当前页面内提交。
 - 为了测试在别人的真实 PR 上提交 review；用临时仓库或自己的测试 PR。
 - 在 `pull_request_target` 里 checkout 并运行 PR 作者的代码，同时给它写 token。
 
@@ -323,8 +332,10 @@ GitHub 只读：
 
 - 在 `wlingze/intentflow#4` 页面注入 `chrome/dist/intentflow.user.js`，22 个文件全部渲染。
 - 工作台挂在 Shadow DOM，GitHub 页面样式不互相污染。
-- 用模拟的 `GM_xmlhttpRequest` 验证提交：整体意见映射到 review body，返回 review URL。
-- `node --test chrome/src/*.test.js` 覆盖 diff 解析、行号映射、评论导入。
+- 深色 / 浅色 / 跟随系统三态主题；两种主题下 YAML 字符串、注释、数字都可读。
+- 点击 diff 里的标识符，右下角「符号引用」浮层出现并列出引用。
+- `node --test chrome/src/*.test.js` 覆盖 diff 解析、行号映射、评论导入、网页表单字段。
+- 网页表单提交需要真实登录会话，本地无法代替；未登录时脚本会提示，并保留「在页面完成」路径。
 
 ## 11. 遗留问题
 
@@ -334,7 +345,8 @@ GitHub 只读：
 - GitHub 只读模式不导入 PR 会话评论、review 摘要、check 状态。
 - 导入的 GitHub 评论不能在线程里回复；本地编辑不会写回。
 - 同一浏览器里已有本地草稿时，localStorage 会覆盖新导入的 GitHub 评论；清掉该草稿后才能看到最新导入结果。
-- 油猴脚本已实现，产物是 `chrome/dist/intentflow.user.js`。它需要 Tampermonkey；token 存在扩展存储。
+- 油猴脚本已实现，产物是 `chrome/dist/intentflow.user.js`。它需要 Tampermonkey；写 review 使用浏览器登录会话，不要求 PAT。
+- 网页表单提交路径未在真实登录会话下自动验证；首次使用请确认评论落在当前 PR。
 - 脚本不导入 PR 会话评论、review 摘要、check 状态；不支持回复现有评论线程。
 - 没有自动重试/backoff、ETag、GitHub Enterprise 实机验证。
 - 单补丁模式的 identity 固定为 `patch` / `patch`；不同补丁在同一浏览器里会共用 session 前缀，但 `comparison_id` 由 diff 摘要决定，不会串行号。
