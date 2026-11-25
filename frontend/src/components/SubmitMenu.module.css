@@ -19,3 +19,5 @@
 .label em { color: var(--faint); font-size: 10.5px; font-style: normal; }
 .action { height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); font-size: 11px; white-space: nowrap; }
 .action:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.select { height: 26px; padding: 0 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); font-size: 11px; }
+.action:disabled, .select:disabled { opacity: 0.6; cursor: progress; }

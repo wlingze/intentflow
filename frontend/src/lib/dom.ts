@@ -11,7 +11,7 @@ export function appRoot(): ParentNode {
 }
 
 export function appQuery<T extends Element>(selector: string): T | null {
-  return appRoot().querySelector<T>(selector) ?? document.querySelector<T>(selector);
+  return appRoot().querySelector<T>(selector);
 }
 
 export function appActiveElement(): Element | null {

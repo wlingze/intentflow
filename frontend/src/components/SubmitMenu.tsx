@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReviewEvent } from '../lib/api';
 import { copyText, downloadText } from '../lib/files';
 import { buildReviewMarkdown } from '../lib/markdown';
 import { appQuery } from '../lib/dom';
-import { reviewDocument, useApp, useAppDispatch } from '../state/AppProvider';
+import { reviewDocument, saveCurrentReview, useApp, useAppDispatch, useWorkbenchSource } from '../state/AppProvider';
 import { IconChevronDown } from './Icons';
 import styles from './SubmitMenu.module.css';
 
@@ -10,7 +11,10 @@ export function SubmitMenu() {
   const state = useApp();
   const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
+  const [event, setEvent] = useState<ReviewEvent>('COMMENT');
+  const [publishing, setPublishing] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const source = useWorkbenchSource();
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +69,21 @@ export function SubmitMenu() {
     toast(`${label} 已保存`, 'success');
     close();
   };
+  // 先落本地草稿再提交：网络失败时不丢评审内容。
+  const publish = async () => {
+    if (!source.publishReview || publishing) return;
+    setPublishing(true);
+    try {
+      await saveCurrentReview(state, dispatch);
+      const message = await source.publishReview(reviewDocument(state), event);
+      toast(message, 'success');
+      close();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   return (
     <div className={styles.root} ref={rootRef}>
@@ -98,6 +117,28 @@ export function SubmitMenu() {
             <button type="button" className={styles.action} aria-label="复制 JSON" onClick={() => void copy(json(), 'JSON')}>复制</button>
             <button type="button" className={styles.action} aria-label="保存 JSON 文件" onClick={() => save(json(), 'json', 'JSON', 'application/json;charset=utf-8')}>保存文件</button>
           </div>
+          {state.publishLabel && source.publishReview && (
+            <div className={styles.row}>
+              <div className={styles.label}>
+                <b>{state.publishLabel}</b>
+                <em>用当前登录会话提交到 PR</em>
+              </div>
+              <select
+                className={styles.select}
+                value={event}
+                onChange={(change) => setEvent(change.target.value as ReviewEvent)}
+                aria-label="提交方式"
+                disabled={publishing}
+              >
+                <option value="COMMENT">评论</option>
+                <option value="APPROVE">通过</option>
+                <option value="REQUEST_CHANGES">请求修改</option>
+              </select>
+              <button type="button" className={styles.action} aria-label="发布到 GitHub" onClick={() => void publish()} disabled={publishing}>
+                {publishing ? '提交中…' : '发布'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -8,13 +8,14 @@ import { baseSummary } from '../lib/baseStatus';
 import styles from './TopBar.module.css';
 
 export function TopBar({ onSearch }: { onSearch: () => void }) {
-  const { payload, drawer, panels, viewed } = useApp();
+  const { payload, drawer, panels, viewed, publishLabel } = useApp();
   const dispatch = useAppDispatch();
   const { files, stats } = useReviewData();
   const ctx = payload?.session.context;
   const review = payload?.review;
   const baseHint = review && review.comparison.mode === 'git' && review.baseLabel ? baseSummary(review) : '';
-  const remote = ctx?.repository.startsWith('github.com/') ?? false;
+  // 能不能发布由数据源决定，不看仓库名：静态导出的 GitHub PR 也保留为只读。
+  const remote = !!publishLabel;
   const adds = [...stats.values()].reduce((sum, stat) => sum + stat.adds, 0);
   const dels = [...stats.values()].reduce((sum, stat) => sum + stat.dels, 0);
   return <header className={styles.top}>
