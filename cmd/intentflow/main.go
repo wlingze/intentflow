@@ -174,7 +174,7 @@ func runServe(args []string) error {
 		}
 		return serve.ListenPR(serve.PRConfig{
 			Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
-			Source: source, OpenBrowser: run.open,
+			Source: source, OpenBrowser: run.open, Shutdown: serve.NewShutdown(),
 		})
 	}
 	if opt.patch != "" {
@@ -185,11 +185,15 @@ func runServe(args []string) error {
 		return err
 	}
 	defer a.close()
-	return serve.Listen(serve.Config{
+	cfg := serve.Config{
 		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
 		Payload: a.payload, Revisions: a.revisions, Load: a.load,
-		OpenBrowser: run.open,
-	})
+		OpenBrowser: run.open, Shutdown: serve.NewShutdown(),
+	}
+	if !a.folder {
+		cfg.Watcher = serve.NewWatcher(a.worktreeFingerprint)
+	}
+	return serve.Listen(cfg)
 }
 
 func runDiff(args []string) error {
@@ -257,7 +261,7 @@ func servePatch(path string, labels patchLabels, run serveRunOptions) error {
 		Host: run.host, Port: run.port, DistDir: run.dist, DistFS: frontend.Dist(),
 		Payload:     func() contract.Payload { return payload },
 		Revisions:   func() (contract.RevisionList, error) { return revisions, nil },
-		OpenBrowser: run.open,
+		OpenBrowser: run.open, Shutdown: serve.NewShutdown(),
 	})
 }
 
@@ -385,6 +389,7 @@ type app struct {
 	current                           *revision
 	cache                             map[string]*revision
 	dirs                              []string
+	worktreeFP                        string
 }
 
 func newApp(opt options) (*app, error) {
@@ -641,6 +646,11 @@ func (a *app) buildRevision(id string) (*revision, error) {
 	if err != nil {
 		return nil, err
 	}
+	fingerprint := ""
+	if id == "worktree" {
+		// 与下面读取的工作区尽量对应；期间再改动会在下次轮询重建。
+		fingerprint, _ = a.repo.WorktreeFingerprint()
+	}
 	code, err := payload.Build(before, after, bl+" → "+al, renames)
 	if err != nil {
 		return nil, err
@@ -650,10 +660,16 @@ func (a *app) buildRevision(id string) (*revision, error) {
 	if err != nil {
 		return nil, err
 	}
+	if id == "worktree" {
+		a.worktreeFP = fingerprint
+	}
 	return &revision{id: id, data: p}, nil
 }
 
 func (a *app) load(id string) (contract.Payload, error) {
+	if err := a.refreshWorktree(id); err != nil {
+		return contract.Payload{}, err
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if id == "" && a.current != nil {
@@ -675,7 +691,64 @@ func (a *app) load(id string) (contract.Payload, error) {
 	return rev.data, nil
 }
 
+// refreshWorktree 在读取未提交改动前重算指纹；变了就重建缓存。
+// 指纹命令在锁外运行，避免 git 子进程拖住其他请求。
+func (a *app) refreshWorktree(id string) error {
+	a.mu.Lock()
+	if a.folder || a.repo == nil {
+		a.mu.Unlock()
+		return nil
+	}
+	if id == "" && a.current != nil {
+		id = a.current.id
+	}
+	_, cached := a.cache[id]
+	previous := a.worktreeFP
+	a.mu.Unlock()
+	if !cached || id != "worktree" {
+		return nil
+	}
+	next, err := a.repo.WorktreeFingerprint()
+	if err != nil || next == previous {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if next == a.worktreeFP {
+		return nil // 另一个请求已经重建
+	}
+	// 提交会让 HEAD 移动；连同其它 revision 的缓存一起失效。
+	if a.headIsWorktree || strings.EqualFold(a.opt.head, "HEAD") || a.opt.head == "." {
+		if head, err := a.repo.Resolve("HEAD"); err == nil && head != a.headSHA {
+			a.headSHA = head
+			for key := range a.cache {
+				if key != "worktree" {
+					delete(a.cache, key)
+				}
+			}
+		}
+	}
+	rev, err := a.buildRevision("worktree")
+	if err != nil {
+		return err
+	}
+	a.cache["worktree"] = rev
+	if a.current != nil && a.current.id == "worktree" {
+		a.current = rev
+	}
+	return nil
+}
+
+// worktreeFingerprint 是 Watcher 的轮询源；目录比较没有 Git，不监听。
+func (a *app) worktreeFingerprint() (string, error) {
+	if a.folder || a.repo == nil {
+		return "", nil
+	}
+	return a.repo.WorktreeFingerprint()
+}
+
 func (a *app) payload() contract.Payload {
+	_ = a.refreshWorktree("")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.current.data
