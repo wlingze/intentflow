@@ -9,6 +9,8 @@ package gitcompare
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -261,36 +263,93 @@ func (r *Repo) Renames(base, head string) (map[string]string, error) {
 
 // StatusFiles 返回工作区里未提交的文件，路径相对 Subdir。
 func (r *Repo) StatusFiles() ([]string, error) {
-	out, err := git(r.Root, "status", "--porcelain", "-uall")
+	entries, err := r.statusEntries()
 	if err != nil {
 		return nil, err
 	}
-	files := []string{}
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if len(line) < 4 {
-			continue
-		}
-		p := strings.TrimSpace(line[3:])
-		if i := strings.Index(p, " -> "); i >= 0 {
-			p = p[i+4:]
-		}
-		p = strings.Trim(p, `"`)
-		if r.Subdir != "" {
-			prefix := r.Subdir + "/"
-			if p == r.Subdir {
-				p = ""
-			} else if strings.HasPrefix(p, prefix) {
-				p = strings.TrimPrefix(p, prefix)
-			} else {
-				continue
-			}
-		}
-		if p != "" && !strings.Contains("/"+p+"/", "/.intentflow/") {
-			files = append(files, p)
-		}
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		files = append(files, entry.path)
 	}
 	return files, nil
+}
+
+type statusEntry struct {
+	code string
+	path string
+}
+
+// statusEntries 保留 XY 状态码；暂存与未暂存对同一路径是不同状态。
+func (r *Repo) statusEntries() ([]statusEntry, error) {
+	out, err := git(r.Root, "status", "--porcelain=v1", "-z", "-uall")
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Split(out, "\x00")
+	entries := make([]statusEntry, 0, len(fields))
+	for i := 0; i < len(fields); i++ {
+		field := fields[i]
+		if len(field) < 4 {
+			continue
+		}
+		code := field[:2]
+		p, ok := r.relative(field[3:])
+		if code[0] == 'R' || code[0] == 'C' {
+			// -z 格式：新路径在前，原路径是下一条 NUL 分隔的记录。
+			i++
+		}
+		if !ok || p == "" {
+			continue
+		}
+		entries = append(entries, statusEntry{code: code, path: p})
+	}
+	return entries, nil
+}
+
+// relative 把仓库根下的路径映射到 Subdir；返回 false 表示在子树之外。
+func (r *Repo) relative(p string) (string, bool) {
+	p = strings.TrimSpace(strings.Trim(p, `"`))
+	if r.Subdir == "" {
+		return p, !strings.Contains("/"+p+"/", "/.intentflow/")
+	}
+	prefix := r.Subdir + "/"
+	switch {
+	case p == r.Subdir:
+		p = ""
+	case strings.HasPrefix(p, prefix):
+		p = strings.TrimPrefix(p, prefix)
+	default:
+		return "", false
+	}
+	if p == "" || strings.Contains("/"+p+"/", "/.intentflow/") {
+		return "", false
+	}
+	return p, true
+}
+
+// WorktreeFingerprint 给出工作区当前状态的短指纹，供页面轮询本地改动。
+//
+// 指纹只包含 HEAD、porcelain 状态和每个改动路径的 stat（模式、大小、
+// mtime），不读文件正文；对同一路径再次保存也会改变 mtime，所以能发现
+// 「状态码不变、内容已改」的编辑。
+func (r *Repo) WorktreeFingerprint() (string, error) {
+	files, err := r.statusEntries()
+	if err != nil {
+		return "", err
+	}
+	head, _ := git(r.Root, "rev-parse", "HEAD")
+	sum := sha256.New()
+	fmt.Fprintf(sum, "v1\nhead:%s\n", strings.TrimSpace(head))
+	for _, entry := range files {
+		fmt.Fprintf(sum, "%s path:%s\n", entry.code, entry.path)
+		info, err := os.Lstat(filepath.Join(r.Worktree(), filepath.FromSlash(entry.path)))
+		if err != nil {
+			fmt.Fprint(sum, "missing\n")
+			continue
+		}
+		fmt.Fprintf(sum, "%s %d %d\n", info.Mode(), info.Size(), info.ModTime().UnixNano())
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // HasParent 判断提交是否有第一父提交。

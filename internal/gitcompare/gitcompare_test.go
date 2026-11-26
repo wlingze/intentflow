@@ -186,3 +186,100 @@ func TestRenamesDetectsMovedAndEditedFile(t *testing.T) {
 		t.Fatalf("renames = %v", renames)
 	}
 }
+
+// 页面轮询用指纹：任何编辑、暂存或提交都必须改变它。
+func TestWorktreeFingerprintTracksLocalChanges(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "pkg/a.go", "v1\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "init")
+
+	repo, err := Open(dir, "pkg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := func() string {
+		t.Helper()
+		fp, err := repo.WorktreeFingerprint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fp
+	}
+	clean := fingerprint()
+
+	// 同一路径再次保存：size 不变，只有 mtime 变。
+	write(t, dir, "pkg/a.go", "v2\n")
+	edited := fingerprint()
+	if edited == clean {
+		t.Fatal("edit did not change the fingerprint")
+	}
+
+	run(t, dir, "add", "pkg/a.go")
+	staged := fingerprint()
+	if staged == edited || staged == clean {
+		t.Fatalf("staging did not change the fingerprint: clean=%s edited=%s staged=%s", clean, edited, staged)
+	}
+
+	run(t, dir, "commit", "-qm", "v2")
+	committed := fingerprint()
+	if committed == staged || committed == clean {
+		t.Fatalf("commit did not change the fingerprint: clean=%s staged=%s committed=%s", clean, staged, committed)
+	}
+
+	write(t, dir, "pkg/new.go", "package a\n")
+	untracked := fingerprint()
+	if untracked == committed {
+		t.Fatal("untracked file did not change the fingerprint")
+	}
+}
+
+// 子目录比较只关心子树；兄弟目录的编辑不应触发刷新。
+func TestWorktreeFingerprintIgnoresOutsideSubdir(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "pkg/a.go", "v1\n")
+	write(t, dir, "other/b.go", "b1\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "init")
+
+	repo, err := Open(dir, "pkg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := repo.WorktreeFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "other/b.go", "b2 changed\n")
+	after, err := repo.WorktreeFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatal("edit outside the subdir changed the fingerprint")
+	}
+}
+
+// -z 状态解析：重命名取新路径，状态码保留在指纹里。
+func TestStatusFilesUsesNewPathForRename(t *testing.T) {
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "pkg/old.go", "package a\n")
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-qm", "init")
+	run(t, dir, "mv", "pkg/old.go", "pkg/new.go")
+
+	repo, err := Open(dir, "pkg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := repo.StatusFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0] != "new.go" {
+		t.Fatalf("status files = %v", files)
+	}
+}
