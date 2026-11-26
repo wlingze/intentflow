@@ -7,6 +7,7 @@ import { RightPanel } from './components/RightPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { SymbolPanel } from './components/SymbolPanel';
 import { Toast } from './components/Toast';
+import { useAutoRefresh } from './hooks/useAutoRefresh';
 import styles from './App.module.css';
 
 function clampWidth(width: number) { return Math.max(280, Math.min(760, Math.floor(window.innerWidth * 0.48), width)); }
@@ -34,8 +35,9 @@ function initialLeftWidth(): number {
 }
 
 export function App() {
-  const { payload, loading, error, panels, drawer, revisionLoading } = useApp();
+  const { payload, loading, error, panels, drawer, revisionLoading, closed } = useApp();
   const dispatch = useAppDispatch();
+  useAutoRefresh();
   const shell = useRef<HTMLDivElement>(null);
   const dragWidth = useRef(410);
   const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem('intentflow.review-width')) || 410; } catch { return 410; } });
@@ -94,6 +96,11 @@ export function App() {
     const next = event.key === 'Home' ? LEFT_MIN : event.key === 'End' ? max : leftWidth + (event.key === 'ArrowRight' ? 24 : -24);
     setLeftWidth(clampLeft(next, width, panels.right));
   };
+  if (closed) return <div className={styles.splash} role="status" aria-live="polite">
+    <span className={styles.mark}>if</span>
+    <h1>服务已关闭</h1>
+    <p>服务已关闭，可以关闭此页面。</p>
+  </div>;
   if (loading) return <div className={styles.splash}><span className={styles.mark}>if</span><p>正在读取 diff…</p></div>;
   if (error || !payload) return <div className={styles.splash} role="alert"><span className={styles.mark}>if</span><h1>无法打开工作台</h1><p className={styles.error}>{error ?? 'payload 为空'}</p><p>请重新打开工作台或刷新页面。</p></div>;
   return <div ref={shell} className={styles.shell} data-right={panels.right} data-resizing={dragging || leftDragging} style={{ '--review-width': `${width}px`, '--left-width': `${leftWidth}px` } as CSSProperties}>

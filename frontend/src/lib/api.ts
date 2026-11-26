@@ -32,6 +32,16 @@ export async function fetchRevisions(): Promise<RevisionList> {
   return jsonResponse<RevisionList>(await fetch(apiPath('revisions.json'), { cache: 'no-store' }));
 }
 
+// 服务端先写完 200 再关闭监听；网络在响应后断开属于成功路径。
+export async function shutdownServer(): Promise<void> {
+  await jsonResponse<{ status: string }>(await fetch(apiPath('shutdown'), {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+  }));
+}
+
 export const httpSource: WorkbenchSource = { fetchPayload, fetchRevisions };
 
 export async function submitReview(request: ReviewSubmission): Promise<{ status: string }> {

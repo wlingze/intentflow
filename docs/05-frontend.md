@@ -212,12 +212,24 @@ Review tab 只有两部分：
 - 蓝色优先于灰色：同一个文件既在屏上又是当前文件时显示蓝色。
 - 屏内文件与挂载范围由一个观察器统一维护，避免每张卡片各建观察器。
 
+### 2.16 自动刷新与关闭服务
+
+- 页面连 `GET /api/events`；收到 `repo-changed` 后等 400ms 防抖再刷新。
+- 只有当前范围是「未提交的改动」才重取 payload。读旧提交时只更新 dirty 圆点。
+- 刷新先取 revisions 再取 payload；请求期间用户切走范围就丢弃结果。
+- 评论、已查看、hunk 标记和未保存草稿留在 reducer 里，`payload/refresh` 只换服务端字段。
+- 工作区改动被撤销后，范围回落到服务端 current，再回落到第一项。
+- 自动保存（`saveStatus === 'saving'`）或切换范围中收到事件时，延后 400ms 重试。
+- 刷新成功弹「检测到本地修改，已刷新」；失败弹错误并保留旧 diff。
+- 「提交 Review」菜单底部有「关闭服务」。确认后 `POST /api/shutdown`，页面换成
+  「服务已关闭，可以关闭此页面。」。静态导出没有 `capabilities`，不显示该按钮。
+
 ## 3. 状态
 
 `AppProvider` 只保留：
 
 - `payload` / `loading` / `error` / `revisions` / `revisionId`
-- `comments` / `viewed` / `reviewedHunks`
+- `comments` / `viewed` / `reviewedHunks` / `closed`
 - `saveStatus` / `saveError`
 - `panels` / `rightTab` / `drawer`
 - `code`（布局、换行、定位）
