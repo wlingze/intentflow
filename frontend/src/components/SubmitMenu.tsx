@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { submitReview } from '../lib/api';
+import { shutdownServer, submitReview } from '../lib/api';
 import type { ReviewEvent } from '../lib/api';
 import { appQuery } from '../lib/dom';
 import { copyText, downloadText } from '../lib/files';
@@ -24,6 +24,7 @@ export function SubmitMenu() {
   const [open, setOpen] = useState(false);
   const [event, setEvent] = useState<ReviewEvent>('COMMENT');
   const [publishing, setPublishing] = useState(false);
+  const [closing, setClosing] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const source = useWorkbenchSource();
   const [verdict, setVerdict] = useState<ReviewSubmissionVerdict>('comment');
@@ -159,6 +160,20 @@ export function SubmitMenu() {
       setError(message);
     }
   };
+  // 服务端先回 200 再停监听；失败时留在页面并提示原因。
+  const shutdown = async () => {
+    if (closing) return;
+    if (!window.confirm('关闭服务？页面会停止刷新，可以之后重新启动 intentflow。')) return;
+    setClosing(true);
+    try {
+      await shutdownServer();
+      close();
+      dispatch({ type: 'service/closed' });
+    } catch (error) {
+      setClosing(false);
+      toast(`关闭失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+    }
+  };
 
   return (
     <div className={styles.root} ref={rootRef}>
@@ -233,6 +248,17 @@ export function SubmitMenu() {
               </select>
               <button type="button" className={styles.action} aria-label="发布到 GitHub" onClick={() => void publish()} disabled={publishing}>
                 {publishing ? '提交中…' : '发布'}
+              </button>
+            </div>
+          )}
+          {state.payload.capabilities?.shutdown && (
+            <div className={`${styles.row} ${styles.footer}`}>
+              <div className={styles.label}>
+                <b>服务</b>
+                <em>关闭本地工作台</em>
+              </div>
+              <button type="button" className={`${styles.action} ${styles.danger}`} aria-label="关闭服务" onClick={() => void shutdown()} disabled={closing}>
+                {closing ? '关闭中…' : '关闭服务'}
               </button>
             </div>
           )}

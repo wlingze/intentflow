@@ -82,3 +82,6 @@
 
 .select { height: 26px; padding: 0 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--ink); font-size: 11px; }
 .action:disabled, .select:disabled { opacity: 0.6; cursor: progress; }
+.footer { grid-template-columns: minmax(0, 1fr) auto; }
+.action.danger { color: var(--red); }
+.action.danger:hover { border-color: var(--red); background: var(--panel-2); }

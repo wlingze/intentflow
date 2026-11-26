@@ -41,9 +41,12 @@ export interface AppState {
   toastSeq: number;
   /** 数据源能发布时是来源名（GitHub），否则为空。 */
   publishLabel: string;
+  /** 服务已关闭；页面换成 goodbye 屏，不再请求 API。 */
+  closed: boolean;
 }
 export type Action =
   | { type: 'payload/loaded'; payload: Payload; id?: string }
+  | { type: 'payload/refresh'; payload: Payload; id: string }
   | { type: 'payload/error'; error: string }
   | { type: 'revisions/loaded'; revisions: RevisionList }
   | { type: 'revision/loading'; id: string }
@@ -70,6 +73,7 @@ export type Action =
   | { type: 'tree/focus'; path: string }
   | { type: 'toast/show'; message: string; kind?: ToastState['kind'] }
   | { type: 'toast/clear'; id: number }
+  | { type: 'service/closed' }
   | { type: 'publish/capable'; label: string };
 
 function initialState(): AppState {
@@ -80,7 +84,7 @@ function initialState(): AppState {
     comments: [], viewed: [], reviewedHunks: [], editVersion: 0, savedVersion: 0,
     saveStatus: 'saved', saveError: '',
     code: { reveal: null, revealToken: 0, layout: 'split', wrap: prefs.wrap, word: '', visible: [], mounted: [] }, treeFocus: null, toast: null, toastSeq: 0,
-    publishLabel: '',
+    publishLabel: '', closed: false,
   };
 }
 
@@ -129,6 +133,18 @@ function reducer(state: AppState, action: Action): AppState {
       };
     }
     case 'payload/error': return { ...state, loading: false, error: action.error };
+    case 'payload/refresh': {
+      // 自动刷新只替换服务端数据；评论、已查看和 hunk 标记留在本地。
+      const session = action.payload.session;
+      return {
+        ...state,
+        payload: { ...action.payload, session: { ...session, comments: state.comments, viewed: state.viewed, reviewed_hunks: state.reviewedHunks } },
+        revisionId: action.id || session.context.revision,
+        revisionLoading: null,
+        loading: false,
+        error: null,
+      };
+    }
     case 'revisions/loaded': return { ...state, revisions: action.revisions };
     case 'revision/loading': return { ...state, revisionLoading: action.id };
     case 'revision/error': return { ...state, revisionLoading: null };
@@ -175,6 +191,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'tree/focus': return { ...state, treeFocus: { path: action.path, token: (state.treeFocus?.token ?? 0) + 1 } };
     case 'toast/show': return { ...state, toast: { id: state.toastSeq + 1, message: action.message, kind: action.kind ?? 'info' }, toastSeq: state.toastSeq + 1 };
     case 'toast/clear': return state.toast?.id === action.id ? { ...state, toast: null } : state;
+    case 'service/closed': return { ...state, closed: true };
     case 'publish/capable': return state.publishLabel === action.label ? state : { ...state, publishLabel: action.label };
     default: return state;
   }
