@@ -30,11 +30,16 @@ Payload
 │   ├── truncated : bool
 │   └── skipped : string[]
 ├── session : ReviewSession       # 当前范围的评审草稿
-└── submission : SubmissionState  # 是否接受一次审阅提交
+├── submission : SubmissionState  # 是否接受一次审阅提交
+└── capabilities? : Capabilities  # 服务端能力；静态导出没有这个字段
 ```
 
 `submission.enabled` 只在 `intentflow review --wait` 下为 true。普通工作台
 始终为 false，页面不显示提交入口。
+
+`Capabilities` 含 `shutdown` 与 `watch`。`shutdown` 表示页面可调用
+`POST /api/shutdown`；`watch` 表示页面可连 `GET /api/events` 收本地改动。
+两者都由启动方式决定，不由 URL 猜测。
 
 `Review` 仍保留早期语义分析的占位字段（`scan`、`findings`、`ai` 等）。当前版本固定为
 `scan.status = skipped`，`findings = []`，前端不读取。
@@ -121,12 +126,19 @@ ReviewSession
 | --- | --- | --- |
 | GET | `/api/payload` | 当前比较快照；`?revision=` 切换 |
 | GET | `/api/revisions` | 比较范围列表 |
-| GET | `/api/events` | SSE；`review --wait` 下跟踪在线页面 |
+| GET | `/api/events` | SSE：`repo-changed`、ping；`review --wait` 下跟踪在线页面 |
 | POST | `/api/submission` | `review --wait` 下提交一次评审或取消 |
+| POST | `/api/shutdown` | 写 200 后优雅关闭；只接受同源或本机请求 |
 
 普通工作台的评审状态仍只存在浏览器，服务端不落盘。`review --wait` 的
 `POST /api/submission` 只在进程内唤醒一次等待，写一次结果后进程退出。
 完整协议见 [docs/11-agent-review.md](11-agent-review.md)。
+
+服务端只读仓库。关闭接口不写磁盘，幂等，重复调用仍返回 200。
+
+`/api/events` 轮询工作区指纹（HEAD + `git status --porcelain` + 改动文件
+的 stat），两次轮询一致后才推一次 `repo-changed`，避免编辑器保存中途
+触发多次刷新。没有页面订阅时不运行 git。
 
 ## 6. 必填策略
 

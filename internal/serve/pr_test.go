@@ -164,3 +164,42 @@ func TestPRGitHub404AndDisabledFallback(t *testing.T) {
 		t.Fatalf("disabled = %d", got.Code)
 	}
 }
+
+// PR 页面共用「提交 Review」菜单；关闭接口按相对路径挂在 /pr/... 下。
+func TestPRShutdownAndCapabilities(t *testing.T) {
+	source, err := NewPRSource(PRSourceConfig{Dir: newPRDir(t, prTestPatch)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shutdown := NewShutdown()
+	handler, err := NewPRHandler(PRConfig{
+		DistFS:   fstest.MapFS{"index.html": {Data: []byte("frontend")}},
+		Source:   source,
+		Shutdown: shutdown,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := request(t, handler, "/pr/owner/repo/4/api/payload.json")
+	var payload contract.Payload
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Capabilities == nil || !payload.Capabilities.Shutdown || payload.Capabilities.Watch {
+		t.Fatalf("capabilities = %+v", payload.Capabilities)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/pr/owner/repo/4/api/shutdown", nil)
+	req.RemoteAddr = "127.0.0.1:5555"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("shutdown: %d %s", rec.Code, rec.Body)
+	}
+	select {
+	case <-shutdown.Done():
+	default:
+		t.Fatal("PR shutdown was not triggered")
+	}
+}

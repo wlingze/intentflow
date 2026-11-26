@@ -139,6 +139,7 @@ intentflow serve --pr-dir /srv/intentflow/prs --host 127.0.0.1 --port 8080 --no-
 | GET | `/pr/<owner>/<repo>/<number>/` | 工作台 HTML |
 | GET | `/pr/<owner>/<repo>/<number>/api/payload.json` | 该 PR 的 payload；也接受无 `.json` 后缀 |
 | GET | `/pr/<owner>/<repo>/<number>/api/revisions.json` | 只有 `range` 的 revision 列表 |
+| POST | `/pr/<owner>/<repo>/<number>/api/shutdown` | 写 200 后关闭工作台；同源或本机请求 |
 | GET | `/pr/<owner>/<repo>/<number>/assets/*` | 内嵌前端资源 |
 | GET | `/healthz` | `ok`，供反向代理探活 |
 

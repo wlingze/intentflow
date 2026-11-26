@@ -42,6 +42,10 @@ type Config struct {
 	Out io.Writer
 	// Log 接收 /api 访问日志；默认与 Out 相同。
 	Log io.Writer
+	// Shutdown 非空时页面可以 POST /api/shutdown 优雅停止服务。
+	Shutdown *Shutdown
+	// Watcher 非空时 /api/events 推送工作区变化，页面据此刷新 diff。
+	Watcher *Watcher
 }
 
 func NewHandler(cfg Config) (http.Handler, error) {
@@ -55,6 +59,11 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 	withState := func(p contract.Payload) contract.Payload {
 		p.Submission = contract.SubmissionState{Enabled: cfg.Submission != nil}
+		// 页面根据 capabilities 决定显不显示「关闭服务」，以及要不要连 SSE。
+		// 静态导出没有这些能力，字段为 nil。
+		if cfg.Shutdown != nil || cfg.Watcher != nil {
+			p.Capabilities = &contract.Capabilities{Shutdown: cfg.Shutdown != nil, Watch: cfg.Watcher != nil}
+		}
 		return p
 	}
 	payloadHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -129,51 +138,80 @@ func NewHandler(cfg Config) (http.Handler, error) {
 			writeError(w, 400, fmt.Sprintf("未知 action %q", req.Action))
 		}
 	})
+	if cfg.Shutdown != nil {
+		mux.HandleFunc("POST /api/shutdown", shutdownHandler(cfg.Shutdown))
+	}
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.Submission == nil {
-			writeError(w, 404, "当前工作台没有审阅会话")
-			return
-		}
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			writeError(w, 500, "当前连接不支持流式响应")
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
-		w.WriteHeader(200)
-		_, _ = io.WriteString(w, "retry: 1000\n\n")
-		flusher.Flush()
-		cfg.Submission.ClientConnected()
-		defer cfg.Submission.ClientDisconnected()
-		// net/http only notices a dead SSE client on the next write. CloseNotify
-		// fires on the socket close, so a closed tab cancels promptly.
-		var closed <-chan bool
-		if notifier, ok := w.(http.CloseNotifier); ok {
-			closed = notifier.CloseNotify()
-		}
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-r.Context().Done():
-				return
-			case <-closed:
-				return
-			case <-cfg.Submission.Done():
-				return
-			case <-ticker.C:
-				if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
-					return
-				}
-				flusher.Flush()
-			}
-		}
+		serveEvents(w, r, cfg)
 	})
 	mux.Handle("/", spaHandler(dist))
 	return gzipMiddleware(mux), nil
+}
+
+// serveEvents 同时服务两件事：审阅模式的页面在线状态，以及本地工作区
+// 变化。SSE 不能被 gzip 包，否则事件会卡在压缩缓冲区里；gzipMiddleware
+// 对这条路径直接放行。
+func serveEvents(w http.ResponseWriter, r *http.Request, cfg Config) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, 500, "当前连接不支持流式响应")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(200)
+	_, _ = io.WriteString(w, "retry: 1000\n\n")
+	flusher.Flush()
+
+	var submissionDone <-chan struct{}
+	if cfg.Submission != nil {
+		cfg.Submission.ClientConnected()
+		defer cfg.Submission.ClientDisconnected()
+		submissionDone = cfg.Submission.Done()
+	}
+	var changes <-chan struct{}
+	if cfg.Watcher != nil {
+		var unsubscribe func()
+		changes, unsubscribe = cfg.Watcher.Subscribe()
+		defer unsubscribe()
+	}
+	// net/http only notices a dead SSE client on the next write. CloseNotify
+	// fires on the socket close, so a closed tab cancels promptly.
+	var closed <-chan bool
+	if notifier, ok := w.(http.CloseNotifier); ok {
+		closed = notifier.CloseNotify()
+	}
+	// 审阅模式用短心跳维持页面在线；普通模式只保活连接。
+	interval := 15 * time.Second
+	if cfg.Submission != nil {
+		interval = 2 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-closed:
+			return
+		case <-submissionDone:
+			return
+		case <-cfg.Shutdown.Done():
+			return
+		case <-ticker.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-changes:
+			if _, err := io.WriteString(w, "event: repo-changed\ndata: {\"type\":\"repo-changed\"}\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 // 12 MB 的 payload 会拖慢局域网首屏；JSON 与静态文本用 gzip 传输。
@@ -212,8 +250,7 @@ func (g *gzipResponseWriter) Write(data []byte) (int, error) {
 	return g.writer.Write(data)
 }
 
-// Flush keeps one-shot API responses (submission) on the wire before the
-// review process shuts the server down.
+// Flush 让一次性响应（submission、shutdown）在服务关闭前写完。
 func (g *gzipResponseWriter) Flush() {
 	if !g.wrote {
 		g.WriteHeader(http.StatusOK)
@@ -258,16 +295,16 @@ func Listen(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	return listenServe(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台", cfg.Out, cfg.Log, cfg.Ready, cfg.Stop)
+	return listenServe(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台", cfg.Out, cfg.Log, cfg.Ready, cfg.Stop, cfg.Shutdown)
 }
 
 // listen shares socket, URL and browser handling between one-diff and
 // multi-PR modes.
-func listen(host string, port int, open bool, handler http.Handler, title string) error {
-	return listenServe(host, port, open, handler, title, nil, nil, nil, nil)
+func listen(host string, port int, open bool, handler http.Handler, title string, shutdown *Shutdown) error {
+	return listenServe(host, port, open, handler, title, nil, nil, nil, nil, shutdown)
 }
 
-func listenServe(host string, port int, open bool, handler http.Handler, title string, out, logOut io.Writer, ready func([]string, int), stop <-chan struct{}) error {
+func listenServe(host string, port int, open bool, handler http.Handler, title string, out, logOut io.Writer, ready func([]string, int), stop <-chan struct{}, shutdown *Shutdown) error {
 	if host == "" {
 		host = "0.0.0.0"
 	}
@@ -289,12 +326,22 @@ func listenServe(host string, port int, open bool, handler http.Handler, title s
 		logOut = out
 	}
 	server := &http.Server{Handler: logRequests(handler, logOut)}
+	stopServer := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}
 	if stop != nil {
 		go func() {
 			<-stop
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = server.Shutdown(ctx)
+			stopServer()
+		}()
+	}
+	if shutdown != nil {
+		go func() {
+			<-shutdown.Done()
+			stopServer()
+			fmt.Println("· 服务已关闭")
 		}()
 	}
 	served := make(chan error, 1)

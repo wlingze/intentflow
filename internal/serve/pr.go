@@ -28,6 +28,8 @@ type PRConfig struct {
 	Source      *PRSource
 	IndexTitle  string
 	OpenBrowser bool
+	// Shutdown 非空时同一页面的「关闭服务」可以停止 PR 工作台。
+	Shutdown *Shutdown
 }
 
 type prHandler struct {
@@ -35,6 +37,7 @@ type prHandler struct {
 	source     *PRSource
 	index      *template.Template
 	indexTitle string
+	shutdown   *Shutdown
 
 	mu    sync.Mutex
 	cache map[string]prView
@@ -75,7 +78,7 @@ func NewPRHandler(cfg PRConfig) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler := &prHandler{dist: dist, source: cfg.Source, index: parse, indexTitle: title, cache: map[string]prView{}}
+	handler := &prHandler{dist: dist, source: cfg.Source, index: parse, indexTitle: title, shutdown: cfg.Shutdown, cache: map[string]prView{}}
 	return gzipMiddleware(handler), nil
 }
 
@@ -85,10 +88,23 @@ func ListenPR(cfg PRConfig) error {
 	if err != nil {
 		return err
 	}
-	return listen(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "PR 工作台")
+	return listen(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "PR 工作台", cfg.Shutdown)
 }
 
 func (h *prHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 页面里的 api/shutdown 是相对路径，所以根路径与 /pr/... 前缀都要接。
+	if r.URL.Path == "/api/shutdown" || strings.HasSuffix(r.URL.Path, "/api/shutdown") {
+		if h.shutdown == nil {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		shutdownHandler(h.shutdown)(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -193,7 +209,11 @@ func (h *prHandler) servePayload(w http.ResponseWriter, r *http.Request, ref PRR
 		h.writeLoadError(w, err, true)
 		return
 	}
-	writeJSON(w, http.StatusOK, view.payload)
+	payload := view.payload
+	if h.shutdown != nil {
+		payload.Capabilities = &contract.Capabilities{Shutdown: true}
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (h *prHandler) serveRevisions(w http.ResponseWriter, r *http.Request, ref PRRef) {

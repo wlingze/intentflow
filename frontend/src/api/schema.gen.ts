@@ -45,7 +45,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Server-sent events used to detect a closed review page */
+        /** Server-sent events for review presence and local worktree changes */
         get: operations["reviewEvents"];
         put?: never;
         post?: never;
@@ -66,6 +66,23 @@ export interface paths {
         put?: never;
         /** Submit or cancel the current review (review --wait mode only) */
         post: operations["submitReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop the local workbench after writing the response */
+        post: operations["shutdown"];
         delete?: never;
         options?: never;
         head?: never;
@@ -397,6 +414,15 @@ export interface components {
             code: components["schemas"]["CodeBundle"];
             session: components["schemas"]["ReviewSession"];
             submission: components["schemas"]["SubmissionState"];
+            capabilities?: components["schemas"]["Capabilities"];
+        };
+        /** @description What this page can do. Missing means a read-only static export. */
+        Capabilities: {
+            shutdown: boolean;
+            watch: boolean;
+        };
+        ShutdownResponse: {
+            status: string;
         };
         SubmissionState: {
             /** @description The workbench accepts one review submission and then exits. */
@@ -542,7 +568,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description SSE stream; periodic comments keep the connection alive */
+            /** @description SSE stream with repo-changed, ping and submission frames */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -574,6 +600,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SubmissionResponse"];
                 };
+            };
+        };
+    };
+    shutdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Closing; the server stops after this response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShutdownResponse"];
+                };
+            };
+            /** @description Not a same-origin or loopback request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
