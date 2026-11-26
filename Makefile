@@ -53,6 +53,10 @@ e2e-ui:
 e2e-review:
 	NODE_PATH=$(PLAYWRIGHT_PATH) node scripts/e2e/review.mjs $(TREE_BIN)
 
+# 关闭服务后 CLI 必须返回 0；脚本自己起工作台并保持一条 SSE 连接。
+e2e-shutdown:
+	node scripts/e2e/shutdown.mjs $(TREE_BIN)
+
 # 生成 demo 的 review.json。
 demo:
 	$(GO) build -o bin/intentflow ./cmd/intentflow
