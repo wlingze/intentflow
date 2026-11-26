@@ -126,7 +126,6 @@ func TestDetectBaseHandlesNonAncestorBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("startup failed for a non-ancestor branch: %v", err)
 	}
-	defer a.close()
 	p := a.payload()
 	if p.Review.BaseLabel != info.label() || p.Review.BaseBehind != 1 || p.Review.BaseUpstream != "main" || !p.Review.NeedsRebase {
 		t.Fatalf("contract base status = %+v", p.Review)
@@ -239,7 +238,6 @@ func TestExplicitBaseTakesPriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
 	p := a.payload()
 	if a.baseRef != "HEAD~1" || a.baseSHA != want {
 		t.Fatalf("base = %s %s, want HEAD~1 %s", a.baseRef, a.baseSHA, want)
@@ -268,7 +266,6 @@ func TestRebaseConflictFallsBackToMergeBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("startup must continue after a rebase conflict: %v", err)
 	}
-	defer a.close()
 	if a.headSHA != before {
 		t.Fatalf("HEAD moved to %s, want %s", a.headSHA, before)
 	}
@@ -303,7 +300,6 @@ func TestRebaseSuccessMovesHeadOntoBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
 	if a.baseSHA != m1 {
 		t.Fatalf("base = %s, want rebased main tip %s", a.baseSHA, m1)
 	}

@@ -244,7 +244,7 @@ func buildReviewSource(ctx context.Context, opt options, diffPath, prRef string)
 		if err != nil {
 			return contract.Payload{}, nil, reviewflow.ReasonGit, err
 		}
-		return a.payload(), a.close, "", nil
+		return a.payload(), nil, "", nil
 	}
 }
 

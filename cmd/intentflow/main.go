@@ -184,7 +184,6 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer a.close()
 	cfg := serve.Config{
 		Host: *host, Port: *port, DistDir: *dist, DistFS: frontend.Dist(),
 		Payload: a.payload, Revisions: a.revisions, Load: a.load,
@@ -223,7 +222,6 @@ func runDiff(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer a.close()
 	p := a.payload()
 	path, err := emit.JSON(&p.Review, opt.out)
 	if err == nil {
@@ -388,7 +386,6 @@ type app struct {
 	folder                            bool
 	current                           *revision
 	cache                             map[string]*revision
-	dirs                              []string
 	worktreeFP                        string
 }
 
@@ -504,7 +501,6 @@ func newApp(opt options) (*app, error) {
 		id = "worktree"
 	}
 	if _, err := a.load(id); err != nil {
-		a.close()
 		return nil, err
 	}
 	return a, nil
@@ -591,7 +587,9 @@ func (a *app) buildRevision(id string) (*revision, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.dirs = append(a.dirs, tmp)
+	// 临时目录只服务本次差异构建；payload 只保存文本，构建完立即释放。
+	// 留到进程退出再删会让关闭服务卡在大仓库的清理上。
+	defer os.RemoveAll(tmp)
 	before, after := filepath.Join(tmp, "before"), filepath.Join(tmp, "after")
 	base, head := a.baseSHA, a.headSHA
 	bl, al, note := "", "", ""
@@ -792,12 +790,6 @@ func (a *app) printCompare(p contract.Payload) {
 	}
 	if p.Session.UpdatedAt != "" {
 		fmt.Fprintf(a.log, "· 已恢复 session %s：%d 条评论\n", p.Session.Context.SessionId, len(p.Session.Comments))
-	}
-}
-
-func (a *app) close() {
-	for _, dir := range a.dirs {
-		_ = os.RemoveAll(dir)
 	}
 }
 
