@@ -254,6 +254,12 @@ type BehaviorStats struct {
 	Scenarios int32 `json:"scenarios"`
 }
 
+// Capabilities What this page can do. Missing means a read-only static export.
+type Capabilities struct {
+	Shutdown bool `json:"shutdown"`
+	Watch    bool `json:"watch"`
+}
+
 // CodeBundle defines model for CodeBundle.
 type CodeBundle struct {
 	Files     []CodeFile `json:"files"`
@@ -378,10 +384,12 @@ type Layer string
 
 // Payload defines model for Payload.
 type Payload struct {
-	Code       CodeBundle      `json:"code"`
-	Review     Review          `json:"review"`
-	Session    ReviewSession   `json:"session"`
-	Submission SubmissionState `json:"submission"`
+	// Capabilities What this page can do. Missing means a read-only static export.
+	Capabilities *Capabilities   `json:"capabilities,omitempty"`
+	Code         CodeBundle      `json:"code"`
+	Review       Review          `json:"review"`
+	Session      ReviewSession   `json:"session"`
+	Submission   SubmissionState `json:"submission"`
 }
 
 // Quote defines model for Quote.
@@ -516,6 +524,11 @@ type ScanStatus string
 
 // Severity defines model for Severity.
 type Severity string
+
+// ShutdownResponse defines model for ShutdownResponse.
+type ShutdownResponse struct {
+	Status string `json:"status"`
+}
 
 // Side defines model for Side.
 type Side string

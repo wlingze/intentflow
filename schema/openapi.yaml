@@ -37,11 +37,11 @@ paths:
                 $ref: '#/components/schemas/RevisionList'
   /api/events:
     get:
-      summary: Server-sent events used to detect a closed review page
+      summary: Server-sent events for review presence and local worktree changes
       operationId: reviewEvents
       responses:
         '200':
-          description: SSE stream; periodic comments keep the connection alive
+          description: SSE stream with repo-changed, ping and submission frames
           content:
             text/event-stream:
               schema: { type: string }
@@ -62,6 +62,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionResponse'
+  /api/shutdown:
+    post:
+      summary: Stop the local workbench after writing the response
+      operationId: shutdown
+      responses:
+        '200':
+          description: Closing; the server stops after this response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShutdownResponse'
+        '403':
+          description: Not a same-origin or loopback request
 components:
   schemas:
     Confidence:
@@ -552,6 +565,23 @@ components:
         code: { $ref: '#/components/schemas/CodeBundle' }
         session: { $ref: '#/components/schemas/ReviewSession' }
         submission: { $ref: '#/components/schemas/SubmissionState' }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+
+    Capabilities:
+      type: object
+      additionalProperties: false
+      description: What this page can do. Missing means a read-only static export.
+      required: [shutdown, watch]
+      properties:
+        shutdown: { type: boolean }
+        watch: { type: boolean }
+
+    ShutdownResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string }
 
     SubmissionState:
       type: object
