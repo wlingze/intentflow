@@ -136,3 +136,46 @@ func TestBranchSessionsDoNotMix(t *testing.T) {
 		t.Fatal("same commit on two branches shares one session id")
 	}
 }
+
+// 页面自动刷新依赖：工作区改动后重新读取 payload 必须看到新内容。
+func TestWorktreePayloadRefreshesAfterEdit(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	git("config", "user.name", "fixture")
+	git("config", "user.email", "fixture@example.invalid")
+	path := filepath.Join(root, "a.go")
+	if err := os.WriteFile(path, []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-qm", "init")
+	if err := os.WriteFile(path, []byte("package a\n\nfunc one() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := newApp(options{target: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.close()
+	if got := a.payload().Session.Context.Revision; got != "worktree" {
+		t.Fatalf("revision = %q, want worktree", got)
+	}
+
+	if err := os.WriteFile(path, []byte("package a\n\nfunc one() {}\n\nfunc two() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := a.payload()
+	if len(p.Code.Files) != 1 {
+		t.Fatalf("files = %d", len(p.Code.Files))
+	}
+	if !strings.Contains(p.Code.Files[0].After, "func two()") {
+		t.Fatalf("payload kept the old worktree content:\n%s", p.Code.Files[0].After)
+	}
+}
