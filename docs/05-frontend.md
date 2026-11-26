@@ -222,7 +222,8 @@ Review tab 只有两部分：
 - 自动保存（`saveStatus === 'saving'`）或切换范围中收到事件时，延后 400ms 重试。
 - 刷新成功弹「检测到本地修改，已刷新」；失败弹错误并保留旧 diff。
 - 「提交 Review」菜单底部有「关闭服务」。确认后 `POST /api/shutdown`，页面换成
-  「服务已关闭，可以关闭此页面。」。静态导出没有 `capabilities`，不显示该按钮。
+  「服务已关闭，可以关闭此页面。」，`intentflow serve` 命令退出并返回 shell。
+  服务端先完成在途请求，5 秒超时后强制关闭。静态导出没有 `capabilities`，不显示该按钮。
 
 ## 3. 状态
 

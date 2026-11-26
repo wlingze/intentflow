@@ -78,7 +78,6 @@ func TestFolderComparisonIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
 	entries, err := os.ReadDir(before)
 	if err != nil {
 		t.Fatal(err)
@@ -121,14 +120,12 @@ func TestBranchSessionsDoNotMix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
 	first := a.payload().Session.Context
 	git("switch", "-qc", "feature/b")
 	b, err := newApp(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.close()
 	if b.payload().Session.Context.Revision != "range" {
 		t.Fatal("review metadata polluted git status and selected the worktree")
 	}
@@ -163,7 +160,6 @@ func TestWorktreePayloadRefreshesAfterEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.close()
 	if got := a.payload().Session.Context.Revision; got != "worktree" {
 		t.Fatalf("revision = %q, want worktree", got)
 	}

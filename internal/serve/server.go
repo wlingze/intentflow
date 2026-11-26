@@ -295,6 +295,10 @@ func Listen(cfg Config) error {
 	if err != nil {
 		return err
 	}
+	// 服务返回后不再有页面订阅；显式结束轮询协程。
+	if cfg.Watcher != nil {
+		defer cfg.Watcher.Stop()
+	}
 	return listenServe(cfg.Host, cfg.Port, cfg.OpenBrowser, handler, "review 工作台", cfg.Out, cfg.Log, cfg.Ready, cfg.Stop, cfg.Shutdown)
 }
 
@@ -326,24 +330,6 @@ func listenServe(host string, port int, open bool, handler http.Handler, title s
 		logOut = out
 	}
 	server := &http.Server{Handler: logRequests(handler, logOut)}
-	stopServer := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
-	}
-	if stop != nil {
-		go func() {
-			<-stop
-			stopServer()
-		}()
-	}
-	if shutdown != nil {
-		go func() {
-			<-shutdown.Done()
-			stopServer()
-			fmt.Println("· 服务已关闭")
-		}()
-	}
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ln) }()
 	if ready != nil {
@@ -352,7 +338,31 @@ func listenServe(host string, port int, open bool, handler http.Handler, title s
 	if open {
 		go openBrowser(urls[0])
 	}
-	err = <-served
+	// 主动关闭时先停止接收新连接，再等处理中的请求结束。超时后强制
+	// Close，保证命令一定能返回，不会被长连接拖住。
+	drain := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			_ = server.Close()
+		}
+		return normalizeServeError(<-served)
+	}
+	select {
+	case err := <-served:
+		return normalizeServeError(err)
+	case <-stop:
+		err := drain()
+		fmt.Fprintln(out, "· 服务已关闭")
+		return err
+	case <-shutdown.Done():
+		err := drain()
+		fmt.Fprintln(out, "· 服务已关闭")
+		return err
+	}
+}
+
+func normalizeServeError(err error) error {
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
